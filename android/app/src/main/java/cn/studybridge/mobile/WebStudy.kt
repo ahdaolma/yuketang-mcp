@@ -119,11 +119,11 @@ class ChatGptWebSession(context: Context, private val changed: () -> Unit, priva
                 if (request.hasGesture() && url.startsWith("https://")) external(url)
                 return true
             }
-            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) { error = ""; progress = 0; changed() }
-            override fun onPageFinished(view: WebView, url: String?) { progress = 100; CookieManager.getInstance().flush(); changed() }
+            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) { this@ChatGptWebSession.error = ""; this@ChatGptWebSession.progress = 0; changed() }
+            override fun onPageFinished(view: WebView, url: String?) { this@ChatGptWebSession.progress = 100; CookieManager.getInstance().flush(); changed() }
             override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) { changed() }
             override fun onReceivedError(view: WebView, request: WebResourceRequest, failure: WebResourceError) {
-                if (request.isForMainFrame) { error = "网页加载失败，请检查网络后重试，或在系统浏览器打开。"; progress = 100; changed() }
+                if (request.isForMainFrame) { this@ChatGptWebSession.error = "网页加载失败，请检查网络后重试，或在系统浏览器打开。"; this@ChatGptWebSession.progress = 100; changed() }
             }
             override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) { handler.cancel(); this@ChatGptWebSession.error = "网页证书验证失败，连接已停止。"; changed() }
         }

@@ -44,8 +44,13 @@ tap('Continue with ChatGPT')
 time.sleep(3)
 adb('shell','am','start','-W','-n','cn.studybridge.mobile/.MainActivity')
 time.sleep(1)
-items = list(nodes())
-auth_text = '\n'.join(n.get('text','') for n in items)
+for attempt in range(4):
+    items = list(nodes())
+    auth_text = '\n'.join(n.get('text','') for n in items)
+    if '取消本次授权' in auth_text or 'ChatGPT 登录未完成' in auth_text:
+        break
+    adb('shell','input','swipe','220','500','220','250','250')
+    time.sleep(1)
 if '取消本次授权' in auth_text:
     shot('authorization', ['取消本次授权'])
     service = adb('shell','dumpsys','activity','services','cn.studybridge.mobile').decode(errors='replace')
