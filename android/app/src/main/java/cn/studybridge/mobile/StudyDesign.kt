@@ -133,8 +133,11 @@ class NoteReader {
     fun close() { id = null; draft = ""; editing = false; closeRequested = false }
 }
 
-fun notePreview(text: String) = text
-    .replace(Regex("</?(?:p|br|div|span|strong|em|b|i|h[1-6]|li|ul|ol|table|tr|td|th)(?:\\s[^<>]*)?/?>", RegexOption.IGNORE_CASE), " ")
-    .replace(Regex("(?m)^\\s{0,3}(#{1,6}\\s+|>\\s+|[-*+]\\s+)"), "")
+private val previewTags = Regex("</?(?:p|br|div|span|strong|em|b|i|h[1-6]|li|ul|ol|table|tr|td|th)(?:\\s[^<>]*)?/?>", RegexOption.IGNORE_CASE)
+private val previewMarkers = Regex("(?m)^\\s{0,3}(#{1,6}\\s+|>\\s+|[-*+]\\s+)")
+private val previewWhitespace = Regex("\\s+")
+// Preview a bounded prefix; scrolling the list must never parse an entire long notebook.
+fun notePreview(text: String) = text.take(2048)
+    .replace(previewTags, " ").replace(previewMarkers, "")
     .replace("**", "").replace("__", "").replace("`", "")
-    .replace(Regex("\\s+"), " ").trim().take(120)
+    .replace(previewWhitespace, " ").trim().take(120)
