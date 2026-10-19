@@ -32,19 +32,19 @@ import androidx.compose.ui.unit.sp
 
 @Composable fun StudyTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     val colors = if (dark) darkColorScheme(
-        primary = Color(0xFF8ED7C2), onPrimary = Color(0xFF08382C), primaryContainer = Color(0xFF1B4136), onPrimaryContainer = Color(0xFFC4EFDF),
-        secondary = Color(0xFFADC5BA), onSecondary = Color(0xFF20352C), secondaryContainer = Color(0xFF293D33), onSecondaryContainer = Color(0xFFDEEEE5),
-        background = Color(0xFF111614), onBackground = Color(0xFFE7EDE9), surface = Color(0xFF111614), onSurface = Color(0xFFE7EDE9),
-        surfaceVariant = Color(0xFF29332E), onSurfaceVariant = Color(0xFFAABBB1), surfaceContainer = Color(0xFF1B231F), surfaceContainerHigh = Color(0xFF242E28),
-        surfaceContainerLowest = Color(0xFF0C100E), surfaceContainerLow = Color(0xFF17201B), surfaceContainerHighest = Color(0xFF303D34),
-        outline = Color(0xFF75857B), outlineVariant = Color(0xFF344039)
+        primary = Color(0xFFB1D3C4), onPrimary = Color(0xFF183A2F), primaryContainer = Color(0xFF293D34), onPrimaryContainer = Color(0xFFE0EDE4),
+        secondary = Color(0xFFBDC8BF), onSecondary = Color(0xFF2C352F), secondaryContainer = Color(0xFF303B34), onSecondaryContainer = Color(0xFFE1E8DE),
+        background = Color(0xFF151918), onBackground = Color(0xFFEAECE6), surface = Color(0xFF151918), onSurface = Color(0xFFEAECE6),
+        surfaceVariant = Color(0xFF303631), onSurfaceVariant = Color(0xFFB0BAB1), surfaceContainer = Color(0xFF202623), surfaceContainerHigh = Color(0xFF2B322D),
+        surfaceContainerLowest = Color(0xFF101311), surfaceContainerLow = Color(0xFF1C211E), surfaceContainerHighest = Color(0xFF363E37),
+        outline = Color(0xFF859086), outlineVariant = Color(0xFF39413A)
     ) else lightColorScheme(
-        primary = Color(0xFF22634F), onPrimary = Color.White, primaryContainer = Color(0xFFE7F1EB), onPrimaryContainer = Color(0xFF214F3E),
-        secondary = Color(0xFF53695D), onSecondary = Color.White, secondaryContainer = Color(0xFFEDF2EE), onSecondaryContainer = Color(0xFF344F40),
-        background = Color(0xFFF6F8F6), onBackground = Color(0xFF1B2921), surface = Color(0xFFF6F8F6), onSurface = Color(0xFF1B2921),
-        surfaceVariant = Color(0xFFE8EEEA), onSurfaceVariant = Color(0xFF5D7064), surfaceContainer = Color.White, surfaceContainerHigh = Color(0xFFEDF2EE),
-        surfaceContainerLowest = Color.White, surfaceContainerLow = Color(0xFFF1F5F2), surfaceContainerHighest = Color(0xFFE2EAE4),
-        outline = Color(0xFF8B9C91), outlineVariant = Color(0xFFDCE5DE)
+        primary = Color(0xFF315B4C), onPrimary = Color.White, primaryContainer = Color(0xFFE7EEE6), onPrimaryContainer = Color(0xFF284B3D),
+        secondary = Color(0xFF59695C), onSecondary = Color.White, secondaryContainer = Color(0xFFEBEEE7), onSecondaryContainer = Color(0xFF3C4E40),
+        background = Color(0xFFF5F4F0), onBackground = Color(0xFF222B25), surface = Color(0xFFF5F4F0), onSurface = Color(0xFF222B25),
+        surfaceVariant = Color(0xFFE9EBE4), onSurfaceVariant = Color(0xFF636E63), surfaceContainer = Color(0xFFFFFEFA), surfaceContainerHigh = Color(0xFFEFEEE8),
+        surfaceContainerLowest = Color(0xFFFFFEFA), surfaceContainerLow = Color(0xFFF1F0EA), surfaceContainerHighest = Color(0xFFE4E6DD),
+        outline = Color(0xFF8C968A), outlineVariant = Color(0xFFE0E2D8)
     )
     val regular = TextStyle(letterSpacing = 0.sp)
     val activity = LocalContext.current as? Activity
@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.sp
 @Composable fun StudyFrame(ui: UiState, onTab: (Int) -> Unit, onBack: () -> Unit, onStop: () -> Unit, snackbar: SnackbarHostState = remember { SnackbarHostState() }, noteOpen: Boolean = false, content: @Composable (PaddingValues) -> Unit) {
     val labels = listOf("学习", "课程", "笔记")
     val icons = listOf(Icons.Outlined.ChatBubbleOutline, Icons.Outlined.School, Icons.Outlined.AutoStories)
+    val selectedIcons = listOf(Icons.Filled.ChatBubble, Icons.Filled.School, Icons.Filled.AutoStories)
     val navigationHeight = (68f + (LocalDensity.current.fontScale - 1f).coerceAtLeast(0f) * 24f).dp
     Scaffold(
         topBar = { if (!(ui.data.usesWeb && ui.tab == 0)) TopAppBar(
@@ -80,7 +81,12 @@ import androidx.compose.ui.unit.sp
         bottomBar = { if (ui.tab != 3) Column {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             NavigationBar(Modifier.height(navigationHeight), containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp, windowInsets = WindowInsets(0, 0, 0, 0)) {
-                labels.forEachIndexed { index, label -> FeedbackNavigationBarItem(selected = ui.tab == index, onClick = { onTab(index) }, icon = { Icon(icons[index], label, Modifier.size(22.dp)) }, label = { Text(label, style = MaterialTheme.typography.labelMedium) }) }
+                labels.forEachIndexed { index, label ->
+                    val selected = ui.tab == index
+                    FeedbackNavigationBarItem(selected = selected, onClick = { onTab(index) },
+                        icon = { Surface(shape = RoundedCornerShape(11.dp), color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent) { Icon(if (selected) selectedIcons[index] else icons[index], null, Modifier.padding(horizontal = 12.dp, vertical = 6.dp).size(21.dp)) } },
+                        label = { Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal) })
+                }
             }
             Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
         } },
@@ -93,7 +99,7 @@ import androidx.compose.ui.unit.sp
 }
 
 @Composable fun StudyPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Surface(modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainer, border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)) { Column(content = content) }
+    Surface(modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainer, border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)) { Column(content = content) }
 }
 
 @Composable fun StudyEmpty(icon: ImageVector, title: String, body: String, modifier: Modifier = Modifier, actions: @Composable ColumnScope.() -> Unit = {}) {
@@ -107,9 +113,9 @@ import androidx.compose.ui.unit.sp
 }
 
 @Composable fun SettingOption(title: String, summary: String, icon: ImageVector, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    FeedbackCard(onClick = onClick, enabled = enabled, modifier = Modifier.semantics { this.selected = selected; role = Role.RadioButton }, colors = CardDefaults.cardColors(containerColor = Color.Transparent), shape = RoundedCornerShape(12.dp)) {
+    FeedbackCard(onClick = onClick, enabled = enabled, modifier = Modifier.semantics { this.selected = selected; role = Role.RadioButton }, colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f) else Color.Transparent), shape = RoundedCornerShape(16.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Icon(icon, null, Modifier.size(22.dp), tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+            Surface(shape = RoundedCornerShape(11.dp), color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh) { Icon(icon, null, Modifier.padding(9.dp).size(20.dp), tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(title, style = MaterialTheme.typography.titleSmall); Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Icon(if (selected) Icons.Default.CheckCircle else Icons.Outlined.RadioButtonUnchecked, null, Modifier.size(20.dp), tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
         }

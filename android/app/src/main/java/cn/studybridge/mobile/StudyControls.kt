@@ -26,6 +26,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -106,13 +107,16 @@ private fun Modifier.pressFeedback(enabled: Boolean, unavailableReason: String? 
     NativeDropdownMenuItem(text, feedbackClick(onClick), modifier.pressFeedback(enabled), leadingIcon = leadingIcon, trailingIcon = trailingIcon, enabled = enabled)
 }
 @Composable fun RowScope.FeedbackNavigationBarItem(selected: Boolean, onClick: () -> Unit, icon: @Composable () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, label: @Composable (() -> Unit)? = null) {
-    NativeNavigationBarItem(selected, feedbackClick(onClick), icon, modifier.pressFeedback(enabled), enabled = enabled, label = label)
+    NativeNavigationBarItem(selected, feedbackClick(onClick), icon, modifier.pressFeedback(enabled), enabled = enabled, label = label, colors = NavigationBarItemDefaults.colors(
+        selectedIconColor = MaterialTheme.colorScheme.primary, selectedTextColor = MaterialTheme.colorScheme.onSurface,
+        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant, unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant, indicatorColor = Color.Transparent
+    ))
 }
 @Composable fun FeedbackCard(modifier: Modifier = Modifier, shape: Shape = CardDefaults.shape, colors: CardColors = CardDefaults.cardColors(), content: @Composable ColumnScope.() -> Unit) {
     NativeCard(modifier, shape = shape, colors = colors, content = content)
 }
-@Composable fun FeedbackCard(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, shape: Shape = CardDefaults.shape, colors: CardColors = CardDefaults.cardColors(), content: @Composable ColumnScope.() -> Unit) {
-    NativeCard(feedbackClick(onClick), modifier.pressFeedback(enabled), enabled = enabled, shape = shape, colors = colors, content = content)
+@Composable fun FeedbackCard(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, shape: Shape = CardDefaults.shape, colors: CardColors = CardDefaults.cardColors(), border: androidx.compose.foundation.BorderStroke? = null, content: @Composable ColumnScope.() -> Unit) {
+    NativeCard(feedbackClick(onClick), modifier.pressFeedback(enabled), enabled = enabled, shape = shape, colors = colors, border = border, content = content)
 }
 @Composable fun FeedbackOutlinedCard(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
     NativeOutlinedCard(feedbackClick(onClick), modifier.pressFeedback(enabled), enabled = enabled, content = content)
