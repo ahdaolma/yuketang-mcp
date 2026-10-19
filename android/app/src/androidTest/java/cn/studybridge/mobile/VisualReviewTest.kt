@@ -16,6 +16,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
+import io.noties.markwon.ext.tables.TableRowSpan
 
 // Synthetic display data only: no real account, lesson entry, or model request.
 // Render the same frame, theme and screens shipped in release, rather than mock screenshots.
@@ -55,13 +56,42 @@ class VisualReviewTest {
         resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
         bitmap.recycle()
     }
+    private fun verifyTableRows() {
+        // A plain TextView.text assignment bypasses Markwon's table invalidation hooks.
+        // Check the final Android layout, not just that table words exist in a string.
+        compose.onRoot().captureToImage()
+        fun textViews(view: android.view.View): List<android.widget.TextView> = when (view) {
+            is android.widget.TextView -> listOf(view)
+            is android.view.ViewGroup -> (0 until view.childCount).flatMap { textViews(view.getChildAt(it)) }
+            else -> emptyList()
+        }
+        compose.waitUntil(timeoutMillis = 5000) {
+            var laidOut = false
+            compose.runOnIdle {
+                laidOut = textViews(compose.activity.window.decorView).any { view ->
+                    val text = view.text as? android.text.Spanned
+                    val layout = view.layout
+                    if (text == null || layout == null) false else {
+                        val rows = text.getSpans(0, text.length, TableRowSpan::class.java)
+                        val metrics = view.paint.fontMetricsInt
+                        val minimum = metrics.descent - metrics.ascent + 2 * (8 * view.resources.displayMetrics.density).toInt() - 2
+                        rows.size == 3 && rows.all { row ->
+                            val line = layout.getLineForOffset(text.getSpanStart(row))
+                            row.cellWidth() > 0 && layout.getLineBottom(line) - layout.getLineTop(line) >= minimum
+                        }
+                    }
+                }
+            }
+            laidOut
+        }
+    }
     @Test fun populatedScreensAndDraftSurviveTabChanges() {
         val state = mutableStateOf(sample()); render(state)
         compose.onNodeWithText(courseTitle).assertIsDisplayed(); shot("sample-courses-light")
         compose.onNodeWithText("笔记").performClick()
         compose.onNodeWithText(firstNote.title).assertIsDisplayed(); shot("sample-notes-light")
         compose.onNodeWithText(firstNote.title).performClick()
-        compose.onNodeWithText("编辑笔记").assertIsDisplayed(); shot("sample-note-reading")
+        compose.onNodeWithText("编辑笔记").assertIsDisplayed(); verifyTableRows(); shot("sample-note-reading")
         compose.onNodeWithText("编辑笔记").performClick()
         compose.onNode(hasSetTextAction()).performTextInput("\n新增草稿内容")
         compose.runOnIdle { state.value = state.value.copy(tab = 1) }
@@ -93,7 +123,7 @@ class VisualReviewTest {
     @Test fun darkScreensUseTheSameReadingAndSettingsHierarchy() {
         val state = mutableStateOf(sample().copy(tab = 2)); render(state, mutableStateOf(true))
         compose.onNodeWithText(firstNote.title).assertIsDisplayed(); shot("sample-notes-dark")
-        compose.onNodeWithText(firstNote.title).performClick(); shot("sample-note-reading-dark")
+        compose.onNodeWithText(firstNote.title).performClick(); verifyTableRows(); shot("sample-note-reading-dark")
         compose.runOnIdle { state.value = state.value.copy(tab = 3) }
         compose.onNodeWithText("学习方式").assertIsDisplayed(); compose.onNodeWithText("ChatGPT 网页").assertIsSelected(); shot("sample-settings-dark")
         compose.onNodeWithText("学习助手提示词").performScrollTo().assertIsDisplayed()
