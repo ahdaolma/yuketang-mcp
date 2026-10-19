@@ -12,13 +12,13 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class WebPageTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
-    private fun fixture(finish: Boolean = true, draft: String = ""): String = """
+    private fun fixture(finish: Boolean = true, draft: String = "", rich: Boolean = false): String = """
         <!doctype html><html><body><main id="turns"></main><form>
         <input type="file" accept="image/png" onchange="const i=document.createElement('img');i.alt='Uploaded image';this.after(i)">
-        <textarea id="prompt-textarea">$draft</textarea><button type="button" data-testid="send-button">Send</button></form>
+        ${if (rich) "<div id=\"prompt-textarea\" contenteditable=\"true\">$draft</div>" else "<textarea id=\"prompt-textarea\">$draft</textarea>"}<button type="button" data-testid="send-button">Send</button></form>
         <script>document.querySelector('button').onclick=function(){
-          const area=document.querySelector('textarea'), turns=document.querySelector('main');
-          const user=document.createElement('div');user.setAttribute('data-message-author-role','user');user.innerText=area.value;turns.append(user);area.value='';
+          const area=document.querySelector('#prompt-textarea'), turns=document.querySelector('main');
+          const user=document.createElement('div');user.setAttribute('data-message-author-role','user');user.innerText=('value' in area ? area.value : area.innerText);turns.append(user);if('value' in area)area.value='';else area.innerText='';
           const article=document.createElement('article');article.innerHTML='<div data-message-author-role="assistant"><div class="markdown"><h2>知识点</h2><p><strong>重点</strong>说明。</p><table><tr><th>概念</th><th>解释</th></tr><tr><td>A</td><td>B</td></tr></table></div></div>';
           turns.append(article);
           ${if (finish) "article.innerHTML+='<button data-testid=\"copy-turn-action-button\">Copy</button>';" else "article.innerHTML+='<button data-testid=\"stop-button\">Stop</button>';"}
@@ -52,6 +52,12 @@ class WebPageTest {
         withPage(fixture(finish = false)) { page ->
             assertTrue(runCatching { WebStudyDriver(page, { delay(10) }, 4).generate("解释", Attachment(null,"课件",""),"RS-test") {} }.isFailure)
             assertTrue(runCatching { WebStudyDriver(page, { delay(10) }).capture("RS-test") }.isFailure)
+        }
+    }
+    @Test fun actualContentEditableComposerReceivesPromptAndKeepsPageMarker() = runBlocking {
+        withPage(fixture(rich = true)) { page ->
+            val text = WebStudyDriver(page, { delay(50) }, 20).generate("学习角色提示", Attachment(null,"第 2 页","原文"),"RS-rich") {}
+            assertTrue(text.contains("知识点"))
         }
     }
 }

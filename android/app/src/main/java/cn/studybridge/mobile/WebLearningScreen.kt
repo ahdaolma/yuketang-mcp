@@ -42,6 +42,7 @@ import androidx.compose.ui.viewinterop.AndroidView
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("ChatGPT 网页", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButton(onClick = vm::saveWebAnswer, enabled = !ui.locked) { Text("保存回答") }
+                if (ui.busy) TextButton(onClick = vm::stop) { Text("停止") }
                 Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreHoriz, "网页选项") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -54,6 +55,7 @@ import androidx.compose.ui.viewinterop.AndroidView
                         }
                     }
                 }
+                IconButton(onClick = { vm.tab(3) }) { Icon(Icons.Default.Settings, "设置") }
             }
             if (web.progress < 100) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (ui.data.webPending != null && !ui.locked) Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {

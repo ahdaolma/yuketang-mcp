@@ -78,7 +78,7 @@ class WebStudyDriver(private val page: WebPagePort, private val wait: suspend ()
             check(!matched || !s.optBoolean("otherUser")) { "网页对话发生变化，已暂停；请检查待完成回答。" }
             if (s.optBoolean("matchedUser")) matched = true
             val text = s.optString("markdown")
-            stable = if (s.optBoolean("finished") && text.isNotBlank() && text == previous) stable + 1 else 0
+            stable = if (!s.optBoolean("otherUser") && s.optBoolean("finished") && text.isNotBlank() && text == previous) stable + 1 else 0
             previous = text
             if (stable >= 2) return text
         }

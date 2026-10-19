@@ -97,6 +97,7 @@ class MainActivity : ComponentActivity() {
     val labels = listOf("学习", "课程", "笔记")
     val icons = listOf(Icons.AutoMirrored.Filled.Chat, Icons.Default.School, Icons.Default.AutoStories)
     var previousTab by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(ui.tab) { if (ui.tab != 3) previousTab = ui.tab }
     var webRevision by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
     val web = remember(context) { ChatGptWebSession(context, { webRevision++ }, { url ->
@@ -119,7 +120,7 @@ class MainActivity : ComponentActivity() {
         }
     }
     Scaffold(
-        topBar = { TopAppBar(
+        topBar = { if (!(ui.data.usesWeb && ui.tab == 0)) TopAppBar(
             title = { Text(if (ui.tab == 3) "设置" else labels[ui.tab], style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) },
             navigationIcon = { if (ui.tab == 3) IconButton(onClick = { vm.tab(previousTab) }) { Icon(Icons.Default.ArrowBack, "返回学习") } },
             actions = {
