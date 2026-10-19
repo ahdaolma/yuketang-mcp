@@ -6,6 +6,11 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,7 +19,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-data class UiState(val data: Saved = Saved(), val tab: Int = 0, val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val activityPage: Int = 0, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val pending: Attachment? = null, val noteDraft: String = "")
+data class UiState(val data: Saved = Saved(), val tab: Int = 0, val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val activityPage: Int = 0, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi()) { val locked get() = busy || (classUi.running && !classUi.paused) }
 
 class StudyViewModel(app: Application) : AndroidViewModel(app) {
     private val vault = Vault(app)
@@ -24,8 +29,13 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     private val state = MutableStateFlow(UiState())
     val ui = state.asStateFlow()
     private var job: Job? = null
+    private var classFeed: Job? = null
+    private var classWriter: Job? = null
+    private val classWake = Channel<Unit>(Channel.CONFLATED)
     private var login: AutoCloseable? = null
     private var storageBlocked = false
+    private var loginAttempt = newId()
+    private var lastResumeCheck = 0L
     init {
         viewModelScope.launch {
             try { val saved = withContext(Dispatchers.IO) { vault.load() }; state.update { it.copy(data = saved, ready = true) } }
@@ -33,15 +43,16 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
     fun notice(value: String) { state.update { it.copy(notice = value) } }
-    fun tab(value: Int) { state.update { it.copy(tab = value) } }
+    fun tab(value: Int) { state.update { it.copy(tab = value) }; if (value == 1) onResume() }
     private fun persist() { viewModelScope.launch(Dispatchers.IO) { disk.withLock { if (!storageBlocked) try { vault.save(state.value.data) } catch (_: Exception) { notice("本机记录保存失败，请检查存储空间。") } } } }
     private fun data(change: (Saved) -> Saved) { state.update { it.copy(data = change(it.data)) }; persist() }
-    fun saveProvider(p: Provider) {
+    fun saveProvider(p: Provider): Boolean {
         try {
             aiEndpoint(p.baseUrl); require(p.name.isNotBlank() && p.model.isNotBlank()) { "请填写名称和模型名称。" }
             data { it.copy(providers = it.providers.filterNot { v -> v.id == p.id } + p, selectedProvider = p.id) }
             notice("模型配置已保存。")
-        } catch (e: Exception) { notice(e.message ?: "配置保存失败。") }
+            return true
+        } catch (e: Exception) { notice(e.message ?: "配置保存失败。"); return false }
     }
     fun selectProvider(id: String) { data { it.copy(selectedProvider = id) } }
     fun removeProvider(id: String) {
@@ -56,7 +67,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     fun selectChat(id: String) { if (!state.value.busy) { data { it.copy(currentChat = id) }; state.update { it.copy(pending = null) } } }
     fun deleteChat(id: String) { if (state.value.busy) return; data { val list = it.conversations.filterNot { c -> c.id == id }.ifEmpty { listOf(Conversation()) }; it.copy(conversations = list, currentChat = if (it.currentChat == id) list.first().id else it.currentChat) } }
     private fun operation(label: String, block: suspend () -> Unit) {
-        if (state.value.busy || !state.value.ready || storageBlocked) return
+        if (state.value.locked || !state.value.ready || storageBlocked) return
         state.update { it.copy(busy = true, operation = label, notice = "") }
         job = viewModelScope.launch {
             try { block() } catch (e: CancellationException) { notice("已停止。") ; throw e }
@@ -64,12 +75,41 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
             finally { state.update { it.copy(busy = false, operation = "", noteDraft = "") }; persist() }
         }
     }
-    fun stop() { job?.cancel() }
-    fun testProvider(p: Provider) = operation("检查模型连接") { val count = withContext(Dispatchers.IO) { ai.test(p) }; notice("连接成功，服务商返回 $count 个模型；实际生成仍需使用所填模型验证。") }
+    fun stop() { job?.cancel(); if (state.value.classUi.running) pauseClass() }
+    fun testProvider(p: Provider) = operation("读取模型列表") {
+        state.update { it.copy(modelListFor = "", modelList = emptyList()) }
+        val list = withContext(Dispatchers.IO) { ai.models(p) }
+        state.update { it.copy(modelListFor = p.id, modelList = list) }
+        notice(if (list.isEmpty()) "连接成功，但未返回可选模型；可以手动填写。" else "已读取 ${list.size} 个模型，可以从列表选择。实际生成仍需核对所选模型权限。")
+    }
+    fun diagnoseLogin() = operation("检查雨课堂登录通道") { notice(rain.probe(state.value.data.region)) }
+    private fun loginStep(value: String) {
+        val clock = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+        state.update { it.copy(loginStage = value, loginSteps = (it.loginSteps + "$clock  $value").takeLast(8), qr = if (value.startsWith("微信已确认")) null else it.qr) }
+    }
+    fun onResume() {
+        val s = state.value
+        val now = System.currentTimeMillis()
+        if (s.ready && s.tab == 1 && !s.busy && !s.loginActive && s.data.session.isNotBlank() && now - lastResumeCheck > 15000) { lastResumeCheck = now; verifyLogin() }
+    }
+    private suspend fun verifySession(s: Saved) {
+        val user = withContext(Dispatchers.IO) { rain.api(s.region, s.session, "/api/v3/user/basic-info") }
+        require(user.optional("id") != null) { "账号资料结构无法验证；登录记录已保留，可稍后重试。" }
+        if (state.value.data.region == s.region && state.value.data.session == s.session) {
+            data { verifyRememberedLogin(it, s.session, user.optString("name", s.username)) }
+            loginStep("账号验证成功")
+        }
+    }
+    fun verifyLogin() = operation("验证已保存的登录记录") {
+        val s = state.value.data
+        require(s.session.isNotBlank()) { "尚未收到雨课堂登录记录，请完成微信确认。" }
+        try { verifySession(s); notice("账号已验证：${state.value.data.username}") }
+        catch (e: Exception) { if (e is CancellationException) throw e; if (state.value.data.session == s.session) data { it.copy(sessionVerified = false) }; loginStep("账号验证暂未通过，登录记录已保留"); throw IllegalStateException("${e.message?.take(140) ?: "账号验证失败。"} 可点击“重新验证登录”，无需直接丢弃本次记录。") }
+    }
     fun clearAttachment() { state.update { it.copy(pending = null) } }
     private fun updateChat(id: String, change: (Conversation) -> Conversation) { state.update { u -> u.copy(data = u.data.copy(conversations = u.data.conversations.map { if (it.id == id) change(it) else it })) } }
     fun send(text: String): Boolean {
-        if (text.isBlank() || state.value.busy || !state.value.ready || storageBlocked) return false
+        if (text.isBlank() || state.value.locked || !state.value.ready || storageBlocked) return false
         val s = state.value; val p = s.data.provider(); val c = s.data.chat(); val a = s.pending
         if (p.key.isBlank()) { notice("请先在模型设置中填写 API Key。") ; tab(3); return false }
         if (!p.images && (a?.image != null || c.messages.any { it.image != null })) { notice("此对话包含课件图片，请选择并开启支持图片的模型，或新建纯文字对话。") ; return false }
@@ -80,42 +120,91 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         persist()
         operation("正在回答") {
             try {
-                ai.stream(p, tutorMessages(s.data.tutorPrompt, history)) { chunk ->
+                ai.stream(p, tutorMessages(s.data.tutorPrompt, history, "本次上下文包含 ${history.count { it.image != null || it.source != null }} 条带课件图片或来源的消息。上课模式${if (s.classUi.running && !s.classUi.paused) "已开启" else "未运行或已暂停"}。读取动作由用户在应用界面触发，模型当前没有操作工具。")) { chunk ->
                     updateChat(c.id) { chat -> chat.copy(messages = chat.messages.dropLast(1) + chat.messages.last().copy(text = chat.messages.last().text + chunk)) }
                 }
+            } catch (e: Exception) {
+                updateChat(c.id) { chat -> val last = chat.messages.lastOrNull(); if (last?.role == "assistant" && last.text.isNotBlank()) chat.copy(messages = chat.messages.dropLast(1) + last.copy(text = last.text + "\n\n> 本次生成已中断，以上内容可能不完整。")) else chat }
+                throw e
             } finally { updateChat(c.id) { it.copy(messages = it.messages.filterNot { m -> m.role == "assistant" && m.text.isBlank() }) } }
         }
         return true
     }
     fun region(region: String) {
-        if (state.value.busy || region == state.value.data.region) return
-        login?.close(); data { it.copy(region = region, session = "", username = "") }
+        if (state.value.locked || region == state.value.data.region) return
+        cancelLogin(); data { it.copy(region = region, session = "", username = "", sessionVerified = false) }
         state.update { it.copy(qr = null, loginActive = false, courses = emptyList(), course = null, presentations = emptyList(), slides = emptyList()) }
     }
     fun startLogin() {
-        if (storageBlocked || !state.value.ready) return
-        login?.close(); val region = state.value.data.region
-        state.update { it.copy(qr = null, loginActive = true, notice = "正在获取微信二维码…") }
+        if (storageBlocked || !state.value.ready || state.value.busy) return
+        cancelLogin(); val region = state.value.data.region; val attempt = newId(); loginAttempt = attempt
+        state.update { it.copy(qr = null, loginActive = true, loginSteps = emptyList(), notice = "正在获取微信二维码…") }
+        loginStep("正在连接微信登录通道")
         login = rain.login(region,
-            onQr = { bytes -> state.update { it.copy(qr = bytes, notice = "用微信扫一扫识别二维码并确认。若不允许相册识别，需要另一台设备展示二维码。") } },
-            onSuccess = { session, name -> viewModelScope.launch { if (state.value.data.region == region) { data { it.copy(session = session, username = name) }; state.update { it.copy(loginActive = false, qr = null, notice = "已连接：$name。可以读取课程。") } } } },
-            onError = { message -> state.update { it.copy(loginActive = false, qr = null, notice = message) } }
+            onQr = { bytes -> if (loginAttempt == attempt) state.update { it.copy(qr = bytes, notice = "用微信扫一扫识别二维码并确认，完成后切回本 App。") } },
+            onSuccess = { session, name -> viewModelScope.launch {
+                if (loginAttempt != attempt || state.value.data.region != region) return@launch
+                try {
+                    state.update { it.copy(data = rememberLogin(it.data, region, session, name)) }
+                    withContext(NonCancellable + Dispatchers.IO) { disk.withLock { vault.save(state.value.data) } }
+                    if (loginAttempt != attempt) return@launch
+                    loginStep("登录记录已保存，正在验证账号")
+                    state.update { it.copy(loginActive = false, qr = null) }
+                    verifyLogin()
+                } catch (_: Exception) { if (loginAttempt == attempt) { loginStep("登录记录保存失败，请检查手机存储空间"); state.update { it.copy(loginActive = false, qr = null, notice = "已收到登录记录，但本机保存失败，请勿关闭 App。") } } }
+            } },
+            onError = { message -> if (loginAttempt == attempt) { loginStep(message); state.update { it.copy(loginActive = false, qr = null, notice = message) } } },
+            onStep = { message -> if (loginAttempt == attempt) loginStep(message) }
         )
     }
-    fun cancelLogin() { login?.close(); state.update { it.copy(loginActive = false, qr = null) } }
-    fun logout() { cancelLogin(); data { it.copy(session = "", username = "") }; state.update { it.copy(courses = emptyList(), course = null, presentations = emptyList(), slides = emptyList(), pending = null) } }
-    fun loadCourses() = operation("读取课程") { val list = withContext(Dispatchers.IO) { rain.courses(state.value.data) }; state.update { it.copy(courses = list, course = null, slides = emptyList(), presentations = emptyList(), notice = if (list.isEmpty()) "接口未返回课程。" else "已读取 ${list.size} 门课程；不保证包含全部历史学期。") } }
+    fun cancelLogin() { loginAttempt = newId(); login?.close(); state.update { it.copy(loginActive = false, qr = null) } }
+    fun logout() { pauseClass(); cancelLogin(); data { it.copy(session = "", username = "", sessionVerified = false) }; state.update { it.copy(courses = emptyList(), course = null, presentations = emptyList(), slides = emptyList(), pending = null, loginSteps = emptyList(), loginStage = "") } }
+    fun loadCourses() = operation("读取课程") { if (!state.value.data.sessionVerified) verifySession(state.value.data); val list = withContext(Dispatchers.IO) { rain.courses(state.value.data) }; state.update { it.copy(courses = list, course = null, slides = emptyList(), presentations = emptyList(), notice = if (list.isEmpty()) "接口未返回课程。" else "已读取 ${list.size} 门课程；不保证包含全部历史学期。") } }
     fun loadActivities(course: Course, page: Int = 0) = operation("读取课程活动") {
         val list = withContext(Dispatchers.IO) { rain.presentations(state.value.data, course, page) }
-        state.update { it.copy(course = course, activityPage = page, presentations = list, slides = emptyList(), notice = if (list.isEmpty()) "此批活动未返回明确的课件编号，可能尚未适配。可翻页继续查找。" else "找到 ${list.size} 份课件。") }
+        state.update { it.copy(course = course, activityPage = page, presentations = list, slides = emptyList(), notice = if (list.isEmpty()) "这批活动没有可读取的课堂课件，可查看下一批。" else "找到 ${list.size} 条课堂 / 课件记录。") }
     }
-    fun loadSlides(id: String) = operation("读取课件目录") { val (title, slides) = withContext(Dispatchers.IO) { rain.slides(state.value.data, id) }; state.update { it.copy(slideTitle = title, slides = slides, notice = "选择一页添加到对话。") } }
+    fun allCourses() { state.update { it.copy(course = null, presentations = emptyList(), slides = emptyList()) } }
+    fun openPresentation(p: Presentation) = if (p.isLesson) operation("读取本节课件目录") {
+        val list = withContext(Dispatchers.IO) { rain.lessonPresentations(state.value.data, p) }
+        state.update { it.copy(presentations = list, slides = emptyList(), notice = if (list.isEmpty()) "本节课未开放可读取的课件。" else "本节共 ${list.size} 份课件，点击查看页面。") }
+    } else loadSlides(p.id, p.lessonId, p.title)
+    fun loadSlides(id: String, lessonId: String = "", fallbackTitle: String = "") = operation("读取课件目录") {
+        val (title, slides) = withContext(Dispatchers.IO) { rain.slides(state.value.data, id, lessonId) }
+        state.update { it.copy(slideTitle = if (title == "课件 $id" && fallbackTitle.isNotBlank()) fallbackTitle else title, presentationId = id, slides = slides, notice = if (slides.isEmpty()) "课件尚未开放可读取的页面。" else "已读取 ${slides.size} 页，可以提问或连续整理讲解笔记。") }
+    }
     fun attach(slide: Slide) = operation("读取课件页面") {
         val a = withContext(Dispatchers.IO) { rain.attachment(state.value.slideTitle, slide) }
         state.update { it.copy(pending = a, tab = 0, notice = "已添加 ${a.label}。发送问题时会交给所选模型。") }
         if (state.value.data.autoNotes) generateNote(a)
     }
     fun notes() = operation("整理学习笔记") { generateNote(state.value.pending) }
+    fun batchNotes(from: String, to: String) = operation("准备连续笔记") {
+        val s = state.value
+        val pages = selectNotePages(from, to, s.slides)
+        val p = s.data.provider()
+        require(p.key.isNotBlank() && p.model.isNotBlank()) { "请先在模型页配置 API Key 和模型名称。" }
+        require(p.images || pages.none { it.cover.isNotBlank() }) { "所选页面包含图片，请先选择并开启支持图片输入的模型。" }
+        val noteId = newId(); val createdAt = System.currentTimeMillis()
+        val title = "${s.slideTitle} · 第 ${pages.first().page}–${pages.last().page} 页"
+        state.update { it.copy(tab = 2) }
+        buildNotebook(s.slideTitle, pages,
+            read = { page -> withContext(Dispatchers.IO) { rain.attachment(s.slideTitle, page) } },
+            generate = { a ->
+                val text = StringBuilder()
+                val input = listOf(Message("user", a.text.ifBlank { "请阅读课件图片并整理笔记。" }, a.image, a.label))
+                ai.stream(p, noteMessages(s.data.notesPrompt, input, a.label)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
+                text.toString()
+            },
+            checkpoint = { progress ->
+                val note = Note(noteId, title, progress.markdown, "$title（完成情况见正文）", "${p.name} / ${p.model}", createdAt)
+                state.update { it.copy(data = it.data.copy(notes = listOf(note) + it.data.notes.filterNot { n -> n.id == noteId })) }
+                withContext(NonCancellable + Dispatchers.IO) { disk.withLock { vault.save(state.value.data) } }
+            },
+            onPage = { page, index, total -> state.update { it.copy(operation = "连续笔记 $index/$total · 第 $page 页", noteDraft = "正在读取第 $page 页…") } }
+        )
+        notice("所选 ${pages.size} 页笔记已保存为一份，可编辑和导出。")
+    }
     private suspend fun generateNote(a: Attachment?) {
         val s = state.value.data; val p = s.provider()
         val input = a?.let { listOf(Message("user", it.text.ifBlank { "请根据课件图片整理笔记。" }, it.image, it.label)) } ?: s.chat().messages.takeLast(24)
@@ -129,5 +218,101 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         data { it.copy(notes = listOf(note) + it.notes) }
         notice("笔记已保存，可在笔记页编辑和导出。")
     }
-    override fun onCleared() { login?.close(); super.onCleared() }
+    fun discoverClasses() = operation("查找正在进行的课堂") {
+        val lessons = withContext(Dispatchers.IO) { rain.onLessons(state.value.data) }
+        state.update { it.copy(liveLessons = lessons) }
+        notice(if (lessons.isEmpty()) "当前账号没有正在进行的课堂。老师开课后可刷新。" else "请选择正在上的课程，进入后开始跟随。")
+    }
+    fun startClass(lesson: LiveLesson) {
+        val p = state.value.data.provider()
+        if (p.key.isBlank() || p.model.isBlank() || !p.images) { notice("上课模式需要先配置支持图片的模型和 API Key。"); tab(3); return }
+        if (state.value.locked) return
+        val existing = state.value.data.classRun
+        if (existing != null && !existing.ended && existing.lesson.id != lesson.id) { notice("请先结束上一节的上课模式，再开始另一节课。"); return }
+        val run = if (existing != null && !existing.ended && existing.lesson.id == lesson.id) existing else ClassRun(lesson, providerId = p.id)
+        if (run !== existing) {
+            val note = Note(run.noteId, "${lesson.title} · 课堂笔记", "# ${lesson.title}\n\n> 根据课堂展示的课件逐页整理；补充内容标为 AI 讲解，不包含老师口述。\n\n", "课堂：${lesson.title}", "${p.name} / ${p.model}", run.startedAt)
+            data { it.copy(classRun = run, notes = listOf(note) + it.notes) }
+        }
+        resumeClass()
+    }
+    fun resumeClass() {
+        if (state.value.busy || storageBlocked || state.value.classUi.let { it.running && !it.paused }) return
+        val run = state.value.data.classRun?.takeUnless { it.ended && it.pending.isEmpty() } ?: return
+        val p = state.value.data.providers.find { it.id == run.providerId }
+        if (p == null || p.key.isBlank() || !p.images) { notice("本节课使用的模型配置不可用，请恢复该配置。"); return }
+        val previousWriter = classWriter
+        val previousFeed = classFeed
+        val saved = state.value.data
+        val prompt = saved.notesPrompt
+        state.update { it.copy(classUi = ClassUi(running = true, paused = false, status = "正在连接课堂…")) }
+        classWriter = viewModelScope.launch {
+            previousWriter?.join()
+            try {
+                while (isActive) {
+                    val current = state.value.data.classRun ?: break
+                    if (!current.ended && classAccess == null) { classWake.receive(); continue }
+                    val page = current.pending.firstOrNull()
+                    if (page == null) { classWake.receive(); continue }
+                    state.update { it.copy(classUi = it.classUi.copy(current = page, status = "正在讲解第 ${page.page} 页")) }
+                    val (title, slides) = withContext(Dispatchers.IO) { rain.slides(saved, page.presentationId, lessonId = if (current.ended) current.lesson.id else "", authorization = classAccess?.authorization ?: "", onAuthorization = { classAccess?.authorization = it }) }
+                    val slide = slides.find { it.page == page.page } ?: error("第 ${page.page} 页尚未开放，已暂停；可稍后继续。")
+                    val a = withContext(Dispatchers.IO) { rain.attachment(title, slide) }
+                    val text = StringBuilder()
+                    ai.stream(p, noteMessages(prompt, listOf(Message("user", a.text.ifBlank { "讲解这一页课件。" }, a.image, a.label)), a.label)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
+                    require(text.isNotBlank()) { "这一页没有生成有效讲解。" }
+                    withContext(NonCancellable) {
+                        state.update { u ->
+                            val r = u.data.classRun ?: error("课堂状态已失效。")
+                            check(r.noteId == run.noteId)
+                            val updated = r.copy(completed = (r.completed + page.key).distinct(), pending = r.pending.filterNot { it.key == page.key })
+                            val notes = u.data.notes.map { if (it.id == run.noteId) it.copy(content = it.content + "## $title · 第 ${page.page} 页\n\n$text\n\n---\n\n") else it }
+                            check(notes.any { it.id == run.noteId }) { "课堂笔记已被移除。" }
+                            u.copy(data = u.data.copy(classRun = updated, notes = notes), noteDraft = "", classUi = u.classUi.copy(current = null, status = if (u.classUi.connected) "已保存 ${updated.completed.size} 页，等待老师翻页" else "已保存 ${updated.completed.size} 页"))
+                        }
+                        withContext(Dispatchers.IO) { disk.withLock { vault.save(state.value.data) } }
+                    }
+                    if (state.value.data.classRun?.ended == true && state.value.data.classRun?.pending?.isEmpty() == true) { state.update { it.copy(classUi = ClassUi(status = "本节课堂笔记已完成")) }; break }
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { pauseClass(e.message?.take(180) ?: "笔记整理中断，已完成页面已保留。") }
+        }
+        classFeed = viewModelScope.launch {
+            previousFeed?.join()
+            try {
+                if (run.ended) { classWake.trySend(Unit); return@launch }
+                classAccess = withContext(Dispatchers.IO) { rain.enterLesson(saved, run.lesson) }
+                classWake.trySend(Unit)
+                var attempt = 0
+                while (isActive) {
+                    try {
+                        rain.followLesson(saved, run.lesson, classAccess!!).collect { signal -> when (signal) {
+                            LiveSignal.Connected -> { attempt = 0; state.update { it.copy(classUi = it.classUi.copy(connected = true, status = "已连接课堂，跟随老师翻页")) } }
+                            is LiveSignal.Pages -> { data { d -> d.copy(classRun = d.classRun?.let { enqueueClassPages(it, signal.pages) }) }; classWake.trySend(Unit) }
+                            LiveSignal.Ended -> { data { it.copy(classRun = it.classRun?.copy(ended = true)) }; state.update { it.copy(classUi = it.classUi.copy(connected = false, status = "老师已下课，正在保存剩余讲解")) }; if (state.value.data.classRun?.pending?.isEmpty() == true) { classWriter?.cancel(); state.update { it.copy(classUi = ClassUi(status = "本节课堂笔记已完成")) } } }
+                        } }
+                        if (state.value.data.classRun?.ended == true) break
+                        error("课堂连接已断开。")
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) {
+                        attempt++
+                        if (attempt > 4) throw e
+                        state.update { it.copy(classUi = it.classUi.copy(connected = false, status = "连接中断，正在重连 $attempt/4…")) }
+                        delay(attempt * 2000L)
+                    }
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { pauseClass(e.message?.take(180) ?: "课堂连接失败，已保留本节笔记。") }
+        }
+        classWake.trySend(Unit)
+    }
+    private var classAccess: LessonAccess? = null
+    fun pauseClass(reason: String = "已暂停，完成的页面已保存") {
+        classFeed?.cancel(); classWriter?.cancel(); classAccess = null
+        state.update { it.copy(classUi = it.classUi.copy(paused = true, connected = false, current = null, status = reason), noteDraft = "") }
+        persist()
+    }
+    fun background() { if (state.value.classUi.running && !state.value.classUi.paused) pauseClass("已切到后台，上课模式已暂停；回到 App 后点击继续。") }
+    fun endClass() { pauseClass(); data { it.copy(classRun = it.classRun?.copy(ended = true, pending = emptyList())) }; state.update { it.copy(classUi = ClassUi(status = "本节已结束，已完成的笔记已保留")) } }
+    override fun onCleared() { login?.close(); classFeed?.cancel(); classWriter?.cancel(); super.onCleared() }
 }

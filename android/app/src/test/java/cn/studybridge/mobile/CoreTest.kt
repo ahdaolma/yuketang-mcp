@@ -51,7 +51,7 @@ class CoreTest {
         assertEquals(TUTOR_PROMPT, tutorMessages("", history).first().text)
         val tutor = tutorMessages("自定义定位", history)
         assertEquals("system", tutor.first().role); assertEquals("自定义定位", tutor.first().text)
-        assertEquals(history, tutor.drop(1))
+        assertEquals(history, tutor.drop(2))
         val notes = noteMessages("", history, "课件 · 第 1 页")
         assertEquals("system", notes.first().role); assertEquals(NOTES_PROMPT, notes.first().text)
         assertTrue(notes.last().text.contains("第 1 页"))
@@ -74,7 +74,7 @@ class CoreTest {
         val messages = b.getJSONArray("messages")
         assertEquals("system", messages.getJSONObject(0).getString("role"))
         assertEquals("内置助教定位", messages.getJSONObject(0).getString("content"))
-        val blocks = messages.getJSONObject(1).getJSONArray("content")
+        val blocks = messages.getJSONObject(2).getJSONArray("content")
         assertTrue(blocks.getJSONObject(0).getString("text").contains("第 1 页"))
         assertEquals("image_url", blocks.getJSONObject(1).getString("type"))
     }
