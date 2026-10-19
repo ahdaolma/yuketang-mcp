@@ -70,8 +70,8 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     fun bindWeb(page: WebPagePort?) { webPage = page }
     fun learningMode(mode: String) {
         if (state.value.locked || mode !in setOf("web", "native")) return
-        val run = state.value.data.classRun
-        if (run != null && !run.ended) { notice("请先结束本节上课模式，再切换学习方式。"); return }
+        if (state.value.data.learningMode == mode) return
+        if (!state.value.data.canUseLearningMode(mode)) { notice("请先结束本节上课模式，再切换学习方式。"); return }
         data { it.copy(learningMode = mode) }
     }
     fun consentWebClass(on: Boolean = true) { if (!state.value.locked) data { it.copy(webClassConsent = on) } }

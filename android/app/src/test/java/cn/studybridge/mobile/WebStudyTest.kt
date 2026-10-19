@@ -86,4 +86,13 @@ class WebStudyTest {
         val separate = recoverWebAnswer(saved.copy(classRun = other), "旧课堂的回答")
         assertEquals(other, separate.classRun); assertTrue(separate.notes.single().content.contains("旧课堂的回答"))
     }
+    @Test fun olderUnfinishedNativeClassCanReturnToItsOriginalModeAfterUpgrade() {
+        val run = ClassRun(LiveLesson("1", "课程", "1"), providerId = "existing-provider")
+        val migrated = Saved(classRun = run)
+        assertTrue(migrated.usesWeb); assertTrue(migrated.canUseLearningMode("native"))
+        assertFalse(migrated.canUseLearningMode("web"))
+        val web = migrated.copy(classRun = run.copy(providerId = WEB_PROVIDER_ID))
+        assertTrue(web.canUseLearningMode("web")); assertFalse(web.canUseLearningMode("native"))
+        assertTrue(migrated.copy(classRun = run.copy(ended = true)).canUseLearningMode("web"))
+    }
 }

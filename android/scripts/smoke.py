@@ -12,14 +12,22 @@ def adb(*args):
 def nodes():
     adb('shell', 'uiautomator', 'dump', '/sdcard/ui.xml')
     return ET.fromstring(adb('shell', 'cat', '/sdcard/ui.xml')).iter('node')
+def reveal(label):
+    size = adb('shell', 'wm', 'size').decode()
+    width, height = map(int, re.findall(r'(\d+)x(\d+)', size)[-1])
+    for attempt in range(6):
+        for n in nodes():
+            if n.get('text') == label or n.get('content-desc') == label:
+                x1,y1,x2,y2 = map(int, re.findall(r'\d+', n.get('bounds')))
+                if x2 > x1 and y2 > y1 and y1 < height and y2 > 0:
+                    return ((x1+x2)//2, (y1+y2)//2)
+        adb('shell','input','swipe',str(width//2),str(height*3//4),str(width//2),str(height//3),'250')
+        time.sleep(0.5)
+    raise AssertionError(f'Missing control: {label}')
 def tap(label):
-    for n in nodes():
-        if n.get('text') == label or n.get('content-desc') == label:
-            x1,y1,x2,y2 = map(int, re.findall(r'\d+', n.get('bounds')))
-            adb('shell','input','tap',str((x1+x2)//2),str((y1+y2)//2))
-            time.sleep(1)
-            return
-    raise AssertionError(f'Missing navigation: {label}')
+    x, y = reveal(label)
+    adb('shell','input','tap',str(x),str(y))
+    time.sleep(1)
 def shot(name, required):
     items = list(nodes())
     text = '\n'.join((n.get('text', '') + ' ' + n.get('content-desc', '')) for n in items)
@@ -38,7 +46,7 @@ tap('笔记'); shot('notes', ['0 份笔记', '保存网页回答'])
 tap('设置'); shot('settings-web', ['学习方式', '网页跟课适配', '模型接口'])
 # API details are hidden by default; switching is explicit.
 tap('模型接口')
-tap('配置模型与账号'); shot('models-advanced', ['使用 ChatGPT 账号', 'Continue with ChatGPT'])
+tap('配置模型与账号'); reveal('Continue with ChatGPT'); shot('models-advanced', ['使用 ChatGPT 账号', 'Continue with ChatGPT'])
 # No credential or account is supplied. Exercise the authorization service and cancellation only.
 tap('Continue with ChatGPT')
 time.sleep(3)

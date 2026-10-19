@@ -62,6 +62,11 @@ fun presentationRefs(value: Any?): List<String> {
 }
 
 fun Saved.providerReady(p: Provider): Boolean = if (p.chatgptAccountId.isBlank()) p.key.isNotBlank() else chatgptAccounts.any { it.id == p.chatgptAccountId && it.planGranted && it.connected }
+fun Saved.canUseLearningMode(mode: String): Boolean {
+    if (mode !in setOf("web", "native")) return false
+    val run = classRun ?: return true
+    return run.ended || mode == if (run.providerId == WEB_PROVIDER_ID) "web" else "native"
+}
 fun validateProviderDestination(p: Provider) {
     if (p.chatgptAccountId.isNotBlank()) require(p.baseUrl.trimEnd('/') == CHATGPT_API && p.protocol == "responses") { "ChatGPT 账号只能连接 OpenAI 官方 Responses 接口。" }
 }
