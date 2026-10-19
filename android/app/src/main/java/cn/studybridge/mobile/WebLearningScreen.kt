@@ -79,7 +79,7 @@ import androidx.compose.ui.viewinterop.AndroidView
             }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
-            if (web.progress < 100 && !ui.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            if ((web.progress < 100 || !web.visualReady) && web.error.isBlank() && !ui.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (ui.data.webPending != null && !ui.locked) Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("有一份待保存的网页回答", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
@@ -101,11 +101,9 @@ import androidx.compose.ui.viewinterop.AndroidView
         }
         // Keep this WebView alive across native tabs so the current conversation is not reloaded.
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            AndroidView(factory = { web.view }, modifier = Modifier.fillMaxSize(), update = {
+            AndroidView(factory = { WebPageContainer(it, web) }, modifier = Modifier.fillMaxSize(), update = {
                 @Suppress("UNUSED_VARIABLE") val pageRevision = revision
-                val shown = active && web.error.isBlank()
-                it.visibility = if (shown) View.VISIBLE else View.INVISIBLE
-                it.importantForAccessibility = if (shown) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+                it.showPage(active && web.error.isBlank())
             })
             if (active && web.error.isNotBlank()) WebConnectionError(web.error, !ui.locked, onRetry = { web.view.reload() }, onExternal = { vm.openLink(CHATGPT_WEB) })
         }

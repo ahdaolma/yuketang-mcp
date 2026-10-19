@@ -146,14 +146,18 @@ class MainActivity : ComponentActivity() {
         Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
             if (ui.busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(ui.operation, Modifier.padding(horizontal = 16.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall) }
             if (!ui.ready) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            else Box(Modifier.fillMaxSize()) {
-                if (ui.data.usesWeb) WebLearningScreen(ui, vm, web, ui.tab == 0, webRevision)
-                if (ui.tab != 0 || !ui.data.usesWeb) Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    when (ui.tab) { 0 -> ChatScreen(ui, vm); 1 -> RainScreen(ui, vm); 2 -> NotesScreen(ui, vm); else -> ModelScreen(ui, vm) }
-                }
-            }
+            else StudyPageContent(ui, vm, web, webRevision)
         }
     }
+    }
+}
+
+@Composable fun StudyPageContent(ui: UiState, vm: StudyViewModel, web: ChatGptWebSession, webRevision: Int) {
+    Box(Modifier.fillMaxSize()) {
+        if (ui.data.usesWeb) WebLearningScreen(ui, vm, web, ui.tab == 0, webRevision)
+        if (ui.tab != 0 || !ui.data.usesWeb) Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            when (ui.tab) { 0 -> ChatScreen(ui, vm); 1 -> RainScreen(ui, vm); 2 -> NotesScreen(ui, vm); else -> ModelScreen(ui, vm) }
+        }
     }
 }
 

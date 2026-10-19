@@ -3,6 +3,10 @@ package cn.studybridge.mobile
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
+import android.view.View
+import android.view.ViewGroup
+import android.view.MotionEvent
+import android.widget.FrameLayout
 import android.net.Uri
 import android.webkit.CookieManager
 import android.webkit.SslErrorHandler
@@ -128,6 +132,10 @@ class ChatGptWebSession(context: Context, private val changed: () -> Unit, priva
     override val pageUrl get() = view.url ?: CHATGPT_WEB
     var progress = 0; private set
     var error = ""; private set
+    var visualReady = false; private set
+    private var presented = true
+    private var frameRequest = 0L
+    private var destroyed = false
     private val script = context.assets.open("chatgpt-page.js").bufferedReader().use { it.readText() }
     val view = WebView(context).apply {
         settings.javaScriptEnabled = true
@@ -147,8 +155,9 @@ class ChatGptWebSession(context: Context, private val changed: () -> Unit, priva
                 if (request.hasGesture() && url.startsWith("https://")) external(url)
                 return true
             }
-            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) { this@ChatGptWebSession.error = ""; this@ChatGptWebSession.progress = 0; changed() }
-            override fun onPageFinished(view: WebView, url: String?) { this@ChatGptWebSession.progress = 100; CookieManager.getInstance().flush(); changed() }
+            override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) { frameRequest++; visualReady = false; this@ChatGptWebSession.error = ""; this@ChatGptWebSession.progress = 0; changed() }
+            override fun onPageCommitVisible(view: WebView, url: String?) { requestVisualFrame() }
+            override fun onPageFinished(view: WebView, url: String?) { this@ChatGptWebSession.progress = 100; CookieManager.getInstance().flush(); requestVisualFrame(); changed() }
             override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) { changed() }
             override fun onReceivedError(view: WebView, request: WebResourceRequest, failure: WebResourceError) {
                 if (request.isForMainFrame) { this@ChatGptWebSession.error = "网页加载失败，请检查网络后重试，或在系统浏览器打开。"; this@ChatGptWebSession.progress = 100; changed() }
@@ -161,11 +170,36 @@ class ChatGptWebSession(context: Context, private val changed: () -> Unit, priva
     }
     fun load(url: String = CHATGPT_WEB) { require(allowedWebNavigation(url)); view.loadUrl(url) }
     fun loading(value: Int) { progress = value; changed() }
+    fun present(shown: Boolean) {
+        if (presented == shown) return
+        presented = shown
+        frameRequest++
+        if (shown) requestVisualFrame() else view.clearFocus()
+    }
+    // Loading/DOM callbacks are not a paint fence. Restore the retained Chromium surface
+    // after tab changes, then invalidate only when the current DOM can actually be drawn.
+    fun requestVisualFrame() {
+        val request = ++frameRequest
+        view.post {
+            if (destroyed || !presented || !view.isAttachedToWindow || error.isNotBlank()) return@post
+            view.onResume()
+            view.requestLayout()
+            view.postVisualStateCallback(request, object : WebView.VisualStateCallback() {
+                override fun onComplete(requestId: Long) {
+                    if (destroyed || !presented || requestId != frameRequest) return
+                    visualReady = true
+                    view.invalidate()
+                    view.postInvalidateOnAnimation()
+                    changed()
+                }
+            })
+        }
+    }
     override suspend fun call(action: String, payload: JSONObject): JSONObject = withContext(Dispatchers.Main.immediate) {
         check(error.isBlank()) { error }
         check(isChatGptPage(view.url ?: "")) { "请先在学习页打开并登录 ChatGPT 网页，选择普通 Chat 对话。" }
         if (action == "prepare") {
-            withTimeout(5000) { while (!view.isShown) delay(16) }
+            withTimeout(5000) { while (!presented || !view.isShown) delay(16) }
             view.requestFocus()
         }
         withTimeout(5000) { suspendCancellableCoroutine { continuation ->
@@ -175,5 +209,29 @@ class ChatGptWebSession(context: Context, private val changed: () -> Unit, priva
             }
         } }
     }
-    fun destroy() { view.stopLoading(); view.webChromeClient = null; view.destroy() }
+    fun destroy() { destroyed = true; frameRequest++; view.stopLoading(); view.webChromeClient = null; view.destroy() }
+}
+
+// AndroidView also manages its root view's visibility. Keep the WebView child VISIBLE
+// and sized while native tabs cover it; hide the container by alpha instead of toggling
+// Chromium's surface to INVISIBLE. Hidden tabs must not accept touch or accessibility.
+class WebPageContainer(context: Context, private val page: ChatGptWebSession) : FrameLayout(context) {
+    private var showing: Boolean? = null
+    init {
+        (page.view.parent as? ViewGroup)?.removeView(page.view)
+        addView(page.view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+    }
+    fun showPage(shown: Boolean) {
+        if (showing == shown) return
+        showing = shown
+        page.view.visibility = View.VISIBLE
+        alpha = if (shown) 1f else 0f
+        importantForAccessibility = if (shown) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        page.present(shown)
+        if (shown) page.requestVisualFrame()
+    }
+    override fun onAttachedToWindow() { super.onAttachedToWindow(); if (showing == true) page.requestVisualFrame() }
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) { super.onSizeChanged(w, h, oldw, oldh); if (showing == true && w > 0 && h > 0) page.requestVisualFrame() }
+    override fun onInterceptTouchEvent(event: MotionEvent) = showing != true || super.onInterceptTouchEvent(event)
+    override fun onTouchEvent(event: MotionEvent) = showing != true || super.onTouchEvent(event)
 }
