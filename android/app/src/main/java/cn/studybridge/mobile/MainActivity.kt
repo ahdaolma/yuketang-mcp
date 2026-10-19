@@ -465,6 +465,8 @@ private fun preview(bytes: ByteArray): Bitmap? {
     var visible by remember { mutableStateOf(false) }
     var chooseModel by remember { mutableStateOf(false) }
     var modelQuery by remember { mutableStateOf("") }
+    var showLearner by rememberSaveable { mutableStateOf(false) }
+    var learner by rememberSaveable(ui.data.learnerProfile) { mutableStateOf(ui.data.learnerProfile) }
     var showPrompts by rememberSaveable { mutableStateOf(false) }
     var tutor by remember(ui.data.tutorPrompt) { mutableStateOf(ui.data.tutorPrompt) }
     var notes by remember(ui.data.notesPrompt) { mutableStateOf(ui.data.notesPrompt) }
@@ -534,6 +536,25 @@ private fun preview(bytes: ByteArray): Bitmap? {
         }
         }
         StudySectionLabel("助手设置")
+        StudyPanel { Card(onClick = { showLearner = !showLearner }, colors = CardDefaults.cardColors(containerColor = Color.Transparent)) {
+            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Icon(Icons.Outlined.School, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("我的学习情况", style = MaterialTheme.typography.titleSmall)
+                    Text(if (ui.data.learnerProfile.isBlank()) "告诉 AI 你的基础、难点与目标" else ui.data.learnerProfile.replace("\n", " "), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(if (showLearner) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, Modifier.size(20.dp))
+            }
+        } }
+        if (showLearner) {
+            OutlinedTextField(learner, { learner = it.take(LEARNER_PROFILE_LIMIT) }, label = { Text("当前水平与学习需求") }, placeholder = { Text("例如：大一，生物基础较弱。遗传学术语容易混淆，希望先讲基础，再拆解机制，最后用例题检验理解。") }, supportingText = { Text("${learner.length} / $LEARNER_PROFILE_LIMIT · 可随学习进展调整") }, modifier = Modifier.fillMaxWidth(), minLines = 4, maxLines = 8, enabled = !ui.locked)
+            Text("加密保存在本机。应用内讲解和笔记会自动参考，生成时随学习请求发送给所选模型。网页自由提问前，请带入并发送一次；新网页对话需重新带入。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { vm.saveLearnerProfile(learner) }, enabled = !ui.locked && learner.trim() != ui.data.learnerProfile, unavailableReason = "修改学习情况后即可保存。") { Text("保存学习情况") }
+                TextButton(onClick = { learner = ""; vm.saveLearnerProfile("") }, enabled = !ui.locked && (learner.isNotBlank() || ui.data.learnerProfile.isNotBlank())) { Text("清除") }
+                if (ui.data.usesWeb) OutlinedButton(onClick = vm::fillWebLearnerProfile, enabled = !ui.locked && ui.data.learnerProfile.isNotBlank() && learner.trim() == ui.data.learnerProfile, unavailableReason = "请先填写并保存学习情况，再带入网页。") { Text("带入网页对话") }
+            }
+        }
         StudyPanel { Card(onClick = { showPrompts = !showPrompts }, colors = CardDefaults.cardColors(containerColor = Color.Transparent)) {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) { Icon(Icons.Outlined.EditNote, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant); Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text("学习助手提示词", style = MaterialTheme.typography.titleSmall); Text("调整讲解方式与笔记结构", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Icon(if (showPrompts) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, Modifier.size(20.dp)) }
         } }

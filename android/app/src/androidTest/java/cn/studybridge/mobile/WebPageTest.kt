@@ -51,6 +51,17 @@ class WebPageTest {
             assertFalse(page.call("answer", JSONObject().put("marker", "another-page")).optBoolean("finished"))
         }
     }
+    @Test fun learnerProfileFillsVisibleComposerWithoutSendingOrReplacingDraft() = runBlocking {
+        for (rich in listOf(false, true)) withPage(fixture(rich = rich)) { page ->
+            val prompt = learnerWebPrompt(TUTOR_PROMPT, "PROFILE-beginner：先解释术语")
+            val driver = WebStudyDriver(page, { delay(50) }, 20)
+            driver.fill(prompt, null)
+            assertTrue(page.call("ready", JSONObject().put("marker", "PROFILE-beginner：先解释术语")).optBoolean("ready"))
+            assertFalse(page.call("answer", JSONObject().put("marker", "PROFILE-beginner")).optBoolean("matchedUser"))
+            assertTrue(runCatching { driver.fill("不可覆盖", null) }.isFailure)
+            assertTrue(page.call("ready", JSONObject().put("marker", prompt)).optBoolean("ready"))
+        }
+    }
     @Test fun actualPageDraftIsPreservedAndIncompleteOutputCannotBeSaved() = runBlocking {
         withPage(fixture(draft = "我还没写完的问题")) { page ->
             assertFalse(page.call("prepare", JSONObject().put("text", "不得覆盖")).optBoolean("ok"))

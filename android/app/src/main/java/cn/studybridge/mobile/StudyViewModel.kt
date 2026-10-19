@@ -98,14 +98,14 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         check(state.value.data.webPending == null) { "上一份网页回答尚未保存，请先在学习页恢复回答；不会重复发送。" }
         state.update { it.copy(tab = 0) }
         val pending = WebPending("RS-${newId()}", a.label, webReturnUrl(webPage?.pageUrl ?: CHATGPT_WEB), pageKey, noteId, noteSource)
-        return webDriver().generate(prompt, a, pending.marker, onMatched = { webLocation(webPage?.pageUrl ?: CHATGPT_WEB) }) {
+        return webDriver().generate(withLearnerProfile(prompt, state.value.data.learnerProfile), a, pending.marker, onMatched = { webLocation(webPage?.pageUrl ?: CHATGPT_WEB) }) {
             checkpoint { it.copy(webPending = pending) }
         }
     }
     fun fillWebAttachment() = operation("带入当前课件") {
         val a = state.value.pending ?: error("先在课程中选择一页课件。")
         require(state.value.data.usesWeb)
-        webDriver().fill("${state.value.data.tutorPrompt}\n\n请讲解这一页课件。资料来源：${a.label}\n${a.text}", a)
+        webDriver().fill("${withLearnerProfile(state.value.data.tutorPrompt, state.value.data.learnerProfile)}\n\n请讲解这一页课件。资料来源：${a.label}\n${a.text}", a)
         state.update { it.copy(pending = null) }
         notice("课件已带入，请在网页核对附件并发送。")
     }
@@ -122,6 +122,19 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         notice("已清除待处理标记；网页中的消息不会删除。再次处理该页可能产生重复请求。")
     }
     fun autoNotes(on: Boolean) { data { it.copy(autoNotes = on) } }
+    fun saveLearnerProfile(profile: String) = operation("保存学习情况") {
+        require(profile.length <= LEARNER_PROFILE_LIMIT) { "学习情况最多 $LEARNER_PROFILE_LIMIT 字。" }
+        checkpoint { it.copy(learnerProfile = profile.trim()) }
+        notice(if (profile.isBlank()) "学习情况已清除，后续应用请求不再带入。已发送到网页的内容需在网页中更新或新建对话。" else "学习情况已加密保存。应用讲解与笔记会参考；网页自由聊天请带入并发送。")
+    }
+    fun fillWebLearnerProfile() = operation("带入学习情况") {
+        val saved = state.value.data
+        check(saved.usesWeb) { "请先切换到 ChatGPT 网页。" }
+        check(saved.learnerProfile.isNotBlank()) { "请先填写并保存学习情况。" }
+        state.update { it.copy(tab = 0) }
+        webDriver().fill(learnerWebPrompt(saved.tutorPrompt, saved.learnerProfile), null)
+        notice("学习情况已填入网页输入框，请核对后发送；新网页对话需重新带入。")
+    }
     fun savePrompts(tutor: String, notes: String) { data { it.copy(tutorPrompt = tutor.ifBlank { TUTOR_PROMPT }, notesPrompt = notes.ifBlank { NOTES_PROMPT }) }; notice("角色提示词已保存，每次请求都会发送给所选模型。") }
     fun editNote(id: String, text: String): Boolean { if (state.value.locked || !state.value.data.noteWritable(id) || classWriter?.isActive == true && state.value.data.classRun?.noteId == id) { notice("请先结束整理并恢复待保存回答，再编辑笔记。"); return false }; if (state.value.data.notes.none { it.id == id }) return false; data { it.copy(notes = it.notes.map { n -> if (n.id == id) n.copy(content = text) else n }) }; return true }
     fun deleteNote(id: String): Boolean { if (state.value.locked || !state.value.data.noteWritable(id) || classWriter?.isActive == true && state.value.data.classRun?.noteId == id) { notice("请先结束整理并恢复待保存回答，再删除笔记。"); return false }; if (state.value.data.notes.none { it.id == id }) return false; data { it.copy(notes = it.notes.filterNot { n -> n.id == id }) }; return true }
@@ -184,7 +197,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         persist()
         operation("正在回答") {
             try {
-                ai.stream(authorizedProvider(p), tutorMessages(s.data.tutorPrompt, history, "本次上下文包含 ${history.count { it.image != null || it.source != null }} 条带课件图片或来源的消息。上课模式${if (s.classUi.running && !s.classUi.paused) "已开启" else "未运行或已暂停"}。读取动作由用户在应用界面触发，模型当前没有操作工具。")) { chunk ->
+                ai.stream(authorizedProvider(p), tutorMessages(s.data.tutorPrompt, history, "本次上下文包含 ${history.count { it.image != null || it.source != null }} 条带课件图片或来源的消息。上课模式${if (s.classUi.running && !s.classUi.paused) "已开启" else "未运行或已暂停"}。读取动作由用户在应用界面触发，模型当前没有操作工具。", s.data.learnerProfile)) { chunk ->
                     updateChat(c.id) { chat -> chat.copy(messages = chat.messages.dropLast(1) + chat.messages.last().copy(text = chat.messages.last().text + chunk)) }
                 }
             } catch (e: Exception) {
@@ -266,7 +279,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                 val text = StringBuilder()
                 val input = listOf(Message("user", a.text.ifBlank { "请阅读课件图片并整理笔记。" }, a.image, a.label))
                 if (s.data.usesWeb) webGenerate(a, s.data.notesPrompt, "batch:$pageNumber", noteId, source(pageIndex)) else {
-                    ai.stream(authorizedProvider(p), noteMessages(s.data.notesPrompt, input, a.label)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
+                    ai.stream(authorizedProvider(p), noteMessages(s.data.notesPrompt, input, a.label, s.data.learnerProfile)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
                     text.toString()
                 }
             },
@@ -293,7 +306,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         val source = a?.label ?: "对话：${s.chat().title}"
         val text = StringBuilder()
         state.update { it.copy(operation = "自动整理笔记", noteDraft = "正在阅读资料…") }
-        ai.stream(authorizedProvider(p), noteMessages(s.notesPrompt, input, source)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
+        ai.stream(authorizedProvider(p), noteMessages(s.notesPrompt, input, source, s.learnerProfile)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
         require(text.isNotBlank()) { "模型未生成笔记。" }
         val note = Note(title = a?.label ?: s.chat().title, content = text.toString(), source = source, model = "${p.name} / ${p.model}")
         data { it.copy(notes = listOf(note) + it.notes) }
@@ -350,7 +363,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                     val a = withContext(Dispatchers.IO) { rain.attachment(title, slide) }
                     val text = StringBuilder()
                     if (web) text.append(webGenerate(a, prompt, page.key, run.noteId))
-                    else ai.stream(authorizedProvider(p!!), noteMessages(prompt, listOf(Message("user", a.text.ifBlank { "讲解这一页课件。" }, a.image, a.label)), a.label)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
+                    else ai.stream(authorizedProvider(p!!), noteMessages(prompt, listOf(Message("user", a.text.ifBlank { "讲解这一页课件。" }, a.image, a.label)), a.label, saved.learnerProfile)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
                     require(text.isNotBlank()) { "这一页没有生成有效讲解。" }
                     checkpoint { d ->
                         val r = d.classRun?.takeIf { it.noteId == run.noteId }

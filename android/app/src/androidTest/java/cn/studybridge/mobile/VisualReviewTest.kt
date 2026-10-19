@@ -26,7 +26,7 @@ class VisualReviewTest {
     private val courseTitle = "医学遗传学：遗传信息的传递与疾病机制"
     private val firstNote = Note("ui-note-1", "DNA 的变性、复性与熔解温度", "# 先掌握这三个概念\n\nDNA 变性是双链间氢键等相互作用被破坏，双链解开为单链的过程。\n\n## 对照理解\n\n| 概念 | 主要变化 |\n| --- | --- |\n| 变性 | 双链解开 |\n| 复性 | 互补单链重新配对 |\n\n## 容易混淆\n\n**变性通常不涉及磷酸二酯键断裂。**\n\n- 熔解温度与序列和溶液条件有关。\n- AI 补充应与课件原文区分。", "生物化学 · 第 12–16 页", "ChatGPT 网页", 1792418400000)
     private fun sample() = UiState(ready = true, tab = 1,
-        data = Saved(session = "visual-fixture-only", username = "学习者", sessionVerified = true, notes = listOf(firstNote,
+        data = Saved(learnerProfile = "大一，生物基础较弱；希望先解释术语，再分步骤讲机制，配例题和自测。", session = "visual-fixture-only", username = "学习者", sessionVerified = true, notes = listOf(firstNote,
             Note("ui-note-2", "细胞膜的物质转运与静息电位", "## 主动转运\n\n区分能量来源、方向与载体，理解浓度梯度和电化学梯度。", "生理学 · 第 4–8 页", "ChatGPT 网页"),
             Note("ui-note-3", "孟德尔遗传规律：从家系图到风险判断", "## 先观察家系\n\n结合代际分布、性别比例与亲子关系，逐步判断遗传方式。", "医学遗传学 · 第 20–23 页", "ChatGPT 网页"))),
         courses = listOf(Course("1", courseTitle, "秋季学期 · 本科课程"), Course("2", "生物化学", "秋季学期 · 本科课程"), Course("3", "生理学", "秋季学期 · 本科课程")))
@@ -115,6 +115,9 @@ class VisualReviewTest {
         compose.onNodeWithText("连接中").assertIsDisplayed()
         compose.runOnIdle { state.value = base.copy(tab = 3) }
         compose.onNodeWithText("学习方式").assertIsDisplayed(); shot("sample-settings-large-text")
+        compose.onNodeWithText("我的学习情况").performScrollTo().performClick()
+        compose.onNodeWithText("当前水平与学习需求").performScrollTo().assertIsDisplayed()
+        shot(if (state.value.tab == 3 && state.value.classUi.running) "sample-learner-class" else "sample-learner-settings")
         compose.onNodeWithText("学习助手提示词").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { state.value = base.copy(tab = 2) }
         compose.onNodeWithText(firstNote.title).performClick()
@@ -126,6 +129,8 @@ class VisualReviewTest {
         compose.onNodeWithText(firstNote.title).performClick(); verifyTableRows(); shot("sample-note-reading-dark")
         compose.runOnIdle { state.value = state.value.copy(tab = 3) }
         compose.onNodeWithText("学习方式").assertIsDisplayed(); compose.onNodeWithText("ChatGPT 网页").assertIsSelected(); shot("sample-settings-dark")
+        compose.onNodeWithText("我的学习情况").performScrollTo().performClick()
+        compose.onNodeWithText("当前水平与学习需求").performScrollTo().assertIsDisplayed(); shot("sample-learner-dark")
         compose.onNodeWithText("学习助手提示词").performScrollTo().assertIsDisplayed()
     }
 }
