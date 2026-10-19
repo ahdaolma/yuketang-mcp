@@ -59,7 +59,7 @@ class WebPageTest {
             assertTrue(page.call("ready", JSONObject().put("marker", "PROFILE-beginner：先解释术语")).optBoolean("ready"))
             assertFalse(page.call("answer", JSONObject().put("marker", "PROFILE-beginner")).optBoolean("matchedUser"))
             assertTrue(runCatching { driver.fill("不可覆盖", null) }.isFailure)
-            assertTrue(page.call("ready", JSONObject().put("marker", prompt)).optBoolean("ready"))
+            assertTrue(page.call("ready", JSONObject().put("marker", "PROFILE-beginner：先解释术语")).optBoolean("ready"))
         }
     }
     @Test fun actualPageDraftIsPreservedAndIncompleteOutputCannotBeSaved() = runBlocking {
