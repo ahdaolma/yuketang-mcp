@@ -11,6 +11,19 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import cn.studybridge.mobile.FeedbackButton as Button
+import cn.studybridge.mobile.FeedbackOutlinedButton as OutlinedButton
+import cn.studybridge.mobile.FeedbackTextButton as TextButton
+import cn.studybridge.mobile.FeedbackFilledTonalButton as FilledTonalButton
+import cn.studybridge.mobile.FeedbackIconButton as IconButton
+import cn.studybridge.mobile.FeedbackFilledIconButton as FilledIconButton
+import cn.studybridge.mobile.FeedbackFilterChip as FilterChip
+import cn.studybridge.mobile.FeedbackSwitch as Switch
+import cn.studybridge.mobile.FeedbackDropdownMenuItem as DropdownMenuItem
+import cn.studybridge.mobile.FeedbackNavigationBarItem as NavigationBarItem
+import cn.studybridge.mobile.FeedbackCard as Card
+import cn.studybridge.mobile.FeedbackOutlinedCard as OutlinedCard
+
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier

@@ -32,6 +32,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import cn.studybridge.mobile.FeedbackButton as Button
+import cn.studybridge.mobile.FeedbackOutlinedButton as OutlinedButton
+import cn.studybridge.mobile.FeedbackTextButton as TextButton
+import cn.studybridge.mobile.FeedbackFilledTonalButton as FilledTonalButton
+import cn.studybridge.mobile.FeedbackIconButton as IconButton
+import cn.studybridge.mobile.FeedbackFilledIconButton as FilledIconButton
+import cn.studybridge.mobile.FeedbackFilterChip as FilterChip
+import cn.studybridge.mobile.FeedbackSwitch as Switch
+import cn.studybridge.mobile.FeedbackDropdownMenuItem as DropdownMenuItem
+import cn.studybridge.mobile.FeedbackNavigationBarItem as NavigationBarItem
+import cn.studybridge.mobile.FeedbackCard as Card
+import cn.studybridge.mobile.FeedbackOutlinedCard as OutlinedCard
+
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
@@ -126,6 +139,14 @@ class MainActivity : ComponentActivity() {
             if (vm.ui.value.notice == message) vm.notice("")
         }
     }
+    val unavailable = when {
+        ui.chatgptLoginActive -> "正在等待账号授权，请先完成或取消本次授权。"
+        ui.busy -> "正在${ui.operation}，请稍候或点击停止。"
+        ui.classUi.running && !ui.classUi.paused -> "上课模式正在运行，请先暂停再操作。"
+        else -> "请先准备所需课件或完成配置。"
+    }
+    val controlFeedback = remember(vm, unavailable) { ControlFeedback(vm::notice, unavailable) }
+    CompositionLocalProvider(LocalControlFeedback provides controlFeedback) {
     Scaffold(
         topBar = { if (!(ui.data.usesWeb && ui.tab == 0)) TopAppBar(
             title = { Text(if (ui.tab == 3) "设置" else labels[ui.tab], style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) },
@@ -150,6 +171,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
     }
 }
 
@@ -195,7 +217,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 ui.data.conversations.forEach { c -> DropdownMenuItem(text = { Text(c.title) }, onClick = { vm.selectChat(c.id); history = false }, trailingIcon = { IconButton(onClick = { vm.deleteChat(c.id); history = false }, enabled = !ui.locked) { Icon(Icons.Default.DeleteOutline, "删除对话") } }) }
             } }
             TextButton(onClick = vm::newChat, enabled = !ui.locked) { Text("新对话") }
-            Spacer(Modifier.weight(1f)); TextButton(onClick = vm::notes, enabled = !ui.locked && (chat.messages.isNotEmpty() || ui.pending != null)) { Text("生成笔记") }
+            Spacer(Modifier.weight(1f)); TextButton(onClick = vm::notes, enabled = !ui.locked && (chat.messages.isNotEmpty() || ui.pending != null), unavailableReason = if (chat.messages.isEmpty() && ui.pending == null) "先选择一页课件或进行对话，再生成笔记。" else null) { Text("生成笔记") }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
             if (chat.messages.isEmpty()) item { Column(Modifier.fillMaxWidth().padding(vertical = 56.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -211,7 +233,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
         if (ui.data.provider().chatgptAccountId.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) { Text("使用 ChatGPT 套餐", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary); TextButton(onClick = { vm.openLink(CHATGPT_USAGE) }) { Text("管理用量") } }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
             OutlinedTextField(input, { if (it.length <= 20000) input = it }, Modifier.weight(1f), placeholder = { Text("问问这页课件…") }, shape = RoundedCornerShape(24.dp), maxLines = 4, enabled = !ui.locked)
-            FilledIconButton(onClick = { if (vm.send(input.trim())) input = "" }, enabled = !ui.locked && input.isNotBlank()) { Icon(Icons.Default.ArrowUpward, "发送给所选模型") }
+            FilledIconButton(onClick = { if (vm.send(input.trim())) input = "" }, enabled = !ui.locked && input.isNotBlank(), unavailableReason = if (input.isBlank()) "先输入你的问题，再发送。" else null) { Icon(Icons.Default.ArrowUpward, "发送给所选模型") }
         }
     }
 }
