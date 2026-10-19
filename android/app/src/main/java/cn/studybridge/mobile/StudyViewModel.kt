@@ -24,6 +24,7 @@ import kotlinx.coroutines.sync.withLock
 data class UiState(val data: Saved = Saved(), val tab: Int = 0, val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val activityPage: Int = 0, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi(), val chatgptLoginActive: Boolean = false, val chatgptStage: String = "", val chatgptPlanWelcome: Boolean = false, val modelNames: Map<String, String> = emptyMap()) { val locked get() = busy || chatgptLoginActive || (classUi.running && !classUi.paused) }
 
 class StudyViewModel(app: Application) : AndroidViewModel(app) {
+    val noteReader = NoteReader()
     private val vault = Vault(app)
     private val disk = Mutex()
     private val rain = RainApi()
@@ -122,8 +123,8 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun autoNotes(on: Boolean) { data { it.copy(autoNotes = on) } }
     fun savePrompts(tutor: String, notes: String) { data { it.copy(tutorPrompt = tutor.ifBlank { TUTOR_PROMPT }, notesPrompt = notes.ifBlank { NOTES_PROMPT }) }; notice("角色提示词已保存，每次请求都会发送给所选模型。") }
-    fun editNote(id: String, text: String) { if (state.value.locked || !state.value.data.noteWritable(id) || classWriter?.isActive == true && state.value.data.classRun?.noteId == id) { notice("请先结束整理并恢复待保存回答，再编辑笔记。"); return }; data { it.copy(notes = it.notes.map { n -> if (n.id == id) n.copy(content = text) else n }) } }
-    fun deleteNote(id: String) { if (state.value.locked || !state.value.data.noteWritable(id) || classWriter?.isActive == true && state.value.data.classRun?.noteId == id) { notice("请先结束整理并恢复待保存回答，再删除笔记。"); return }; data { it.copy(notes = it.notes.filterNot { n -> n.id == id }) } }
+    fun editNote(id: String, text: String): Boolean { if (state.value.locked || !state.value.data.noteWritable(id) || classWriter?.isActive == true && state.value.data.classRun?.noteId == id) { notice("请先结束整理并恢复待保存回答，再编辑笔记。"); return false }; if (state.value.data.notes.none { it.id == id }) return false; data { it.copy(notes = it.notes.map { n -> if (n.id == id) n.copy(content = text) else n }) }; return true }
+    fun deleteNote(id: String): Boolean { if (state.value.locked || !state.value.data.noteWritable(id) || classWriter?.isActive == true && state.value.data.classRun?.noteId == id) { notice("请先结束整理并恢复待保存回答，再删除笔记。"); return false }; if (state.value.data.notes.none { it.id == id }) return false; data { it.copy(notes = it.notes.filterNot { n -> n.id == id }) }; return true }
     fun newChat() { if (state.value.busy) return; val c = Conversation(); data { it.copy(conversations = listOf(c) + it.conversations, currentChat = c.id) }; state.update { it.copy(pending = null) } }
     fun selectChat(id: String) { if (!state.value.busy) { data { it.copy(currentChat = id) }; state.update { it.copy(pending = null) } } }
     fun deleteChat(id: String) { if (state.value.busy) return; data { val list = it.conversations.filterNot { c -> c.id == id }.ifEmpty { listOf(Conversation()) }; it.copy(conversations = list, currentChat = if (it.currentChat == id) list.first().id else it.currentChat) } }

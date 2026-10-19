@@ -5,6 +5,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material3.*
@@ -71,17 +73,17 @@ private fun Modifier.pressFeedback(enabled: Boolean, unavailableReason: String? 
         }
 }
 
-@Composable fun FeedbackButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, colors: ButtonColors = ButtonDefaults.buttonColors(), shape: Shape = ButtonDefaults.shape, unavailableReason: String? = null, content: @Composable RowScope.() -> Unit) {
+@Composable fun FeedbackButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, colors: ButtonColors = ButtonDefaults.buttonColors(), shape: Shape = RoundedCornerShape(12.dp), unavailableReason: String? = null, content: @Composable RowScope.() -> Unit) {
     NativeButton(feedbackClick(onClick), modifier.pressFeedback(enabled, unavailableReason), enabled = enabled, colors = colors, shape = shape, content = content)
 }
 @Composable fun FeedbackOutlinedButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, colors: ButtonColors = ButtonDefaults.outlinedButtonColors(), unavailableReason: String? = null, content: @Composable RowScope.() -> Unit) {
-    NativeOutlinedButton(feedbackClick(onClick), modifier.pressFeedback(enabled, unavailableReason), enabled = enabled, colors = colors, content = content)
+    NativeOutlinedButton(feedbackClick(onClick), modifier.pressFeedback(enabled, unavailableReason), enabled = enabled, colors = colors, shape = RoundedCornerShape(12.dp), content = content)
 }
 @Composable fun FeedbackTextButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, colors: ButtonColors = ButtonDefaults.textButtonColors(), unavailableReason: String? = null, content: @Composable RowScope.() -> Unit) {
-    NativeTextButton(feedbackClick(onClick), modifier.pressFeedback(enabled, unavailableReason), enabled = enabled, colors = colors, content = content)
+    NativeTextButton(feedbackClick(onClick), modifier.pressFeedback(enabled, unavailableReason), enabled = enabled, colors = colors, shape = RoundedCornerShape(12.dp), content = content)
 }
 @Composable fun FeedbackFilledTonalButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, colors: ButtonColors = ButtonDefaults.filledTonalButtonColors(), unavailableReason: String? = null, content: @Composable RowScope.() -> Unit) {
-    NativeFilledTonalButton(feedbackClick(onClick), modifier.pressFeedback(enabled, unavailableReason), enabled = enabled, colors = colors, content = content)
+    NativeFilledTonalButton(feedbackClick(onClick), modifier.pressFeedback(enabled, unavailableReason), enabled = enabled, colors = colors, shape = RoundedCornerShape(12.dp), content = content)
 }
 @Composable fun FeedbackIconButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, unavailableReason: String? = null, content: @Composable () -> Unit) {
     NativeIconButton(feedbackClick(onClick), modifier.pressFeedback(enabled, unavailableReason), enabled = enabled, content = content)
@@ -92,9 +94,9 @@ private fun Modifier.pressFeedback(enabled: Boolean, unavailableReason: String? 
 @Composable fun FeedbackFilterChip(selected: Boolean, onClick: () -> Unit, label: @Composable () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
     NativeFilterChip(selected, feedbackClick(onClick), label, modifier.pressFeedback(enabled), enabled = enabled)
 }
-@Composable fun FeedbackSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+@Composable fun FeedbackSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, unavailableReason: String? = null) {
     val view = LocalView.current
-    NativeSwitch(checked, { view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); onCheckedChange(it) }, modifier.pressFeedback(enabled), enabled = enabled)
+    NativeSwitch(checked, { view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); onCheckedChange(it) }, modifier.pressFeedback(enabled, unavailableReason), enabled = enabled)
 }
 @Composable fun FeedbackDropdownMenuItem(text: @Composable () -> Unit, onClick: () -> Unit, modifier: Modifier = Modifier, leadingIcon: @Composable (() -> Unit)? = null, trailingIcon: @Composable (() -> Unit)? = null, enabled: Boolean = true) {
     NativeDropdownMenuItem(text, feedbackClick(onClick), modifier.pressFeedback(enabled), leadingIcon = leadingIcon, trailingIcon = trailingIcon, enabled = enabled)

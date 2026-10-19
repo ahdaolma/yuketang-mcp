@@ -12,6 +12,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CoreTest {
+    @Test fun noteSummariesPreserveScientificComparisonSigns() {
+        val preview = notePreview("# 阅读重点\n\n**pH > 7.4**，范围为 0 < x < 1。<p>继续比较。</p>")
+        assertTrue(preview.contains("pH > 7.4")); assertTrue(preview.contains("0 < x < 1"))
+        assertFalse(preview.contains("<p>")); assertFalse(preview.contains("**"))
+    }
     @Test fun endpointKeepsCustomPrefixWithoutDuplicatingCompletionPath() {
         assertEquals("https://api.deepseek.com/chat/completions", aiEndpoint("https://api.deepseek.com/").toString())
         assertEquals("https://example.com/v1/chat/completions", aiEndpoint("https://example.com/v1/chat/completions/").toString())

@@ -8,8 +8,11 @@ import android.webkit.WebView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import cn.studybridge.mobile.FeedbackButton as Button
 import cn.studybridge.mobile.FeedbackOutlinedButton as OutlinedButton
@@ -28,6 +31,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 
@@ -52,12 +56,12 @@ import androidx.compose.ui.viewinterop.AndroidView
     if (discard) AlertDialog(onDismissRequest = { discard = false }, title = { Text("清除待处理标记？") }, text = { Text("网页中的消息不会删除。请先检查并保存已有回答；清除后再次处理同一页可能重复发送并消耗额度。") }, confirmButton = { TextButton(onClick = { vm.discardWebPending(); discard = false }) { Text("确认清除") } }, dismissButton = { TextButton(onClick = { discard = false }) { Text("返回检查") } })
     Column(Modifier.fillMaxSize()) {
         if (active) {
-            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("ChatGPT 网页", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = vm::saveWebAnswer, enabled = !ui.locked) { Text("保存回答") }
+            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 20.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("ChatGPT 网页", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (ui.busy) TextButton(onClick = vm::stop) { Text("停止") }
+                else IconButton(onClick = vm::saveWebAnswer, enabled = !ui.locked) { Icon(Icons.Outlined.BookmarkAdd, "保存回答", Modifier.size(22.dp)) }
                 Box {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreHoriz, "网页选项") }
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreHoriz, "网页选项", Modifier.size(22.dp)) }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text("刷新网页") }, enabled = !ui.locked, onClick = { web.view.reload(); menu = false })
                         DropdownMenuItem(text = { Text("回到 ChatGPT 首页") }, enabled = !ui.locked, onClick = { web.load(); menu = false })
@@ -68,9 +72,10 @@ import androidx.compose.ui.viewinterop.AndroidView
                         }
                     }
                 }
-                IconButton(onClick = { vm.tab(3) }) { Icon(Icons.Default.Settings, "设置") }
+                IconButton(onClick = { vm.tab(3) }) { Icon(Icons.Outlined.Settings, "设置", Modifier.size(22.dp)) }
             }
-            if (web.progress < 100) LinearProgressIndicator(Modifier.fillMaxWidth())
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+            if (web.progress < 100 && !ui.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (ui.data.webPending != null && !ui.locked) Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("有一份待保存的网页回答", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
@@ -88,16 +93,31 @@ import androidx.compose.ui.viewinterop.AndroidView
                     IconButton(onClick = vm::clearAttachment, enabled = !ui.locked) { Icon(Icons.Default.Close, "移除课件") }
                 }
             } }
-            if (web.error.isNotBlank()) Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(web.error, style = MaterialTheme.typography.bodyMedium)
-                Row { TextButton(onClick = { web.view.reload() }, enabled = !ui.locked) { Text("重试") }; TextButton(onClick = { vm.openLink(CHATGPT_WEB) }, enabled = !ui.locked) { Text("使用系统浏览器") } }
-            }
+
         }
         // Keep this WebView alive across native tabs so the current conversation is not reloaded.
-        AndroidView(factory = { web.view }, modifier = Modifier.weight(1f).fillMaxWidth(), update = {
-            @Suppress("UNUSED_VARIABLE") val pageRevision = revision
-            it.visibility = if (active) View.VISIBLE else View.INVISIBLE
-            it.importantForAccessibility = if (active) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
-        })
+        Box(Modifier.weight(1f).fillMaxWidth()) {
+            AndroidView(factory = { web.view }, modifier = Modifier.fillMaxSize(), update = {
+                @Suppress("UNUSED_VARIABLE") val pageRevision = revision
+                val shown = active && web.error.isBlank()
+                it.visibility = if (shown) View.VISIBLE else View.INVISIBLE
+                it.importantForAccessibility = if (shown) View.IMPORTANT_FOR_ACCESSIBILITY_AUTO else View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+            })
+            if (active && web.error.isNotBlank()) WebConnectionError(web.error, !ui.locked, onRetry = { web.view.reload() }, onExternal = { vm.openLink(CHATGPT_WEB) })
+        }
+    }
+}
+
+@Composable fun WebConnectionError(message: String, enabled: Boolean, onRetry: () -> Unit, onExternal: () -> Unit) {
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+            Spacer(Modifier.height(32.dp))
+            StudyEmpty(Icons.Outlined.CloudOff, "暂时无法打开 ChatGPT", message) {
+                Spacer(Modifier.height(6.dp))
+                Button(onClick = onRetry, enabled = enabled, modifier = Modifier.widthIn(min = 180.dp).heightIn(min = 48.dp)) { Icon(Icons.Default.Refresh, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("重试") }
+                TextButton(onClick = onExternal, enabled = enabled) { Text("使用系统浏览器"); Icon(Icons.Default.OpenInNew, null, Modifier.padding(start = 6.dp).size(16.dp)) }
+            }
+            Text("外部浏览器的对话不会自动保存到本 App。", Modifier.padding(horizontal = 32.dp, vertical = 8.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }

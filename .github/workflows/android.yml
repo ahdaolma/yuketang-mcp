@@ -45,7 +45,7 @@ jobs:
           target: google_apis
           profile: pixel_2
           disable-animations: true
-          script: cd android && python3 scripts/smoke.py && gradle --no-daemon connectedDebugAndroidTest
+          script: cd android && python3 scripts/verify_device.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -55,4 +55,5 @@ jobs:
             android/app/build/reports/androidTests/
             android/app/build/outputs/androidTest-results/
             android/smoke-artifacts/
+            android/ui-review-artifacts/
           if-no-files-found: ignore
