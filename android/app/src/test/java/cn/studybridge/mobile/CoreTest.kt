@@ -62,7 +62,7 @@ class CoreTest {
             captured = chain.request()
             Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("OK").body("data: {\"choices\":[{\"delta\":{\"content\":\"学习\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"笔记\"}}]}\n\ndata: [DONE]\n\n".toResponseBody("text/event-stream".toMediaType())).build()
         }.build()
-        val p = Provider(key = "unit-test-key", model = "test-model")
+        val p = Provider(key = "unit-test-key", model = "test-model", baseUrl = "https://example.com/v1", images = true)
         val input = tutorMessages("内置助教定位", listOf(Message("user", "解释这页", "data:image/png;base64,dGVzdA==", "课件 · 第 1 页")))
         val output = StringBuilder()
         AiApi(client).stream(p, input) { output.append(it) }
@@ -81,12 +81,12 @@ class CoreTest {
     @Test fun textOnlyModelRefusesImagesBeforeNetworkCall() = runBlocking {
         var called = false
         val client = OkHttpClient.Builder().addInterceptor { called = true; error("unexpected network") }.build()
-        val result = runCatching { AiApi(client).stream(Provider(key = "test-only", images = false), listOf(Message("user", "test", "data:image/png;base64,AA=="))) {} }
+        val result = runCatching { AiApi(client).stream(Provider(key = "test-only", images = false, model = "unit", baseUrl = "https://example.com/v1"), listOf(Message("user", "test", "data:image/png;base64,AA=="))) {} }
         assertTrue(result.isFailure); assertFalse(called)
     }
     @Test fun malformedKeyIsRejectedWithoutDisplayingTheKey() = runBlocking {
         val secret = "do-not-display\ninvalid-key"
-        val result = runCatching { AiApi().stream(Provider(key = secret), listOf(Message("user", "test"))) {} }
+        val result = runCatching { AiApi().stream(Provider(key = secret, model = "unit", baseUrl = "https://example.com/v1"), listOf(Message("user", "test"))) {} }
         assertTrue(result.isFailure)
         assertFalse(result.exceptionOrNull()!!.message!!.contains("do-not-display"))
     }

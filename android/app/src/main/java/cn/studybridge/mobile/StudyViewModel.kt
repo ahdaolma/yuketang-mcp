@@ -1,6 +1,8 @@
 package cn.studybridge.mobile
 
 import android.app.Application
+import android.content.Intent
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -19,13 +21,18 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-data class UiState(val data: Saved = Saved(), val tab: Int = 0, val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val activityPage: Int = 0, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi()) { val locked get() = busy || (classUi.running && !classUi.paused) }
+data class UiState(val data: Saved = Saved(), val tab: Int = 0, val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val activityPage: Int = 0, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi(), val chatgptLoginActive: Boolean = false, val chatgptStage: String = "", val chatgptPlanWelcome: Boolean = false, val modelNames: Map<String, String> = emptyMap()) { val locked get() = busy || chatgptLoginActive || (classUi.running && !classUi.paused) }
 
 class StudyViewModel(app: Application) : AndroidViewModel(app) {
     private val vault = Vault(app)
     private val disk = Mutex()
     private val rain = RainApi()
     private val ai = AiApi()
+    private val chatgpt = ChatGptAuth()
+    private val accountLock = Mutex()
+    private var authJob: Job? = null
+    private var authReceiver: LoopbackReceiver? = null
+    private var authAttemptId = ""
     private val state = MutableStateFlow(UiState())
     val ui = state.asStateFlow()
     private var job: Job? = null
@@ -48,8 +55,8 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     private fun data(change: (Saved) -> Saved) { state.update { it.copy(data = change(it.data)) }; persist() }
     fun saveProvider(p: Provider): Boolean {
         try {
-            aiEndpoint(p.baseUrl); require(p.name.isNotBlank() && p.model.isNotBlank()) { "请填写名称和模型名称。" }
-            data { it.copy(providers = it.providers.filterNot { v -> v.id == p.id } + p, selectedProvider = p.id) }
+            validateProviderDestination(p); aiEndpoint(p.baseUrl); require(p.name.isNotBlank() && p.model.isNotBlank()) { "请填写名称和模型名称。" }
+            data { it.copy(providers = it.providers.filterNot { v -> v.id == p.id } + if (p.chatgptAccountId.isBlank()) p else p.copy(key = ""), selectedProvider = p.id) }
             notice("模型配置已保存。")
             return true
         } catch (e: Exception) { notice(e.message ?: "配置保存失败。"); return false }
@@ -78,8 +85,10 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     fun stop() { job?.cancel(); if (state.value.classUi.running) pauseClass() }
     fun testProvider(p: Provider) = operation("读取模型列表") {
         state.update { it.copy(modelListFor = "", modelList = emptyList()) }
-        val list = withContext(Dispatchers.IO) { ai.models(p) }
-        state.update { it.copy(modelListFor = p.id, modelList = list) }
+        val requestProvider = authorizedProvider(p)
+        val choices = withContext(Dispatchers.IO) { ai.modelChoices(requestProvider) }
+        val list = choices.map { it.id }
+        state.update { it.copy(modelListFor = p.id, modelList = list, modelNames = choices.associate { m -> m.id to m.name }) }
         notice(if (list.isEmpty()) "连接成功，但未返回可选模型；可以手动填写。" else "已读取 ${list.size} 个模型，可以从列表选择。实际生成仍需核对所选模型权限。")
     }
     fun diagnoseLogin() = operation("检查雨课堂登录通道") { notice(rain.probe(state.value.data.region)) }
@@ -111,7 +120,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     fun send(text: String): Boolean {
         if (text.isBlank() || state.value.locked || !state.value.ready || storageBlocked) return false
         val s = state.value; val p = s.data.provider(); val c = s.data.chat(); val a = s.pending
-        if (p.key.isBlank()) { notice("请先在模型设置中填写 API Key。") ; tab(3); return false }
+        if (!s.data.providerReady(p) || p.model.isBlank()) { notice("请先在模型页使用 ChatGPT 登录并选择模型，或填写其他服务的 API 配置。") ; tab(3); return false }
         if (!p.images && (a?.image != null || c.messages.any { it.image != null })) { notice("此对话包含课件图片，请选择并开启支持图片的模型，或新建纯文字对话。") ; return false }
         val user = Message("user", text + (a?.text?.takeIf { it.isNotBlank() }?.let { "\n\n课件原文：\n$it" } ?: ""), a?.image, a?.label)
         val history = c.messages.takeLast(24) + user
@@ -120,7 +129,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         persist()
         operation("正在回答") {
             try {
-                ai.stream(p, tutorMessages(s.data.tutorPrompt, history, "本次上下文包含 ${history.count { it.image != null || it.source != null }} 条带课件图片或来源的消息。上课模式${if (s.classUi.running && !s.classUi.paused) "已开启" else "未运行或已暂停"}。读取动作由用户在应用界面触发，模型当前没有操作工具。")) { chunk ->
+                ai.stream(authorizedProvider(p), tutorMessages(s.data.tutorPrompt, history, "本次上下文包含 ${history.count { it.image != null || it.source != null }} 条带课件图片或来源的消息。上课模式${if (s.classUi.running && !s.classUi.paused) "已开启" else "未运行或已暂停"}。读取动作由用户在应用界面触发，模型当前没有操作工具。")) { chunk ->
                     updateChat(c.id) { chat -> chat.copy(messages = chat.messages.dropLast(1) + chat.messages.last().copy(text = chat.messages.last().text + chunk)) }
                 }
             } catch (e: Exception) {
@@ -183,7 +192,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         val s = state.value
         val pages = selectNotePages(from, to, s.slides)
         val p = s.data.provider()
-        require(p.key.isNotBlank() && p.model.isNotBlank()) { "请先在模型页配置 API Key 和模型名称。" }
+        require(s.data.providerReady(p) && p.model.isNotBlank()) { "请先使用 ChatGPT 登录并选择模型，或配置其他模型服务。" }
         require(p.images || pages.none { it.cover.isNotBlank() }) { "所选页面包含图片，请先选择并开启支持图片输入的模型。" }
         val noteId = newId(); val createdAt = System.currentTimeMillis()
         val title = "${s.slideTitle} · 第 ${pages.first().page}–${pages.last().page} 页"
@@ -193,7 +202,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
             generate = { a ->
                 val text = StringBuilder()
                 val input = listOf(Message("user", a.text.ifBlank { "请阅读课件图片并整理笔记。" }, a.image, a.label))
-                ai.stream(p, noteMessages(s.data.notesPrompt, input, a.label)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
+                ai.stream(authorizedProvider(p), noteMessages(s.data.notesPrompt, input, a.label)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
                 text.toString()
             },
             checkpoint = { progress ->
@@ -212,7 +221,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         val source = a?.label ?: "对话：${s.chat().title}"
         val text = StringBuilder()
         state.update { it.copy(operation = "自动整理笔记", noteDraft = "正在阅读资料…") }
-        ai.stream(p, noteMessages(s.notesPrompt, input, source)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
+        ai.stream(authorizedProvider(p), noteMessages(s.notesPrompt, input, source)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
         require(text.isNotBlank()) { "模型未生成笔记。" }
         val note = Note(title = a?.label ?: s.chat().title, content = text.toString(), source = source, model = "${p.name} / ${p.model}")
         data { it.copy(notes = listOf(note) + it.notes) }
@@ -225,7 +234,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun startClass(lesson: LiveLesson) {
         val p = state.value.data.provider()
-        if (p.key.isBlank() || p.model.isBlank() || !p.images) { notice("上课模式需要先配置支持图片的模型和 API Key。"); tab(3); return }
+        if (!state.value.data.providerReady(p) || p.model.isBlank() || !p.images) { notice("上课模式需要先登录 ChatGPT 或配置其他服务，并选择支持图片的模型。"); tab(3); return }
         if (state.value.locked) return
         val existing = state.value.data.classRun
         if (existing != null && !existing.ended && existing.lesson.id != lesson.id) { notice("请先结束上一节的上课模式，再开始另一节课。"); return }
@@ -240,7 +249,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         if (state.value.busy || storageBlocked || state.value.classUi.let { it.running && !it.paused }) return
         val run = state.value.data.classRun?.takeUnless { it.ended && it.pending.isEmpty() } ?: return
         val p = state.value.data.providers.find { it.id == run.providerId }
-        if (p == null || p.key.isBlank() || !p.images) { notice("本节课使用的模型配置不可用，请恢复该配置。"); return }
+        if (p == null || !state.value.data.providerReady(p) || !p.images) { notice("本节课使用的模型配置不可用，请恢复该配置。"); return }
         val previousWriter = classWriter
         val previousFeed = classFeed
         val saved = state.value.data
@@ -259,7 +268,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                     val slide = slides.find { it.page == page.page } ?: error("第 ${page.page} 页尚未开放，已暂停；可稍后继续。")
                     val a = withContext(Dispatchers.IO) { rain.attachment(title, slide) }
                     val text = StringBuilder()
-                    ai.stream(p, noteMessages(prompt, listOf(Message("user", a.text.ifBlank { "讲解这一页课件。" }, a.image, a.label)), a.label)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
+                    ai.stream(authorizedProvider(p), noteMessages(prompt, listOf(Message("user", a.text.ifBlank { "讲解这一页课件。" }, a.image, a.label)), a.label)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
                     require(text.isNotBlank()) { "这一页没有生成有效讲解。" }
                     withContext(NonCancellable) {
                         state.update { u ->
@@ -314,5 +323,122 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun background() { if (state.value.classUi.running && !state.value.classUi.paused) pauseClass("已切到后台，上课模式已暂停；回到 App 后点击继续。") }
     fun endClass() { pauseClass(); data { it.copy(classRun = it.classRun?.copy(ended = true, pending = emptyList())) }; state.update { it.copy(classUi = ClassUi(status = "本节已结束，已完成的笔记已保留")) } }
-    override fun onCleared() { login?.close(); classFeed?.cancel(); classWriter?.cancel(); super.onCleared() }
+    private suspend fun saveNow() = withContext(NonCancellable + Dispatchers.IO) { disk.withLock { check(!storageBlocked); vault.save(state.value.data) } }
+    private fun setChatGptAccount(account: ChatGptAccount) { state.update { u -> u.copy(data = u.data.copy(chatgptAccounts = u.data.chatgptAccounts.filterNot { it.id == account.id } + account)) } }
+    private suspend fun authorizedProvider(p: Provider): Provider {
+        if (p.chatgptAccountId.isBlank()) return p
+        validateProviderDestination(p)
+        return accountLock.withLock {
+            var account = state.value.data.chatgptAccounts.find { it.id == p.chatgptAccountId } ?: error("此 ChatGPT 账号记录已移除，请重新登录。")
+            require(account.connected && account.planGranted) { "请使用 ChatGPT 登录并允许本应用使用套餐。" }
+            val now = System.currentTimeMillis()
+            if (account.expiresAt <= now + 60000 && !(account.earliestRefreshAt > now && account.expiresAt > now + 5000)) {
+                require(account.refreshToken.isNotBlank()) { "ChatGPT 登录已到期，请重新授权。" }
+                // A rotating refresh result must reach encrypted storage even if generation is canceled.
+                withContext(NonCancellable) {
+                    try {
+                        account = withContext(Dispatchers.IO) { chatgpt.refresh(chatgpt.endpoints(), account) }
+                        setChatGptAccount(account); saveNow()
+                    } catch (e: OAuthFailure) {
+                        if (e.reason in setOf("invalid_grant", "invalid_refresh_token", "token_expired", "refresh_token_expired", "refresh_token_invalidated", "refresh_token_reused")) { setChatGptAccount(account.signedOut()); saveNow() }
+                        throw e
+                    }
+                }
+            }
+            require(account.planGranted && account.accessToken.isNotBlank()) { "账号尚未授权使用 ChatGPT 套餐，请在模型页开启。" }
+            p.copy(key = account.accessToken, baseUrl = CHATGPT_API, protocol = "responses")
+        }
+    }
+    private fun chatGptProvider(account: ChatGptAccount): Provider {
+        val old = state.value.data.providers.find { it.chatgptAccountId == account.id }
+        return old ?: Provider(name = "ChatGPT", baseUrl = CHATGPT_API, model = "", images = true, protocol = "responses", chatgptAccountId = account.id)
+    }
+    fun useChatGptAccount(id: String) {
+        if (state.value.locked) return
+        val account = state.value.data.chatgptAccounts.find { it.id == id } ?: return
+        val p = chatGptProvider(account)
+        data { it.copy(providers = it.providers.filterNot { existing -> existing.id == p.id } + p, selectedProvider = p.id) }
+        state.update { it.copy(modelListFor = "", modelList = emptyList(), modelNames = emptyMap()) }
+        if (account.connected && account.planGranted) testProvider(p)
+    }
+    fun startChatGptLogin(accountId: String = "", draftClientId: String = "", forceConsent: Boolean = false) {
+        if (state.value.locked || !state.value.ready || storageBlocked) return
+        val selected = state.value.data.chatgptAccounts.find { it.id == accountId }
+        if (accountId.isNotBlank() && selected == null) return
+        val draft = draftClientId.takeIf { it in state.value.data.chatgptDraftClients } ?: ""
+        val attemptId = newId(); authAttemptId = attemptId
+        state.update { it.copy(chatgptLoginActive = true, chatgptStage = "正在准备 ChatGPT 账号授权…", notice = "") }
+        authJob = viewModelScope.launch {
+            try {
+                if (state.value.data.chatgptHostId.isBlank()) { data { it.copy(chatgptHostId = "urn:uuid:${newId()}") }; saveNow() }
+                getApplication<Application>().startForegroundService(Intent(getApplication(), AuthorizationService::class.java))
+                val endpoints = withContext(Dispatchers.IO) { chatgpt.endpoints() }
+                val receiver = withContext(Dispatchers.IO) { LoopbackReceiver() }; authReceiver = receiver
+                val attempt = OAuthAttempt(receiver.redirect, selected?.clientId ?: draft.ifBlank { "dynamic_agent_client" }, state.value.data.chatgptHostId, idTokenHint = selected?.idToken ?: "", emailHint = selected?.email ?: "", expectedSubject = selected?.subject ?: "", forceConsent = forceConsent)
+                val url = authorizationUrl(endpoints, attempt)
+                state.update { it.copy(chatgptStage = "请在系统浏览器登录 ChatGPT，并允许雨课伴学使用套餐。") }
+                openLink(url)
+                val callback = receiver.receive(attempt)
+                authReceiver = null
+                if (callback.error.isNotBlank()) throw OAuthFailure(callback.error, if (callback.error == "access_denied") "你取消了 ChatGPT 授权；原有模型和登录保持不变。" else "ChatGPT 授权回调未通过校验，请重新开始。")
+                if (selected == null) { data { it.copy(chatgptDraftClients = (it.chatgptDraftClients + callback.clientId).distinct()) }; saveNow() }
+                state.update { it.copy(chatgptStage = "已收到授权，正在验证账号身份与套餐权限…") }
+                val account = withContext(Dispatchers.IO) { chatgpt.exchange(endpoints, attempt, callback, selected?.id ?: newId()) }
+                if (authAttemptId != attemptId) return@launch
+                accountLock.withLock { setChatGptAccount(account); data { it.copy(chatgptDraftClients = it.chatgptDraftClients.filterNot { id -> id == account.clientId }) }; saveNow() }
+                val p = chatGptProvider(account)
+                data { it.copy(providers = it.providers.filterNot { existing -> existing.id == p.id } + p, selectedProvider = p.id) }
+                saveNow()
+                state.update { it.copy(modelListFor = "", modelList = emptyList(), modelNames = emptyMap(), chatgptPlanWelcome = account.planGranted && !it.data.chatgptWelcomeShown) }
+                if (account.planGranted && account.connected) {
+                    state.update { it.copy(chatgptStage = "账号已验证，正在读取可用模型…") }
+                    try {
+                        val choices = withContext(Dispatchers.IO) { ai.modelChoices(p.copy(key = account.accessToken)) }
+                        state.update { it.copy(modelListFor = p.id, modelList = choices.map { m -> m.id }, modelNames = choices.associate { m -> m.id to m.name }) }
+                        notice("ChatGPT 登录已保存。请选择账号提供的模型并保存，再开始聊天或上课模式。")
+                    } catch (e: CancellationException) { throw e }
+                    catch (_: Exception) { notice("ChatGPT 登录已保存，但模型列表读取失败。可点击“读取模型”重试，无需 API Key。") }
+                    state.update { it.copy(chatgptStage = "ChatGPT 账号已连接 · 已授权套餐使用") }
+                } else {
+                    state.update { it.copy(chatgptStage = "账号身份已验证，但尚未授予套餐使用权限。") }
+                    notice("账号登录成功，但 AI 请求尚不能使用套餐；可点击“授权使用套餐”继续。")
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) {
+                if (authAttemptId == attemptId) {
+                    val message = (e as? OAuthFailure)?.message ?: "ChatGPT 登录未完成，请检查网络后重试；原有登录未被替换。"
+                    state.update { it.copy(chatgptStage = message ?: "ChatGPT 登录未完成。", notice = message ?: "ChatGPT 登录未完成。") }
+                }
+            } finally {
+                if (authAttemptId == attemptId) { authReceiver?.close(); authReceiver = null; state.update { it.copy(chatgptLoginActive = false) }; getApplication<Application>().stopService(Intent(getApplication(), AuthorizationService::class.java)) }
+            }
+        }
+    }
+    fun cancelChatGptLogin() {
+        authAttemptId = newId(); authReceiver?.close(); authReceiver = null; authJob?.cancel()
+        state.update { it.copy(chatgptLoginActive = false, chatgptStage = "已取消本次授权，原有账号保持不变。") }
+        getApplication<Application>().stopService(Intent(getApplication(), AuthorizationService::class.java))
+    }
+    fun acknowledgeChatGptPlan() { data { it.copy(chatgptWelcomeShown = true) }; state.update { it.copy(chatgptPlanWelcome = false) } }
+    fun signOutChatGpt(id: String) = operation("退出 ChatGPT 账号") {
+        accountLock.withLock {
+            val account = state.value.data.chatgptAccounts.find { it.id == id } ?: return@withLock
+            var revoked = account.refreshToken.isBlank()
+            if (!revoked) {
+                for (attempt in 0..1) {
+                    revoked = withContext(Dispatchers.IO) { runCatching { chatgpt.revoke(chatgpt.endpoints(), account) }.getOrDefault(false) }
+                    if (revoked) break
+                    if (attempt == 0) delay(1000)
+                }
+            }
+            withContext(NonCancellable) { setChatGptAccount(account.signedOut()); saveNow() }
+            notice(if (revoked) "已退出此 ChatGPT 账号。其他账号和笔记已保留。" else "已清除本机登录，远端撤销未确认；可在 ChatGPT 的设置中断开雨课伴学。")
+        }
+    }
+    fun openLink(url: String) {
+        val u = Uri.parse(url)
+        require(u.scheme == "https" && u.host in setOf("auth.openai.com", "chatgpt.com", "developers.openai.com"))
+        getApplication<Application>().startActivity(Intent(Intent.ACTION_VIEW, u).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+    override fun onCleared() { login?.close(); authReceiver?.close(); authJob?.cancel(); getApplication<Application>().stopService(Intent(getApplication(), AuthorizationService::class.java)); classFeed?.cancel(); classWriter?.cancel(); super.onCleared() }
 }

@@ -118,7 +118,7 @@ class ClassModeTest {
             val events = "data: {\"type\":\"response.output_text.delta\",\"delta\":\"笔记\"}\n\n" + if (terminal.isEmpty()) "" else "data: {\"type\":\"$terminal\"}\n\n"
             Response.Builder().request(r).protocol(Protocol.HTTP_1_1).code(200).message("OK").body(events.toResponseBody("text/event-stream".toMediaType())).build()
         }.build()
-        val p = Provider(baseUrl = "https://api.openai.com/v1", key = "unit-test", model = "chosen-by-user", protocol = "responses")
+        val p = Provider(baseUrl = "https://api.openai.com/v1", key = "unit-test", model = "chosen-by-user", protocol = "responses", images = true)
         val messages = listOf(Message("system", "定位"), Message("user", "解释", "data:image/png;base64,AA=="), Message("assistant", "上页已解释"))
         val out = StringBuilder(); AiApi(client).stream(p, messages) { out.append(it) }; assertEquals("笔记", out.toString())
         terminal = "response.failed"; assertTrue(runCatching { AiApi(client).stream(p, messages) {} }.isFailure)
@@ -126,6 +126,6 @@ class ClassModeTest {
     }
     @Test fun chatStreamCannotSilentlyAcceptTruncatedContent() = runBlocking {
         val client = OkHttpClient.Builder().addInterceptor { c -> Response.Builder().request(c.request()).protocol(Protocol.HTTP_1_1).code(200).message("OK").body("data: {\"choices\":[{\"delta\":{\"content\":\"半段\"}}]}\n\n".toResponseBody("text/event-stream".toMediaType())).build() }.build()
-        assertTrue(runCatching { AiApi(client).stream(Provider(key = "test-only"), listOf(Message("user", "解释"))) {} }.isFailure)
+        assertTrue(runCatching { AiApi(client).stream(Provider(key = "test-only", model = "unit", baseUrl = "https://example.com/v1"), listOf(Message("user", "解释"))) {} }.isFailure)
     }
 }

@@ -1,6 +1,6 @@
 # 雨课伴学 / 雨课堂学习桥 MCP
 
-新增独立安卓 AI 学习客户端：用户自配 DeepSeek / OpenAI 等模型接口，结合雨课堂课件聊天、连续笔记，并提供前台「上课模式」跟随老师翻页。
+新增独立安卓 AI 学习客户端：用户配置模型，可选择 ChatGPT 账号授权或模型 API 接口，结合雨课堂课件聊天、连续笔记，并提供前台「上课模式」跟随老师翻页。
 
 安卓源码、安装与功能边界见 [android/README.md](android/README.md)。GitHub Actions 的 **Android preview** 工作流提供测试与 APK 构建。内置学习助教和笔记助手两套可编辑的角色 Prompt，每次请求自动注入。
 
@@ -46,11 +46,11 @@
 | `list_slides` | 读取已知 presentation_id 的课件目录 |
 | `read_slide` | 返回单页课件图片与服务器提供的文字 |
 
-MCP 模式由调用方助手完成图片理解，无需在本服务另配模型 API。独立安卓客户端需要用户自行填写模型服务商的 API Key。
+MCP 模式由调用方助手完成图片理解，无需在本服务另配模型 API。独立安卓客户端可使用 ChatGPT 账号授权；手动 API 接入时才需填写对应服务的 API Key。
 
 ## MCP 的未完成部分
 
-以下限制针对原 Python / 云端 MCP。Android 0.2 已另行实现课堂记录 → 课件目录解析与前台翻页监听，边界见 [Android 文档](android/README.md)。
+以下限制针对原 Python / 云端 MCP。Android 0.3 已另行实现课堂记录 → 课件目录解析与前台翻页监听，边界见 [Android 文档](android/README.md)。
 
 - 微信扫码、账号权限、你学校的接口版本都还需要实测。项目使用学生端网络接口，不是官方开放 API，平台更新可能使其失效。
 - 活动里的 `classroom_id`、`lesson_id`、`courseware_id` 不能直接当成 `presentation_id`。只有拿到确切的课件标识才能读页；当前尚未完成各类历史课件和活动到课件标识的统一解析。

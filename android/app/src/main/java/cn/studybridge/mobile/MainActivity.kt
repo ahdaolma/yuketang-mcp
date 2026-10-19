@@ -161,6 +161,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             } }
         }
         ui.pending?.let { a -> ElevatedCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) { Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.AttachFile, null); Text(a.label, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); IconButton(onClick = vm::clearAttachment, enabled = !ui.locked) { Icon(Icons.Default.Close, "移除课件附件") } } } }
+        if (ui.data.provider().chatgptAccountId.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) { Text("使用 ChatGPT 套餐", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary); TextButton(onClick = { vm.openLink(CHATGPT_USAGE) }) { Text("管理用量") } }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
             OutlinedTextField(input, { if (it.length <= 20000) input = it }, Modifier.weight(1f), placeholder = { Text("问问这页课件…") }, shape = RoundedCornerShape(24.dp), maxLines = 4, enabled = !ui.locked)
             FilledIconButton(onClick = { if (vm.send(input.trim())) input = "" }, enabled = !ui.locked && input.isNotBlank()) { Icon(Icons.Default.ArrowUpward, "发送给所选模型") }
@@ -303,51 +304,90 @@ private fun preview(bytes: ByteArray): Bitmap? {
     }
 }
 
+@Composable fun ChatGptAccountPanel(ui: UiState, vm: StudyViewModel) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("使用 ChatGPT 账号", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("登录并授权后，符合资格的请求使用你的 ChatGPT 套餐，无需填写 API Key。可用模型和额度由账号授权决定。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Button(onClick = { vm.startChatGptLogin() }, enabled = !ui.locked, colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White), modifier = Modifier.fillMaxWidth()) { Text("Continue with ChatGPT") }
+            if (ui.chatgptLoginActive) { LinearProgressIndicator(Modifier.fillMaxWidth()); TextButton(onClick = vm::cancelChatGptLogin) { Text("取消本次授权") } }
+            if (ui.chatgptStage.isNotBlank()) Text(ui.chatgptStage, style = MaterialTheme.typography.bodySmall)
+            ui.data.chatgptAccounts.forEach { account ->
+                HorizontalDivider()
+                Text(account.label, style = MaterialTheme.typography.titleSmall)
+                Text(when { !account.connected -> "已退出，账号注册信息已保留"; account.planGranted -> "已连接 · 已授权使用套餐"; else -> "身份已验证 · 尚未授权套餐" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row {
+                    if (account.connected && account.planGranted) TextButton(onClick = { vm.useChatGptAccount(account.id) }, enabled = !ui.locked) { Text(if (ui.data.provider().chatgptAccountId == account.id) "读取此账号模型" else "使用此账号") }
+                    TextButton(onClick = { vm.startChatGptLogin(accountId = account.id) }, enabled = !ui.locked) { Text("重新登录") }
+                    if (account.connected) TextButton(onClick = { vm.signOutChatGpt(account.id) }, enabled = !ui.locked) { Text("退出") }
+                }
+                if (account.connected && !account.planGranted) OutlinedButton(onClick = { vm.startChatGptLogin(accountId = account.id, forceConsent = true) }, enabled = !ui.locked) { Text("授权使用套餐") }
+            }
+            ui.data.chatgptDraftClients.forEach { id -> TextButton(onClick = { vm.startChatGptLogin(draftClientId = id) }, enabled = !ui.locked) { Text("继续未完成的授权 · ${id.takeLast(6)}") } }
+            TextButton(onClick = { vm.openLink(CHATGPT_USAGE) }, enabled = !ui.chatgptLoginActive) { Text("管理 ChatGPT 用量") }
+            Text("授权会打开本机系统浏览器，完成后点击返回雨课伴学。登录资料加密保存在本机。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun ModelScreen(ui: UiState, vm: StudyViewModel) {
     var adding by remember { mutableStateOf<Provider?>(null) }
     val current = adding ?: ui.data.provider()
+    val usingChatGpt = current.chatgptAccountId.isNotBlank()
     var name by remember(current.id) { mutableStateOf(current.name) }
     var base by remember(current.id) { mutableStateOf(current.baseUrl) }
     var key by remember(current.id) { mutableStateOf(current.key) }
     var model by remember(current.id) { mutableStateOf(current.model) }
     var protocol by remember(current.id) { mutableStateOf(current.protocol) }
     var images by remember(current.id) { mutableStateOf(current.images) }
+    var showConfig by remember(current.id) { mutableStateOf(usingChatGpt || current.key.isNotBlank()) }
     var visible by remember { mutableStateOf(false) }
     var chooseModel by remember { mutableStateOf(false) }
     var modelQuery by remember { mutableStateOf("") }
     var showPrompts by rememberSaveable { mutableStateOf(false) }
     var tutor by remember(ui.data.tutorPrompt) { mutableStateOf(ui.data.tutorPrompt) }
     var notes by remember(ui.data.notesPrompt) { mutableStateOf(ui.data.notesPrompt) }
-    fun provider() = current.copy(name = name.trim(), baseUrl = base.trim(), key = key.trim(), model = model.trim(), images = images, protocol = protocol)
+    fun provider() = current.copy(name = name.trim(), baseUrl = if (usingChatGpt) CHATGPT_API else base.trim(), key = if (usingChatGpt) "" else key.trim(), model = model.trim(), images = images, protocol = if (usingChatGpt) "responses" else protocol)
+    if (ui.chatgptPlanWelcome) AlertDialog(onDismissRequest = vm::acknowledgeChatGptPlan, title = { Text("正在使用你的 ChatGPT 套餐") }, text = { Text("符合资格的聊天和笔记请求会使用你的 ChatGPT 套餐。你可以在 ChatGPT 设置中管理本应用的用量和访问权限。账号授权并不代表某个模型请求已经验证成功。") }, confirmButton = { TextButton(onClick = vm::acknowledgeChatGptPlan) { Text("知道了") } }, dismissButton = { TextButton(onClick = { vm.openLink(CHATGPT_USAGE) }) { Text("管理用量") } })
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("用你选择的 AI", style = MaterialTheme.typography.headlineSmall)
-        Text("支持 OpenAI Responses 与兼容 Chat Completions 的服务。密钥加密保存在手机，请求直接发送给你选择的服务商。", style = MaterialTheme.typography.bodySmall)
+        Text("配置模型", style = MaterialTheme.typography.headlineSmall)
+        ChatGptAccountPanel(ui, vm)
+        Text("模型配置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(ui.data.providers, key = { it.id }) { p -> FilterChip(selected = adding == null && current.id == p.id, onClick = { adding = null; vm.selectProvider(p.id) }, label = { Text(p.name) }, enabled = !ui.locked) } }
-        Row { TextButton(onClick = { adding = Provider(name = "OpenAI GPT", baseUrl = "https://api.openai.com/v1", model = "", images = true, protocol = "responses") }, enabled = !ui.locked) { Text("新增 OpenAI") }; TextButton(onClick = { adding = Provider() }, enabled = !ui.locked) { Text("新增 DeepSeek") }; TextButton(onClick = { adding = Provider(name = "自定义模型", baseUrl = "https://api.example.com/v1", model = "", images = false) }, enabled = !ui.locked) { Text("新增自定义") } }
-        OutlinedTextField(name, { name = it }, label = { Text("配置名称") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !ui.locked)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilterChip(selected = protocol == "chat", onClick = { protocol = "chat" }, label = { Text("Chat Completions") }, enabled = !ui.locked); FilterChip(selected = protocol == "responses", onClick = { protocol = "responses" }, label = { Text("Responses") }, enabled = !ui.locked) }
-        if (protocol == "responses") Text("这里使用 OpenAI API Key；本版未提供 ChatGPT 账号授权登录。填写密钥后读取模型列表，按账号权限选择支持图片的模型。", style = MaterialTheme.typography.bodySmall)
-        OutlinedTextField(base, { base = it }, label = { Text("API Base URL") }, singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), enabled = !ui.locked)
-        OutlinedTextField(key, { key = it }, label = { Text("API Key") }, singleLine = true, visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(), trailingIcon = { IconButton(onClick = { visible = !visible }) { Icon(if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility, "切换密钥显示") } }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), enabled = !ui.locked)
-        OutlinedTextField(model, { model = it }, label = { Text("模型名称（以服务商提供的名称为准）") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !ui.locked)
-        if (ui.modelListFor == current.id && ui.modelList.isNotEmpty()) {
-            OutlinedButton(onClick = { modelQuery = ""; chooseModel = true }, enabled = !ui.locked) { Text("从已读取的模型列表选择 ▾") }
-            if (chooseModel) ModalBottomSheet(onDismissRequest = { chooseModel = false }) {
-                OutlinedTextField(modelQuery, { modelQuery = it }, label = { Text("搜索模型名称") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-                val candidates = remember(ui.modelList, modelQuery) { ui.modelList.filter { it.contains(modelQuery, ignoreCase = true) } }
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
-                    items(candidates, key = { it }) { id -> TextButton(onClick = { model = id; chooseModel = false }, modifier = Modifier.fillMaxWidth()) { Text(id) } }
+        TextButton(onClick = { adding = Provider(name = "自定义模型"); showConfig = true }, enabled = !ui.locked) { Text("添加模型配置（API 接入）") }
+        if (!showConfig) TextButton(onClick = { showConfig = true }, enabled = !ui.locked) { Text("手动配置模型接口") }
+        if (showConfig) {
+            OutlinedTextField(name, { name = it }, label = { Text("配置名称") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !ui.locked)
+            if (usingChatGpt) {
+                Text("使用 ChatGPT 套餐 · 无需 API Key", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                TextButton(onClick = { vm.openLink(CHATGPT_USAGE) }) { Text("管理用量") }
+            } else {
+                Text("可接入兼容 Chat Completions 或 Responses 的模型服务。API 凭据加密保存在本机。", style = MaterialTheme.typography.bodySmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilterChip(selected = protocol == "chat", onClick = { protocol = "chat" }, label = { Text("Chat Completions") }, enabled = !ui.locked); FilterChip(selected = protocol == "responses", onClick = { protocol = "responses" }, label = { Text("Responses") }, enabled = !ui.locked) }
+                OutlinedTextField(base, { base = it }, label = { Text("API Base URL") }, placeholder = { Text("填写模型服务商的 HTTPS 地址") }, singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), enabled = !ui.locked)
+                OutlinedTextField(key, { key = it }, label = { Text("API Key") }, singleLine = true, visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(), trailingIcon = { IconButton(onClick = { visible = !visible }) { Icon(if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility, "切换密钥显示") } }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), enabled = !ui.locked)
+            }
+            OutlinedTextField(model, { model = it }, label = { Text("模型") }, placeholder = { Text(if (usingChatGpt) "读取列表后选择模型" else "填写或从列表选择模型名称") }, singleLine = true, readOnly = usingChatGpt, modifier = Modifier.fillMaxWidth(), enabled = !ui.locked)
+            if (ui.modelListFor == current.id && ui.modelList.isNotEmpty()) {
+                OutlinedButton(onClick = { modelQuery = ""; chooseModel = true }, enabled = !ui.locked, modifier = Modifier.fillMaxWidth()) { Text("选择模型 ▾") }
+                if (chooseModel) ModalBottomSheet(onDismissRequest = { chooseModel = false }) {
+                    OutlinedTextField(modelQuery, { modelQuery = it }, label = { Text("搜索模型") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+                    val candidates = remember(ui.modelList, modelQuery, ui.modelNames) { ui.modelList.filter { it.contains(modelQuery, ignoreCase = true) || ui.modelNames[it]?.contains(modelQuery, ignoreCase = true) == true } }
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) { items(candidates, key = { it }) { id -> TextButton(onClick = { model = id; chooseModel = false }, modifier = Modifier.fillMaxWidth()) { Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { Text(ui.modelNames[id] ?: id); if (ui.modelNames[id] != null && ui.modelNames[id] != id) Text(id, style = MaterialTheme.typography.labelSmall) } } } }
                 }
             }
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("所选模型支持图片输入", Modifier.weight(1f)); Switch(images, { images = it }, enabled = !ui.locked) }
+            Text("课件图片需要支持图片的模型。列表可见不等于已验证图片权限，实际以请求结果为准。", style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { if (vm.saveProvider(provider())) adding = null }, enabled = !ui.locked && model.isNotBlank()) { Text("保存并使用") }
+                OutlinedButton(onClick = { vm.testProvider(provider()) }, enabled = !ui.locked && (if (usingChatGpt) ui.data.providerReady(current) else key.isNotBlank() && base.isNotBlank())) { Text("读取模型") }
+            }
+            if (adding != null) TextButton(onClick = { adding = null }) { Text("取消新增") } else TextButton(onClick = { vm.removeProvider(current.id) }, enabled = !ui.locked && ui.data.providers.size > 1) { Text("删除此配置") }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) { Text("此模型支持图片输入", Modifier.weight(1f)); Switch(images, { images = it }, enabled = !ui.locked) }
-        Text("图片课件需要模型支持图片。纯文字模型可用于文字聊天和对话笔记；不会自动假定它能看图。", style = MaterialTheme.typography.bodySmall)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { if (vm.saveProvider(provider())) adding = null }, enabled = !ui.locked) { Text("保存并使用") }; OutlinedButton(onClick = { vm.testProvider(provider()) }, enabled = !ui.locked && key.isNotBlank()) { Text("读取模型") } }
-        if (adding != null) TextButton(onClick = { adding = null }) { Text("取消新增") } else TextButton(onClick = { vm.removeProvider(current.id) }, enabled = !ui.locked && ui.data.providers.size > 1) { Text("删除此配置") }
         HorizontalDivider()
         TextButton(onClick = { showPrompts = !showPrompts }) { Text(if (showPrompts) "收起内置角色 Prompt" else "查看 / 编辑内置角色 Prompt") }
-        Text("学习助教和笔记助手的提示词会在每次请求中作为 system 消息发送，不依赖服务商知道本软件的定位。", style = MaterialTheme.typography.bodySmall)
+        Text("模型会收到学习助教或笔记助手的角色提示，以及应用环境和实际资料的说明。", style = MaterialTheme.typography.bodySmall)
         if (showPrompts) {
             OutlinedTextField(tutor, { tutor = it }, label = { Text("学习助教 Prompt") }, modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp), maxLines = 12, enabled = !ui.locked)
             OutlinedTextField(notes, { notes = it }, label = { Text("笔记助手 Prompt") }, modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp), maxLines = 12, enabled = !ui.locked)
