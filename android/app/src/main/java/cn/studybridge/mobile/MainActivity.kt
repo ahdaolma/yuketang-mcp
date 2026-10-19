@@ -254,6 +254,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
 }
 
 @Composable fun ClassModePanel(ui: UiState, vm: StudyViewModel) {
+    val classButtonColors = ButtonDefaults.filledTonalButtonColors(disabledContainerColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.12f), disabledContentColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.65f))
     val run = ui.data.classRun
     val resumable = run != null && (!run.ended || run.pending.isNotEmpty())
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary), shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
@@ -264,13 +265,13 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 Text("已整理 ${run!!.completed.size} 页 · 待处理 ${run.pending.size} 页", style = MaterialTheme.typography.labelLarge)
                 Text(ui.classUi.status.ifBlank { "本节记录已保留，点击继续恢复。" }, style = MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalButton(onClick = { if (ui.classUi.running && !ui.classUi.paused) vm.pauseClass() else vm.resumeClass() }, enabled = !ui.busy) { Text(if (ui.classUi.running && !ui.classUi.paused) "暂停" else "继续") }
-                    FilledTonalButton(onClick = { vm.tab(2) }) { Text("查看笔记") }
+                    FilledTonalButton(colors = classButtonColors, onClick = { if (ui.classUi.running && !ui.classUi.paused) vm.pauseClass() else vm.resumeClass() }, enabled = !ui.busy) { Text(if (ui.classUi.running && !ui.classUi.paused) "暂停" else "继续") }
+                    FilledTonalButton(colors = classButtonColors, onClick = { vm.tab(2) }) { Text("查看笔记") }
                     TextButton(onClick = vm::endClass, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onPrimary), enabled = !ui.busy) { Text("结束") }
                 }
             } else {
-                FilledTonalButton(onClick = vm::discoverClasses, enabled = !ui.locked && ui.data.session.isNotBlank()) { Icon(Icons.Default.PlayArrow, null); Text("查找正在上的课") }
-                ui.liveLessons.forEach { lesson -> FilledTonalButton(onClick = { vm.startClass(lesson) }, enabled = !ui.locked, modifier = Modifier.fillMaxWidth()) { Text("进入：${lesson.title}") } }
+                FilledTonalButton(colors = classButtonColors, onClick = vm::discoverClasses, enabled = !ui.locked && ui.data.session.isNotBlank()) { Icon(Icons.Default.PlayArrow, null); Text(if (ui.data.session.isBlank()) "登录后开启上课模式" else "查找正在上的课") }
+                ui.liveLessons.forEach { lesson -> FilledTonalButton(colors = classButtonColors, onClick = { vm.startClass(lesson) }, enabled = !ui.locked, modifier = Modifier.fillMaxWidth()) { Text("进入：${lesson.title}") } }
             }
             Text("进入会在雨课堂登记入课，并将展示页发送给所选模型。请保持 App 前台；切到后台会暂停，返回后可继续。", style = MaterialTheme.typography.labelSmall)
         }
