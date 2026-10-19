@@ -18,3 +18,14 @@ export const TOOLS=[
 {name:'list_slides',description:'列已知 presentation_id 的课件页面，page 从 1 开始。',inputSchema:{...obj({presentation_id:{type:'string'}}),required:['presentation_id']}},
 {name:'read_slide',description:'读取一页已开放课件并返回图像。不支持老师当前页自动同步，缺失图表不得猜测。',inputSchema:{...obj({presentation_id:{type:'string'},page:{type:'integer',minimum:1}}),required:['presentation_id','page']}},
 ].map(t=>({...t,annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:true}}));
+
+// Detect actual image bytes: WeChat QR responses may use nonstandard MIME headers.
+export function imageMime(bytes){
+ const starts=(values)=>values.every((v,i)=>bytes[i]===v);
+ if(bytes.length>=24&&starts([137,80,78,71,13,10,26,10]))return 'image/png';
+ if(bytes.length>=4&&starts([255,216,255]))return 'image/jpeg';
+ const ascii=(from,to)=>String.fromCharCode(...bytes.subarray(from,to));
+ if(bytes.length>=13&&['GIF87a','GIF89a'].includes(ascii(0,6)))return 'image/gif';
+ if(bytes.length>=16&&ascii(0,4)==='RIFF'&&ascii(8,12)==='WEBP')return 'image/webp';
+ throw Error('未返回支持的图片格式。');
+}
