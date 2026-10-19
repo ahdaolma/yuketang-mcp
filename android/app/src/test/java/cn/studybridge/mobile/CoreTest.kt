@@ -84,4 +84,10 @@ class CoreTest {
         val result = runCatching { AiApi(client).stream(Provider(key = "test-only", images = false), listOf(Message("user", "test", "data:image/png;base64,AA=="))) {} }
         assertTrue(result.isFailure); assertFalse(called)
     }
+    @Test fun malformedKeyIsRejectedWithoutDisplayingTheKey() = runBlocking {
+        val secret = "do-not-display\ninvalid-key"
+        val result = runCatching { AiApi().stream(Provider(key = secret), listOf(Message("user", "test"))) {} }
+        assertTrue(result.isFailure)
+        assertFalse(result.exceptionOrNull()!!.message!!.contains("do-not-display"))
+    }
 }

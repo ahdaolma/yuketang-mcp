@@ -23,7 +23,7 @@ class Vault(context: Context) {
         }.generateKey()
     }
     @Synchronized fun load(): Saved {
-        if (!file.baseFile.exists()) return Saved()
+        if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) return Saved()
         val bytes = file.readFully()
         require(bytes.size > 28)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")

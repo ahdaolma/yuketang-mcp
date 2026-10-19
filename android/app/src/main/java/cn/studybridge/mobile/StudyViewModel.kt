@@ -77,6 +77,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         val history = c.messages.takeLast(24) + user
         updateChat(c.id) { it.copy(title = if (it.messages.isEmpty()) text.take(24) else it.title, messages = it.messages + user + Message("assistant", "")) }
         state.update { it.copy(pending = null) }
+        persist()
         operation("正在回答") {
             try {
                 ai.stream(p, tutorMessages(s.data.tutorPrompt, history)) { chunk ->

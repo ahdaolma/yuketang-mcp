@@ -35,8 +35,10 @@ class SseEvents(private val accept: (String) -> Unit) {
 }
 
 class AiApi(private val client: OkHttpClient = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false).connectTimeout(20, TimeUnit.SECONDS).readTimeout(180, TimeUnit.SECONDS).build()) {
+    private fun checkKey(key: String) { require(key.isNotBlank() && key.none { it.isISOControl() || it.isWhitespace() }) { "API Key 为空或包含空白字符，请重新粘贴完整密钥。" } }
     suspend fun stream(p: Provider, messages: List<Message>, onText: (String) -> Unit) {
         require(p.key.isNotBlank() && p.model.isNotBlank()) { "请先在模型设置中填写 API Key 和模型名称。" }
+        checkKey(p.key)
         require(p.images || messages.none { it.image != null }) { "当前模型未开启图片输入。请切换支持图片的模型，或新建纯文字对话。" }
         val body = JSONObject().put("model", p.model).put("stream", true).put("messages", JSONArray(messages.map { m ->
             val text = if (m.source == null) m.text else "来源：${m.source}\n${m.text}"
@@ -78,7 +80,7 @@ class AiApi(private val client: OkHttpClient = OkHttpClient.Builder().followRedi
         }
     }
     fun test(p: Provider): Int {
-        require(p.key.isNotBlank()) { "请填写 API Key。" }
+        checkKey(p.key)
         val request = Request.Builder().url(aiEndpoint(p.baseUrl, "models")).header("Authorization", "Bearer ${p.key.trim()}").build()
         return client.newCall(request).execute().use { r -> check(r.isSuccessful) { "模型列表接口返回 HTTP ${r.code}。可核对 API 地址；部分服务商不提供模型列表。" }; JSONObject(r.body!!.string()).getJSONArray("data").length() }
     }
