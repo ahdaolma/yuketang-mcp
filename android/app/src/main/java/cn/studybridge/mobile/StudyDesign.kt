@@ -18,6 +18,11 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -100,7 +105,7 @@ import androidx.compose.ui.unit.sp
 }
 
 @Composable fun SettingOption(title: String, summary: String, icon: ImageVector, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    FeedbackCard(onClick = onClick, enabled = enabled, colors = CardDefaults.cardColors(containerColor = Color.Transparent), shape = RoundedCornerShape(12.dp)) {
+    FeedbackCard(onClick = onClick, enabled = enabled, modifier = Modifier.semantics { this.selected = selected; role = Role.RadioButton }, colors = CardDefaults.cardColors(containerColor = Color.Transparent), shape = RoundedCornerShape(12.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Icon(icon, null, Modifier.size(22.dp), tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(title, style = MaterialTheme.typography.titleSmall); Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -112,7 +117,7 @@ import androidx.compose.ui.unit.sp
 @Composable fun SettingsToggle(title: String, summary: String, checked: Boolean, enabled: Boolean, onChecked: (Boolean) -> Unit, unavailableReason: String? = null) {
     Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(title, style = MaterialTheme.typography.titleSmall); Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        FeedbackSwitch(checked, onChecked, enabled = enabled, unavailableReason = unavailableReason)
+        FeedbackSwitch(checked, onChecked, modifier = Modifier.semantics { contentDescription = title }, enabled = enabled, unavailableReason = unavailableReason)
     }
 }
 

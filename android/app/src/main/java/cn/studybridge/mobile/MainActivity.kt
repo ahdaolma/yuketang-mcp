@@ -60,6 +60,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -67,6 +68,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.noties.markwon.Markwon
+import io.noties.markwon.AbstractMarkwonPlugin
+import io.noties.markwon.core.MarkwonTheme
+import androidx.compose.ui.platform.LocalDensity
 import io.noties.markwon.ext.tables.TablePlugin
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -154,11 +158,28 @@ class MainActivity : ComponentActivity() {
 
 @Composable fun Markdown(text: String) {
     val context = LocalContext.current
-    val renderer = remember(context) { Markwon.builder(context).usePlugin(TablePlugin.create(context)).build() }
-    val color = MaterialTheme.colorScheme.onSurface.toArgb()
-    val formatted by produceState<CharSequence>(text, text, renderer) { value = withContext(Dispatchers.Default) { renderer.toMarkdown(text) } }
-    AndroidView(factory = { TextView(it).apply { textSize = 16f; setTextIsSelectable(true); setLineSpacing(4f, 1.1f) } }, modifier = Modifier.fillMaxWidth(), update = {
+    val colors = MaterialTheme.colorScheme
+    val color = colors.onSurface.toArgb()
+    val link = colors.primary.toArgb()
+    val code = colors.surfaceContainerHigh.toArgb()
+    val line = colors.outlineVariant.toArgb()
+    val row = colors.surfaceContainer.toArgb()
+    val background = colors.background.toArgb()
+    val density = LocalDensity.current.density
+    val bodySize = with(LocalDensity.current) { 16.sp.toPx() }
+    val renderer = remember(context, color, link, code, line, row, background, density) {
+        Markwon.builder(context)
+            .usePlugin(TablePlugin.create { builder -> builder.tableBorderColor(line).tableBorderWidth(maxOf(1, (density * 0.5f).toInt())).tableCellPadding((8 * density).toInt()).tableHeaderRowBackgroundColor(code).tableOddRowBackgroundColor(row).tableEvenRowBackgroundColor(background) })
+            .usePlugin(object : AbstractMarkwonPlugin() {
+                override fun configureTheme(builder: MarkwonTheme.Builder) {
+                    builder.linkColor(link).codeTextColor(color).codeBlockTextColor(color).codeBackgroundColor(code).codeBlockBackgroundColor(code).blockQuoteColor(link).headingBreakColor(line).thematicBreakColor(line).listItemColor(link).headingTextSizeMultipliers(floatArrayOf(1.4f, 1.25f, 1.12f, 1.05f, 1f, 1f))
+                }
+            }).build()
+    }
+    val formatted by produceState<CharSequence>("", text, renderer) { value = withContext(Dispatchers.Default) { renderer.toMarkdown(text) } }
+    AndroidView(factory = { TextView(it).apply { textSize = 16f; setTextIsSelectable(true); setLineSpacing(0f, 1.3f) } }, modifier = Modifier.fillMaxWidth(), update = {
         if (it.currentTextColor != color) it.setTextColor(color)
+        if (kotlin.math.abs(it.textSize - bodySize) > 0.1f) it.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, bodySize)
         if (it.tag !== formatted) { it.text = formatted; it.tag = formatted }
     })
 }

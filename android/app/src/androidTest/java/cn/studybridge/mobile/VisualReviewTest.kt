@@ -44,8 +44,7 @@ class VisualReviewTest {
     }
     private fun shot(name: String) {
         compose.waitForIdle()
-        val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
-        assertNotNull(bitmap)
+        val bitmap = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()) { "Screenshot unavailable" }
         val dir = compose.activity.getExternalFilesDir("ui-review")!!
         dir.mkdirs()
         File(dir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
@@ -80,12 +79,16 @@ class VisualReviewTest {
         compose.runOnIdle { state.value = state.value.copy(tab = 3) }
         compose.onNodeWithText("学习方式").assertIsDisplayed(); shot("sample-settings-large-text")
         compose.onNodeWithText("学习助手提示词").performScrollTo().assertIsDisplayed()
+        compose.runOnIdle { state.value = base.copy(tab = 2) }
+        compose.onNodeWithText(firstNote.title).performClick()
+        compose.onNodeWithText("导出 Markdown").assertIsDisplayed(); shot("sample-note-reading-large-text")
     }
     @Test fun darkScreensUseTheSameReadingAndSettingsHierarchy() {
         val state = mutableStateOf(sample().copy(tab = 2)); render(state, mutableStateOf(true))
         compose.onNodeWithText(firstNote.title).assertIsDisplayed(); shot("sample-notes-dark")
+        compose.onNodeWithText(firstNote.title).performClick(); shot("sample-note-reading-dark")
         compose.runOnIdle { state.value = state.value.copy(tab = 3) }
-        compose.onNodeWithText("学习方式").assertIsDisplayed(); shot("sample-settings-dark")
+        compose.onNodeWithText("学习方式").assertIsDisplayed(); compose.onNodeWithText("ChatGPT 网页").assertIsSelected(); shot("sample-settings-dark")
         compose.onNodeWithText("学习助手提示词").performScrollTo().assertIsDisplayed()
     }
 }
