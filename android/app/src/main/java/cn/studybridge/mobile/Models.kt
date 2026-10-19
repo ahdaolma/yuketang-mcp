@@ -9,7 +9,8 @@ data class Provider(val id: String = newId(), val name: String = "模型配置",
 data class Message(val role: String, val text: String, val image: String? = null, val source: String? = null)
 data class Conversation(val id: String = newId(), val title: String = "新对话", val messages: List<Message> = emptyList())
 data class Note(val id: String = newId(), val title: String, val content: String, val source: String, val model: String, val createdAt: Long = System.currentTimeMillis())
-data class Saved(val providers: List<Provider> = listOf(Provider()), val selectedProvider: String = "", val conversations: List<Conversation> = listOf(Conversation()), val currentChat: String = "", val notes: List<Note> = emptyList(), val autoNotes: Boolean = false, val region: String = "standard", val session: String = "", val username: String = "", val tutorPrompt: String = TUTOR_PROMPT, val notesPrompt: String = NOTES_PROMPT, val sessionVerified: Boolean = false, val classRun: ClassRun? = null, val chatgptAccounts: List<ChatGptAccount> = emptyList(), val chatgptHostId: String = "", val chatgptDraftClients: List<String> = emptyList(), val chatgptWelcomeShown: Boolean = false) {
+data class Saved(val providers: List<Provider> = listOf(Provider()), val selectedProvider: String = "", val conversations: List<Conversation> = listOf(Conversation()), val currentChat: String = "", val notes: List<Note> = emptyList(), val autoNotes: Boolean = false, val region: String = "standard", val session: String = "", val username: String = "", val tutorPrompt: String = TUTOR_PROMPT, val notesPrompt: String = NOTES_PROMPT, val sessionVerified: Boolean = false, val classRun: ClassRun? = null, val chatgptAccounts: List<ChatGptAccount> = emptyList(), val chatgptHostId: String = "", val chatgptDraftClients: List<String> = emptyList(), val chatgptWelcomeShown: Boolean = false, val learningMode: String = "web", val webPending: WebPending? = null, val webClassConsent: Boolean = false) {
+    val usesWeb get() = learningMode == "web"
     fun provider() = providers.find { it.id == selectedProvider } ?: providers.first()
     fun chat() = conversations.find { it.id == currentChat } ?: conversations.first()
 }
@@ -23,6 +24,7 @@ fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
 fun Saved.toJson(): JSONObject = JSONObject().apply {
     put("providers", JSONArray(providers.map { JSONObject().put("id", it.id).put("name", it.name).put("baseUrl", it.baseUrl).put("key", it.key).put("model", it.model).put("images", it.images).put("protocol", it.protocol).put("chatgptAccountId", it.chatgptAccountId) }))
     put("selectedProvider", selectedProvider); put("currentChat", currentChat); put("autoNotes", autoNotes)
+    put("learningMode", learningMode); put("webPending", webPending?.json()); put("webClassConsent", webClassConsent)
     put("region", region); put("session", session); put("username", username)
     put("sessionVerified", sessionVerified); put("classRun", classRun?.json())
     put("chatgptAccounts", JSONArray(chatgptAccounts.map { it.json() })); put("chatgptHostId", chatgptHostId); put("chatgptDraftClients", JSONArray(chatgptDraftClients)); put("chatgptWelcomeShown", chatgptWelcomeShown)
@@ -35,6 +37,7 @@ fun savedFromJson(o: JSONObject): Saved = Saved(
     selectedProvider = o.optString("selectedProvider"),
     conversations = o.getJSONArray("conversations").objects().map { c -> Conversation(c.getString("id"), c.getString("title"), c.getJSONArray("messages").objects().map { Message(it.getString("role"), it.getString("text"), it.optional("image"), it.optional("source")) }) }.ifEmpty { listOf(Conversation()) },
     currentChat = o.optString("currentChat"), notes = (o.optJSONArray("notes") ?: JSONArray()).objects().map { Note(it.getString("id"), it.getString("title"), it.getString("content"), it.getString("source"), it.getString("model"), it.getLong("createdAt")) },
+    learningMode = o.optString("learningMode", "web").takeIf { it in setOf("web", "native") } ?: "web", webPending = o.optJSONObject("webPending")?.let(::webPendingFromJson), webClassConsent = o.optBoolean("webClassConsent"),
     autoNotes = o.optBoolean("autoNotes"), region = o.optString("region", "standard"), session = o.optString("session"), username = o.optString("username"), tutorPrompt = upgradedTutorPrompt(o.optString("tutorPrompt", TUTOR_PROMPT)), notesPrompt = o.optString("notesPrompt", NOTES_PROMPT), sessionVerified = o.optBoolean("sessionVerified", o.optString("session").isNotBlank()), classRun = o.optJSONObject("classRun")?.let(::classRunFromJson), chatgptAccounts = (o.optJSONArray("chatgptAccounts") ?: JSONArray()).objects().map(::chatGptAccountFromJson), chatgptHostId = o.optString("chatgptHostId"), chatgptDraftClients = (o.optJSONArray("chatgptDraftClients") ?: JSONArray()).let { a -> (0 until a.length()).map { a.getString(it) } }, chatgptWelcomeShown = o.optBoolean("chatgptWelcomeShown")
 )
 

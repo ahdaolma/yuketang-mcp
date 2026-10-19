@@ -30,6 +30,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     private val ai = AiApi()
     private val chatgpt = ChatGptAuth()
     private val accountLock = Mutex()
+    private var webPage: WebPagePort? = null
     private var authJob: Job? = null
     private var authReceiver: LoopbackReceiver? = null
     private var authAttemptId = ""
@@ -65,6 +66,56 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     fun removeProvider(id: String) {
         if (state.value.data.providers.size == 1) { notice("请至少保留一个模型配置。") ; return }
         data { val list = it.providers.filterNot { p -> p.id == id }; it.copy(providers = list, selectedProvider = if (it.selectedProvider == id) list.first().id else it.selectedProvider) }
+    }
+    fun bindWeb(page: WebPagePort?) { webPage = page }
+    fun learningMode(mode: String) {
+        if (state.value.locked || mode !in setOf("web", "native")) return
+        val run = state.value.data.classRun
+        if (run != null && !run.ended) { notice("请先结束本节上课模式，再切换学习方式。"); return }
+        data { it.copy(learningMode = mode) }
+    }
+    fun consentWebClass(on: Boolean = true) { if (!state.value.locked) data { it.copy(webClassConsent = on) } }
+    fun webLocation(url: String) {
+        val pending = state.value.data.webPending ?: return
+        val safe = webReturnUrl(url)
+        if (safe != CHATGPT_WEB && safe != pending.url) data { it.copy(webPending = it.webPending?.copy(url = safe)) }
+    }
+    private fun webDriver() = WebStudyDriver(webPage ?: error("请先打开学习页中的 ChatGPT 网页。"))
+    private suspend fun webGenerate(a: Attachment, prompt: String, pageKey: String = "", noteId: String = ""): String {
+        check(state.value.data.usesWeb) { "本节记录使用网页模式，请先切回网页学习。" }
+        check(state.value.data.webPending == null) { "上一份网页回答尚未保存，请先在学习页恢复回答；不会重复发送。" }
+        state.update { it.copy(tab = 0) }
+        val pending = WebPending("RS-${newId()}", a.label, webReturnUrl(webPage?.pageUrl ?: CHATGPT_WEB), pageKey, noteId)
+        return webDriver().generate(prompt, a, pending.marker) {
+            data { it.copy(webPending = pending) }; saveNow()
+        }
+    }
+    fun fillWebAttachment() = operation("带入当前课件") {
+        val a = state.value.pending ?: error("先在课程中选择一页课件。")
+        require(state.value.data.usesWeb)
+        webDriver().fill("${state.value.data.tutorPrompt}\n\n请讲解这一页课件。资料来源：${a.label}\n${a.text}", a)
+        state.update { it.copy(pending = null) }
+        notice("课件已带入，请在网页核对附件并发送。")
+    }
+    fun saveWebAnswer() = operation("保存网页回答") {
+        val pending = state.value.data.webPending
+        val content = webDriver().capture(pending?.marker ?: "")
+        val run = state.value.data.classRun
+        if (pending != null && pending.noteId.isNotBlank() && run?.noteId == pending.noteId) {
+            check(pending.pageKey in run.pending.map { it.key }) { "待保存页与课堂队列不一致，请先核对课堂记录。" }
+            val note = state.value.data.notes.find { it.id == run.noteId } ?: error("课堂笔记已移除。")
+            data { it.copy(notes = it.notes.map { n -> if (n.id == note.id) n.copy(content = n.content + "## ${pending.label}\n\n$content\n\n---\n\n") else n }, classRun = run.copy(completed = (run.completed + pending.pageKey).distinct(), pending = run.pending.filterNot { p -> p.key == pending.pageKey }), webPending = null) }
+        } else {
+            val label = pending?.label ?: "ChatGPT 网页笔记"
+            val n = Note(title = label, content = content, source = label, model = "ChatGPT 网页 · 网页中选择的模式")
+            data { it.copy(notes = listOf(n) + it.notes, webPending = null) }
+        }
+        saveNow(); notice("网页回答已存入笔记。")
+    }
+    fun discardWebPending() {
+        if (state.value.locked) return
+        data { it.copy(webPending = null) }
+        notice("已清除待处理标记；网页中的消息不会删除。再次处理该页可能产生重复请求。")
     }
     fun autoNotes(on: Boolean) { data { it.copy(autoNotes = on) } }
     fun savePrompts(tutor: String, notes: String) { data { it.copy(tutorPrompt = tutor.ifBlank { TUTOR_PROMPT }, notesPrompt = notes.ifBlank { NOTES_PROMPT }) }; notice("角色提示词已保存，每次请求都会发送给所选模型。") }
@@ -120,7 +171,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     fun send(text: String): Boolean {
         if (text.isBlank() || state.value.locked || !state.value.ready || storageBlocked) return false
         val s = state.value; val p = s.data.provider(); val c = s.data.chat(); val a = s.pending
-        if (!s.data.providerReady(p) || p.model.isBlank()) { notice("请先在模型页使用 ChatGPT 登录并选择模型，或填写其他服务的 API 配置。") ; tab(3); return false }
+        if (!s.data.providerReady(p) || p.model.isBlank()) { notice("请先在设置使用 ChatGPT 登录并选择模型，或填写其他服务的 API 配置。") ; tab(3); return false }
         if (!p.images && (a?.image != null || c.messages.any { it.image != null })) { notice("此对话包含课件图片，请选择并开启支持图片的模型，或新建纯文字对话。") ; return false }
         val user = Message("user", text + (a?.text?.takeIf { it.isNotBlank() }?.let { "\n\n课件原文：\n$it" } ?: ""), a?.image, a?.label)
         val history = c.messages.takeLast(24) + user
@@ -184,16 +235,17 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun attach(slide: Slide) = operation("读取课件页面") {
         val a = withContext(Dispatchers.IO) { rain.attachment(state.value.slideTitle, slide) }
-        state.update { it.copy(pending = a, tab = 0, notice = "已添加 ${a.label}。发送问题时会交给所选模型。") }
-        if (state.value.data.autoNotes) generateNote(a)
+        state.update { it.copy(pending = a, tab = 0, notice = "已添加 ${a.label}。可在学习页带入或提问。") }
+        if (state.value.data.autoNotes && (!state.value.data.usesWeb || state.value.data.webClassConsent)) generateNote(a)
     }
-    fun notes() = operation("整理学习笔记") { generateNote(state.value.pending) }
+    fun notes() { if (state.value.data.usesWeb) saveWebAnswer() else operation("整理学习笔记") { generateNote(state.value.pending) } }
     fun batchNotes(from: String, to: String) = operation("准备连续笔记") {
         val s = state.value
+        require(!s.data.usesWeb || s.data.webClassConsent) { "请先在设置启用网页跟课适配，再使用网页逐页整理。" }
         val pages = selectNotePages(from, to, s.slides)
         val p = s.data.provider()
-        require(s.data.providerReady(p) && p.model.isNotBlank()) { "请先使用 ChatGPT 登录并选择模型，或配置其他模型服务。" }
-        require(p.images || pages.none { it.cover.isNotBlank() }) { "所选页面包含图片，请先选择并开启支持图片输入的模型。" }
+        require(s.data.usesWeb || s.data.providerReady(p) && p.model.isNotBlank()) { "请先使用 ChatGPT 登录并选择模型，或配置其他模型服务。" }
+        require(s.data.usesWeb || p.images || pages.none { it.cover.isNotBlank() }) { "所选页面包含图片，请先选择并开启支持图片输入的模型。" }
         val noteId = newId(); val createdAt = System.currentTimeMillis()
         val title = "${s.slideTitle} · 第 ${pages.first().page}–${pages.last().page} 页"
         state.update { it.copy(tab = 2) }
@@ -202,12 +254,14 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
             generate = { a ->
                 val text = StringBuilder()
                 val input = listOf(Message("user", a.text.ifBlank { "请阅读课件图片并整理笔记。" }, a.image, a.label))
-                ai.stream(authorizedProvider(p), noteMessages(s.data.notesPrompt, input, a.label)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
-                text.toString()
+                if (s.data.usesWeb) webGenerate(a, s.data.notesPrompt) else {
+                    ai.stream(authorizedProvider(p), noteMessages(s.data.notesPrompt, input, a.label)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
+                    text.toString()
+                }
             },
             checkpoint = { progress ->
-                val note = Note(noteId, title, progress.markdown, "$title（完成情况见正文）", "${p.name} / ${p.model}", createdAt)
-                state.update { it.copy(data = it.data.copy(notes = listOf(note) + it.data.notes.filterNot { n -> n.id == noteId })) }
+                val note = Note(noteId, title, progress.markdown, "$title（完成情况见正文）", if (s.data.usesWeb) "ChatGPT 网页" else "${p.name} / ${p.model}", createdAt)
+                state.update { it.copy(data = it.data.copy(notes = listOf(note) + it.data.notes.filterNot { n -> n.id == noteId }, webPending = if (s.data.usesWeb) null else it.data.webPending)) }
                 withContext(NonCancellable + Dispatchers.IO) { disk.withLock { vault.save(state.value.data) } }
             },
             onPage = { page, index, total -> state.update { it.copy(operation = "连续笔记 $index/$total · 第 $page 页", noteDraft = "正在读取第 $page 页…") } }
@@ -216,6 +270,13 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     }
     private suspend fun generateNote(a: Attachment?) {
         val s = state.value.data; val p = s.provider()
+        if (s.usesWeb) {
+            require(a != null) { "请在学习页保存已有的网页回答，或先选择课件。" }
+            val text = webGenerate(a, s.notesPrompt)
+            val n = Note(title = a.label, content = text, source = a.label, model = "ChatGPT 网页")
+            data { it.copy(notes = listOf(n) + it.notes, webPending = null) }; saveNow(); notice("网页讲解已保存为笔记。")
+            return
+        }
         val input = a?.let { listOf(Message("user", it.text.ifBlank { "请根据课件图片整理笔记。" }, it.image, it.label)) } ?: s.chat().messages.takeLast(24)
         require(input.isNotEmpty()) { "先选择课件页面或进行对话，再整理笔记。" }
         val source = a?.label ?: "对话：${s.chat().title}"
@@ -233,14 +294,17 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         notice(if (lessons.isEmpty()) "当前账号没有正在进行的课堂。老师开课后可刷新。" else "请选择正在上的课程，进入后开始跟随。")
     }
     fun startClass(lesson: LiveLesson) {
-        val p = state.value.data.provider()
-        if (!state.value.data.providerReady(p) || p.model.isBlank() || !p.images) { notice("上课模式需要先登录 ChatGPT 或配置其他服务，并选择支持图片的模型。"); tab(3); return }
+        val saved = state.value.data
+        val p = saved.provider()
+        if (saved.usesWeb && !saved.webClassConsent) { notice("请先在设置启用网页跟课适配，并在学习页登录网页。"); tab(3); return }
+        if (saved.usesWeb && saved.webPending != null) { notice("请先在学习页恢复待完成的网页回答。"); tab(0); return }
+        if (!saved.usesWeb && (!saved.providerReady(p) || p.model.isBlank() || !p.images)) { notice("上课模式需要先配置支持图片的模型。"); tab(3); return }
         if (state.value.locked) return
         val existing = state.value.data.classRun
         if (existing != null && !existing.ended && existing.lesson.id != lesson.id) { notice("请先结束上一节的上课模式，再开始另一节课。"); return }
-        val run = if (existing != null && !existing.ended && existing.lesson.id == lesson.id) existing else ClassRun(lesson, providerId = p.id)
+        val run = if (existing != null && !existing.ended && existing.lesson.id == lesson.id) existing else ClassRun(lesson, providerId = if (saved.usesWeb) WEB_PROVIDER_ID else p.id)
         if (run !== existing) {
-            val note = Note(run.noteId, "${lesson.title} · 课堂笔记", "# ${lesson.title}\n\n> 根据课堂展示的课件逐页整理；补充内容标为 AI 讲解，不包含老师口述。\n\n", "课堂：${lesson.title}", "${p.name} / ${p.model}", run.startedAt)
+            val note = Note(run.noteId, "${lesson.title} · 课堂笔记", "# ${lesson.title}\n\n> 根据课堂展示的课件逐页整理；补充内容标为 AI 讲解，不包含老师口述。\n\n", "课堂：${lesson.title}", if (saved.usesWeb) "ChatGPT 网页" else "${p.name} / ${p.model}", run.startedAt)
             data { it.copy(classRun = run, notes = listOf(note) + it.notes) }
         }
         resumeClass()
@@ -249,7 +313,10 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         if (state.value.busy || storageBlocked || state.value.classUi.let { it.running && !it.paused }) return
         val run = state.value.data.classRun?.takeUnless { it.ended && it.pending.isEmpty() } ?: return
         val p = state.value.data.providers.find { it.id == run.providerId }
-        if (p == null || !state.value.data.providerReady(p) || !p.images) { notice("本节课使用的模型配置不可用，请恢复该配置。"); return }
+        val web = run.providerId == WEB_PROVIDER_ID
+        if (web && (!state.value.data.usesWeb || !state.value.data.webClassConsent)) { notice("请先启用网页跟课适配。"); tab(3); return }
+        if (web && state.value.data.webPending != null) { notice("请先在学习页恢复待完成回答，不会重复发送。"); tab(0); return }
+        if (!web && (state.value.data.usesWeb || p == null || !state.value.data.providerReady(p) || !p.images)) { notice("本节课记录使用原模型配置，请切回接口模式，或结束本节后新建网页课堂。"); return }
         val previousWriter = classWriter
         val previousFeed = classFeed
         val saved = state.value.data
@@ -268,7 +335,8 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                     val slide = slides.find { it.page == page.page } ?: error("第 ${page.page} 页尚未开放，已暂停；可稍后继续。")
                     val a = withContext(Dispatchers.IO) { rain.attachment(title, slide) }
                     val text = StringBuilder()
-                    ai.stream(authorizedProvider(p), noteMessages(prompt, listOf(Message("user", a.text.ifBlank { "讲解这一页课件。" }, a.image, a.label)), a.label)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
+                    if (web) text.append(webGenerate(a, prompt, page.key, run.noteId))
+                    else ai.stream(authorizedProvider(p!!), noteMessages(prompt, listOf(Message("user", a.text.ifBlank { "讲解这一页课件。" }, a.image, a.label)), a.label)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
                     require(text.isNotBlank()) { "这一页没有生成有效讲解。" }
                     withContext(NonCancellable) {
                         state.update { u ->
@@ -277,7 +345,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                             val updated = r.copy(completed = (r.completed + page.key).distinct(), pending = r.pending.filterNot { it.key == page.key })
                             val notes = u.data.notes.map { if (it.id == run.noteId) it.copy(content = it.content + "## $title · 第 ${page.page} 页\n\n$text\n\n---\n\n") else it }
                             check(notes.any { it.id == run.noteId }) { "课堂笔记已被移除。" }
-                            u.copy(data = u.data.copy(classRun = updated, notes = notes), noteDraft = "", classUi = u.classUi.copy(current = null, status = if (u.classUi.connected) "已保存 ${updated.completed.size} 页，等待老师翻页" else "已保存 ${updated.completed.size} 页"))
+                            u.copy(data = u.data.copy(classRun = updated, notes = notes, webPending = if (web) null else u.data.webPending), noteDraft = "", classUi = u.classUi.copy(current = null, status = if (u.classUi.connected) "已保存 ${updated.completed.size} 页，等待老师翻页" else "已保存 ${updated.completed.size} 页"))
                         }
                         withContext(Dispatchers.IO) { disk.withLock { vault.save(state.value.data) } }
                     }
@@ -326,6 +394,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun saveNow() = withContext(NonCancellable + Dispatchers.IO) { disk.withLock { check(!storageBlocked); vault.save(state.value.data) } }
     private fun setChatGptAccount(account: ChatGptAccount) { state.update { u -> u.copy(data = u.data.copy(chatgptAccounts = u.data.chatgptAccounts.filterNot { it.id == account.id } + account)) } }
     private suspend fun authorizedProvider(p: Provider): Provider {
+        check(!state.value.data.usesWeb) { "当前使用网页学习；接口调用已关闭。需要时可在设置显式切换。" }
         if (p.chatgptAccountId.isBlank()) return p
         validateProviderDestination(p)
         return accountLock.withLock {
@@ -345,7 +414,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
             }
-            require(account.planGranted && account.accessToken.isNotBlank()) { "账号尚未授权使用 ChatGPT 套餐，请在模型页开启。" }
+            require(account.planGranted && account.accessToken.isNotBlank()) { "账号尚未授权使用 ChatGPT 套餐，请在设置开启。" }
             p.copy(key = account.accessToken, baseUrl = CHATGPT_API, protocol = "responses")
         }
     }
@@ -410,7 +479,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 if (authAttemptId == attemptId) {
-                    val message = (e as? OAuthFailure)?.message ?: if (identityReceived && !credentialsSaved) "ChatGPT 授权已通过，但本机保存未完成。请检查存储空间，暂时不要关闭 App。" else if (credentialsSaved) "ChatGPT 登录已保存，后续配置未完成；可在模型页继续。" else "ChatGPT 登录未完成，请检查网络后重试；原有登录未被替换。"
+                    val message = (e as? OAuthFailure)?.message ?: if (identityReceived && !credentialsSaved) "ChatGPT 授权已通过，但本机保存未完成。请检查存储空间，暂时不要关闭 App。" else if (credentialsSaved) "ChatGPT 登录已保存，后续配置未完成；可在设置继续。" else "ChatGPT 登录未完成，请检查网络后重试；原有登录未被替换。"
                     state.update { it.copy(chatgptStage = message ?: "ChatGPT 登录未完成。", notice = message ?: "ChatGPT 登录未完成。") }
                 }
             } finally {
