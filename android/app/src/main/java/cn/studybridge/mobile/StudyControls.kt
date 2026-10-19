@@ -96,7 +96,11 @@ private fun Modifier.pressFeedback(enabled: Boolean, unavailableReason: String? 
 }
 @Composable fun FeedbackSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, unavailableReason: String? = null) {
     val view = LocalView.current
-    NativeSwitch(checked, { view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); onCheckedChange(it) }, modifier.pressFeedback(enabled, unavailableReason), enabled = enabled)
+    NativeSwitch(checked, { view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); onCheckedChange(it) }, modifier.pressFeedback(enabled, unavailableReason), enabled = enabled, colors = SwitchDefaults.colors(
+        checkedThumbColor = MaterialTheme.colorScheme.onPrimary, checkedTrackColor = MaterialTheme.colorScheme.primary,
+        uncheckedThumbColor = MaterialTheme.colorScheme.outline, uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHigh, uncheckedBorderColor = MaterialTheme.colorScheme.outline,
+        disabledUncheckedThumbColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f), disabledUncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHigh, disabledUncheckedBorderColor = MaterialTheme.colorScheme.outlineVariant
+    ))
 }
 @Composable fun FeedbackDropdownMenuItem(text: @Composable () -> Unit, onClick: () -> Unit, modifier: Modifier = Modifier, leadingIcon: @Composable (() -> Unit)? = null, trailingIcon: @Composable (() -> Unit)? = null, enabled: Boolean = true) {
     NativeDropdownMenuItem(text, feedbackClick(onClick), modifier.pressFeedback(enabled), leadingIcon = leadingIcon, trailingIcon = trailingIcon, enabled = enabled)

@@ -36,12 +36,14 @@ import androidx.compose.ui.unit.sp
         secondary = Color(0xFFADC5BA), onSecondary = Color(0xFF20352C), secondaryContainer = Color(0xFF293D33), onSecondaryContainer = Color(0xFFDEEEE5),
         background = Color(0xFF111614), onBackground = Color(0xFFE7EDE9), surface = Color(0xFF111614), onSurface = Color(0xFFE7EDE9),
         surfaceVariant = Color(0xFF29332E), onSurfaceVariant = Color(0xFFAABBB1), surfaceContainer = Color(0xFF1B231F), surfaceContainerHigh = Color(0xFF242E28),
+        surfaceContainerLowest = Color(0xFF0C100E), surfaceContainerLow = Color(0xFF17201B), surfaceContainerHighest = Color(0xFF303D34),
         outline = Color(0xFF75857B), outlineVariant = Color(0xFF344039)
     ) else lightColorScheme(
         primary = Color(0xFF22634F), onPrimary = Color.White, primaryContainer = Color(0xFFE7F1EB), onPrimaryContainer = Color(0xFF214F3E),
         secondary = Color(0xFF53695D), onSecondary = Color.White, secondaryContainer = Color(0xFFEDF2EE), onSecondaryContainer = Color(0xFF344F40),
         background = Color(0xFFF6F8F6), onBackground = Color(0xFF1B2921), surface = Color(0xFFF6F8F6), onSurface = Color(0xFF1B2921),
         surfaceVariant = Color(0xFFE8EEEA), onSurfaceVariant = Color(0xFF5D7064), surfaceContainer = Color.White, surfaceContainerHigh = Color(0xFFEDF2EE),
+        surfaceContainerLowest = Color.White, surfaceContainerLow = Color(0xFFF1F5F2), surfaceContainerHighest = Color(0xFFE2EAE4),
         outline = Color(0xFF8B9C91), outlineVariant = Color(0xFFDCE5DE)
     )
     val regular = TextStyle(letterSpacing = 0.sp)

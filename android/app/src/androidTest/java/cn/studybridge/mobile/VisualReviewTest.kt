@@ -1,6 +1,8 @@
 package cn.studybridge.mobile
 
 import android.graphics.Bitmap
+import android.content.ContentValues
+import android.provider.MediaStore
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -13,7 +15,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
-import java.io.File
 
 // Synthetic display data only: no real account, lesson entry, or model request.
 // Render the same frame, theme and screens shipped in release, rather than mock screenshots.
@@ -45,9 +46,12 @@ class VisualReviewTest {
     private fun shot(name: String) {
         compose.waitForIdle()
         val bitmap = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()) { "Screenshot unavailable" }
-        val dir = compose.activity.getExternalFilesDir("ui-review")!!
-        dir.mkdirs()
-        File(dir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        // Shared media survives AGP uninstalling the debug app at the end of the test task.
+        val resolver = compose.activity.contentResolver
+        val values = ContentValues().apply { put(MediaStore.Images.Media.DISPLAY_NAME, "$name.png"); put(MediaStore.Images.Media.MIME_TYPE, "image/png"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/StudyUiReview"); put(MediaStore.Images.Media.IS_PENDING, 1) }
+        val uri = requireNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values))
+        requireNotNull(resolver.openOutputStream(uri)).use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+        resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
         bitmap.recycle()
     }
     @Test fun populatedScreensAndDraftSurviveTabChanges() {
@@ -76,7 +80,9 @@ class VisualReviewTest {
         render(state, scale = 1.5f)
         compose.onNodeWithText("继续").assertIsDisplayed()
         compose.onNodeWithText("结束").assertIsDisplayed(); shot("sample-class-large-text")
-        compose.runOnIdle { state.value = state.value.copy(tab = 3) }
+        compose.runOnIdle { state.value = state.value.copy(classUi = ClassUi(running = true, paused = false, status = "正在重新连接课堂…")) }
+        compose.onNodeWithText("连接中").assertIsDisplayed()
+        compose.runOnIdle { state.value = base.copy(tab = 3) }
         compose.onNodeWithText("学习方式").assertIsDisplayed(); shot("sample-settings-large-text")
         compose.onNodeWithText("学习助手提示词").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { state.value = base.copy(tab = 2) }

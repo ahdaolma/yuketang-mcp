@@ -56,9 +56,12 @@ import androidx.compose.ui.viewinterop.AndroidView
     if (discard) AlertDialog(onDismissRequest = { discard = false }, title = { Text("清除待处理标记？") }, text = { Text("网页中的消息不会删除。请先检查并保存已有回答；清除后再次处理同一页可能重复发送并消耗额度。") }, confirmButton = { TextButton(onClick = { vm.discardWebPending(); discard = false }) { Text("确认清除") } }, dismissButton = { TextButton(onClick = { discard = false }) { Text("返回检查") } })
     Column(Modifier.fillMaxSize()) {
         if (active) {
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val labelledSave = maxWidth >= 360.dp && LocalDensity.current.fontScale <= 1.2f
             Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 20.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("ChatGPT 网页", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (ui.busy) TextButton(onClick = vm::stop) { Text("停止") }
+                else if (labelledSave) TextButton(onClick = vm::saveWebAnswer, enabled = !ui.locked) { Icon(Icons.Outlined.BookmarkAdd, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("保存回答") }
                 else IconButton(onClick = vm::saveWebAnswer, enabled = !ui.locked) { Icon(Icons.Outlined.BookmarkAdd, "保存回答", Modifier.size(22.dp)) }
                 Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreHoriz, "网页选项", Modifier.size(22.dp)) }
@@ -74,6 +77,7 @@ import androidx.compose.ui.viewinterop.AndroidView
                 }
                 IconButton(onClick = { vm.tab(3) }) { Icon(Icons.Outlined.Settings, "设置", Modifier.size(22.dp)) }
             }
+            }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             if (web.progress < 100 && !ui.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (ui.data.webPending != null && !ui.locked) Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
@@ -84,7 +88,7 @@ import androidx.compose.ui.viewinterop.AndroidView
             }
             if (ui.classUi.running) Row(Modifier.fillMaxWidth().padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(ui.classUi.status, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                TextButton(onClick = { if (ui.classUi.paused) vm.resumeClass() else vm.pauseClass() }, enabled = !ui.busy) { Text(if (ui.classUi.paused) "继续" else "暂停") }
+                TextButton(onClick = { if (ui.classUi.paused) vm.resumeClass() else vm.pauseClass() }, enabled = !ui.busy && !ui.chatgptLoginActive) { Text(if (ui.classUi.paused) "继续" else "暂停") }
             }
             ui.pending?.let { a -> Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {

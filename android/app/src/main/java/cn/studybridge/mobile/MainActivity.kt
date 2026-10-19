@@ -331,13 +331,13 @@ private fun preview(bytes: ByteArray): Bitmap? {
     val resumable = run != null && (!run.ended || run.pending.isNotEmpty())
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.School, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary); Text("上课模式", Modifier.padding(start = 10.dp).weight(1f), style = MaterialTheme.typography.titleSmall); Text(if (ui.classUi.connected) "跟随中" else if (resumable) "已暂停" else "未开始", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.School, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary); Text("上课模式", Modifier.padding(start = 10.dp).weight(1f), style = MaterialTheme.typography.titleSmall); Text(when { ui.classUi.running && !ui.classUi.paused -> if (run?.ended == true) "整理中" else if (ui.classUi.connected) "跟随中" else "连接中"; resumable -> "已暂停"; else -> "未开始" }, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Text(if (resumable) run!!.lesson.title else "老师翻到新一页，笔记就跟着补充。", style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
             if (resumable) {
                 Text("已整理 ${run!!.completed.size} 页 · 待处理 ${run.pending.size} 页", style = MaterialTheme.typography.labelLarge)
                 Text(ui.classUi.status.ifBlank { "本节记录已保留，点击继续恢复。" }, style = MaterialTheme.typography.bodySmall)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalButton(colors = classButtonColors, onClick = { if (ui.classUi.running && !ui.classUi.paused) vm.pauseClass() else vm.resumeClass() }, enabled = !ui.busy) { Text(if (ui.classUi.running && !ui.classUi.paused) "暂停" else "继续") }
+                    FilledTonalButton(colors = classButtonColors, onClick = { if (ui.classUi.running && !ui.classUi.paused) vm.pauseClass() else vm.resumeClass() }, enabled = !ui.busy && !ui.chatgptLoginActive) { Text(if (ui.classUi.running && !ui.classUi.paused) "暂停" else "继续") }
                     TextButton(onClick = { vm.tab(2) }) { Text("查看笔记") }
                     TextButton(onClick = vm::endClass, colors = ButtonDefaults.textButtonColors(), enabled = !ui.busy) { Text("结束") }
                 }
@@ -463,19 +463,21 @@ private fun preview(bytes: ByteArray): Bitmap? {
             SettingOption("ChatGPT 网页", "在官网页面登录，使用网页中的对话。", Icons.Outlined.Language, ui.data.usesWeb, !ui.locked) { vm.learningMode("web") }
             HorizontalDivider(Modifier.padding(start = 52.dp), color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             SettingOption("模型接口", "连接自己的模型服务或账号授权。", Icons.Outlined.Tune, !ui.data.usesWeb, !ui.locked) { vm.learningMode("native") }
+            if (ui.data.usesWeb) {
+                HorizontalDivider(Modifier.padding(start = 52.dp), color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                TextButton(onClick = { vm.tab(0) }, modifier = Modifier.align(Alignment.End).padding(end = 8.dp)) { Text("进入 ChatGPT 网页"); Icon(Icons.Default.ArrowForward, null, Modifier.padding(start = 6.dp).size(16.dp)) }
+            }
         }
         if (ui.data.usesWeb) {
-            TextButton(onClick = { vm.tab(0) }, modifier = Modifier.align(Alignment.End)) { Text("进入 ChatGPT 网页"); Icon(Icons.Default.ArrowForward, null, Modifier.padding(start = 6.dp).size(16.dp)) }
-            StudySectionLabel("上课模式")
+            StudySectionLabel("上课模式 · 实验功能")
             StudyPanel {
-                SettingsToggle("网页跟课适配", "自动带入新页并保存回答", ui.data.webClassConsent, !ui.locked, { if (it) webConsent = true else vm.consentWebClass(false) })
-                Text("实验功能 · 保持 App 前台", Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                SettingsToggle("网页跟课适配", if (ui.data.webClassConsent) "逐页保存讲解 · 需保持 App 前台" else "自动带入新页并保存回答", ui.data.webClassConsent, !ui.locked, { if (it) webConsent = true else vm.consentWebClass(false) })
             }
             if (webConsent) AlertDialog(onDismissRequest = { webConsent = false }, title = { Text("启用网页跟课适配") }, text = { Text("App 会在当前 ChatGPT 网页中带入课件、发送问题，并把对应回答保存为笔记，使用网页所选模式及额度。\n\n请先在学习页登录，并保持 App 前台。网页改版、登录验证或额度提示可能中断跟课；中断后先恢复待完成回答，避免重复发送。此适配仍需手机实测，不会自动改走模型接口。") }, confirmButton = { TextButton(onClick = { vm.consentWebClass(); webConsent = false }) { Text("启用适配") } }, dismissButton = { TextButton(onClick = { webConsent = false }) { Text("暂不开启") } })
         } else Text("接口模式的授权与用量规则由所选服务决定。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         StudySectionLabel("笔记")
         StudyPanel {
-            SettingsToggle("添加课件时自动整理", if (ui.data.usesWeb && !ui.data.webClassConsent) "网页模式需先开启跟课适配" else "选择课件后自动生成讲解笔记", ui.data.autoNotes, !ui.locked && (!ui.data.usesWeb || ui.data.webClassConsent), vm::autoNotes, if (!ui.locked && ui.data.usesWeb && !ui.data.webClassConsent) "请先开启网页跟课适配，再使用自动整理。" else null)
+            SettingsToggle("添加课件时自动整理", if (ui.data.usesWeb && !ui.data.webClassConsent) if (ui.data.autoNotes) "开启跟课适配后生效，可随时关闭" else "网页模式需先开启跟课适配" else "选择课件后自动生成讲解笔记", ui.data.autoNotes, !ui.locked && (!ui.data.usesWeb || ui.data.webClassConsent || ui.data.autoNotes), vm::autoNotes, if (!ui.locked && ui.data.usesWeb && !ui.data.webClassConsent) "请先开启网页跟课适配，再使用自动整理。" else null)
         }
         if (!ui.data.usesWeb) {
             StudySectionLabel("模型与账号")
