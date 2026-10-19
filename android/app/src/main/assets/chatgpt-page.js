@@ -49,7 +49,10 @@ function rainStudyPage(action, payload) {
             Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,payload.text);
             el.dispatchEvent(new Event('input',{bubbles:true}));
         } else { document.execCommand('insertText',false,payload.text); el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:payload.text})); }
-        return {ok:content(el).includes(payload.text.slice(-80))};
+        // Rich editors normalize line breaks and nonbreaking spaces while inserting plain text.
+        // Compare the complete content without requiring identical DOM whitespace.
+        const normalize = text => text.replace(/\s+/g,' ').trim();
+        return {ok:normalize(content(el)) === normalize(payload.text)};
     }
     if (action === 'ready') {
         const attachment = !!form()?.querySelector('button[aria-label*="Remove file"],button[aria-label*="Remove attachment"],button[aria-label*="移除附件"],button[aria-label*="删除附件"],img[alt="Uploaded image"],img[src^="blob:"]');

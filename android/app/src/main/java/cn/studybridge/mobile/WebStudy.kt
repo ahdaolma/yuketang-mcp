@@ -153,6 +153,10 @@ class ChatGptWebSession(context: Context, private val changed: () -> Unit, priva
     fun loading(value: Int) { progress = value; changed() }
     override suspend fun call(action: String, payload: JSONObject): JSONObject = withContext(Dispatchers.Main.immediate) {
         check(isChatGptPage(view.url ?: "")) { "请先在学习页打开并登录 ChatGPT 网页，选择普通 Chat 对话。" }
+        if (action == "prepare") {
+            withTimeout(5000) { while (!view.isShown) delay(16) }
+            view.requestFocus()
+        }
         withTimeout(5000) { suspendCancellableCoroutine { continuation ->
             // The script checks window.location again. Nothing is injected into login or external origins.
             view.evaluateJavascript("(function(){if(location.protocol!=='https:'||location.hostname!=='chatgpt.com')return JSON.stringify({ok:false});$script;return JSON.stringify(rainStudyPage(${JSONObject.quote(action)},$payload));})()") { value ->

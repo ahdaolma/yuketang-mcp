@@ -114,6 +114,9 @@ class MainActivity : ComponentActivity() {
     }
     LaunchedEffect(webRevision) { vm.webLocation(web.pageUrl) }
     BackHandler(enabled = ui.tab == 3) { vm.tab(previousTab) }
+    BackHandler(enabled = ui.tab == 0 && ui.data.usesWeb && web.view.canGoBack()) {
+        if (ui.locked) vm.notice("请先暂停上课模式或停止整理，再返回上一页。") else web.view.goBack()
+    }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(ui.notice) {
         if (ui.notice.isNotBlank()) {
@@ -411,13 +414,18 @@ private fun preview(bytes: ByteArray): Bitmap? {
         Text(if (ui.data.usesWeb) "直接使用 ChatGPT 页面，在网页中登录并选择聊天模式。App 不发起模型接口请求，实际用量以网页提示为准。" else "由 App 调用模型接口。ChatGPT 套餐授权受第三方应用额度限制，与普通网页聊天体验不同。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (ui.data.usesWeb) {
             OutlinedButton(onClick = { vm.tab(0) }, modifier = Modifier.fillMaxWidth()) { Text("进入 ChatGPT 网页") }
+            HorizontalDivider()
+            Text("上课模式", style = MaterialTheme.typography.titleSmall)
             ListItem(headlineContent = { Text("网页跟课适配") }, supportingContent = { Text("自动带入新页并保存回答 · 实验功能") }, trailingContent = { Switch(ui.data.webClassConsent, { if (it) webConsent = true else vm.consentWebClass(false) }, enabled = !ui.locked) })
             Text("网页改版、登录验证或额度提示可能中断跟课；中断后先恢复待完成回答，避免重复发送。普通网页聊天不需要开启此项。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (webConsent) AlertDialog(onDismissRequest = { webConsent = false }, title = { Text("启用网页跟课适配") }, text = { Text("开启上课模式或范围笔记后，App 会操作当前 ChatGPT 页面的附件、输入框和发送按钮，并读取对应回答保存笔记。使用你在网页选择的模式和网页自身额度。请先登录并打开可用对话；保持 App 前台。此适配未经你的手机与账号实测，网页变化时会暂停，不会改走模型接口。") }, confirmButton = { TextButton(onClick = { vm.consentWebClass(); webConsent = false }) { Text("启用适配") } }, dismissButton = { TextButton(onClick = { webConsent = false }) { Text("暂不开启") } })
         }
         HorizontalDivider()
+        Text("笔记", style = MaterialTheme.typography.titleSmall)
         ListItem(headlineContent = { Text("添加课件时自动整理") }, trailingContent = { Switch(ui.data.autoNotes, vm::autoNotes, enabled = !ui.locked) })
         if (!ui.data.usesWeb) {
+            HorizontalDivider()
+            Text("模型与账号", style = MaterialTheme.typography.titleSmall)
             TextButton(onClick = { advancedModels = !advancedModels }) { Text(if (advancedModels) "收起账号与模型" else "配置模型与账号") }
         }
         if (!ui.data.usesWeb && advancedModels) {
@@ -456,6 +464,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
         }
         }
         HorizontalDivider()
+        Text("助手设置", style = MaterialTheme.typography.titleSmall)
         TextButton(onClick = { showPrompts = !showPrompts }) { Text(if (showPrompts) "收起内置角色 Prompt" else "查看 / 编辑内置角色 Prompt") }
         if (showPrompts) {
             OutlinedTextField(tutor, { tutor = it }, label = { Text("学习助教 Prompt") }, modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp), maxLines = 12, enabled = !ui.locked)
