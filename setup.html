@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>雨课堂 · 微信扫码设置</title>
+<style>
+:root{font-family:system-ui,"Microsoft YaHei",sans-serif;color:#183a36;background:#edf4f1}*{box-sizing:border-box}body{margin:0}main{max-width:900px;margin:48px auto;padding:0 20px}header{margin-bottom:28px}.eyebrow{font-size:13px;letter-spacing:2px;color:#54766c}h1{font-size:34px;letter-spacing:-1px;margin:12px 0}h2{font-size:20px;margin-top:0}p{line-height:1.7;color:#526760}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.card{background:#fff;border:1px solid #dce7e1;border-radius:18px;padding:26px;margin-bottom:20px}.wide{grid-column:1/-1}label{display:block;font-size:14px;margin:20px 0 8px}select,button{font:inherit;border-radius:10px;padding:12px 14px}select{border:1px solid #c8d8ce;background:white;width:100%;color:#183a36}button{border:0;background:#176d59;color:#fff;cursor:pointer;margin:14px 8px 0 0}button.secondary{background:#e8f0eb;color:#255346}button:disabled{opacity:.5;cursor:wait}.status{font-size:14px;border-left:3px solid #71aa91;padding:9px 13px;background:#f0f7f2;border-radius:0 8px 8px 0;line-height:1.6}#qr{display:none;width:240px;max-width:100%;margin:18px auto}.fine{font-size:13px;color:#6b7b73}ul{padding-left:20px;line-height:1.8}li{margin:10px 0}pre{overflow:auto;background:#f3f6f3;padding:16px;border-radius:10px;white-space:pre-wrap;font-size:12px}#courses:empty::after{content:"扫码登录后，点击读取课程。";color:#7b8880}.error{border-left-color:#d29665;background:#fff5eb}footer{font-size:12px;color:#748279;margin:18px 0 36px}@media(max-width:650px){main{margin:26px auto}.grid{grid-template-columns:1fr}h1{font-size:28px}.card{padding:20px}}
+</style></head><body><main>
+<header><div class="eyebrow">雨课堂学习桥 / 本地设置</div><h1>用微信连接你的课堂。</h1><p>先登录并确认课程能读取，再把 MCP 配置添加到本地客户端。</p></header>
+<div class="grid"><section class="card"><h2>1. 微信扫码登录</h2><p class="fine">选择你微信中实际使用的入口。</p><label for="region">雨课堂版本</label><select id="region"><option value="standard">雨课堂</option><option value="hetang">荷塘雨课堂</option><option value="changjiang">长江雨课堂</option><option value="huanghe">黄河雨课堂</option></select>
+<button id="login">显示登录二维码</button><button class="secondary" id="diagnose">检查网络</button><img id="qr" alt="使用手机微信扫描此二维码并确认登录"><p class="fine">在电脑显示二维码，用手机微信扫描。无需输入微信密码。</p><div id="status" class="status" role="status">正在检查登录状态…</div></section>
+<section class="card"><h2>2. 确认你的课程</h2><p class="fine">登录后核对账号名，再检查课程列表。</p><button id="load">读取课程</button><ul id="courses"></ul><div id="course-status" class="fine" role="status"></div></section>
+<section class="card wide"><h2>3. 添加到本地 MCP 客户端</h2><p>扫码成功后，点击生成配置。配置中的路径对应这台电脑，可供支持 STDIO 的 MCP 客户端使用。</p><button class="secondary" id="config">生成本机配置</button><button class="secondary" id="copy" hidden>复制配置</button><pre id="config-code" hidden></pre><p class="fine">当前版本尚未部署远程服务，不能直接连接手机里的 ChatGPT 云端聊天。老师当前页自动同步也仍待实现。</p></section></div>
+<footer>登录记录保存在你当前系统用户的本地目录。关闭此窗口不会删除记录；关闭启动终端可停止引导服务。</footer></main>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const key=new URLSearchParams(location.hash.slice(1)).get('key')||sessionStorage.getItem('ykt-setup-key')||'';
+if(key)sessionStorage.setItem('ykt-setup-key',key);
+history.replaceState(null,'',location.pathname);
+let qrURL=null, lastQR=0, busy=false, selectedDirty=false, configText='';
+function message(id,text,error=false){$(id).textContent=text;$(id).classList.toggle('error',error);}
+async function request(path,method='GET',body){const options={method,headers:{'X-Setup-Key':key}};if(body){options.headers['Content-Type']='application/json';options.body=JSON.stringify(body);}const r=await fetch('/api/'+path,options);const data=await r.json();if(!r.ok)throw new Error(data.error||'请求失败');return data;}
+function hideQR(){if(qrURL)URL.revokeObjectURL(qrURL);qrURL=null;$('qr').style.display='none';}
+async function refreshQR(){const r=await fetch('/api/qr',{headers:{'X-Setup-Key':key}});if(!r.ok)return;const blob=await r.blob();if(qrURL)URL.revokeObjectURL(qrURL);qrURL=URL.createObjectURL(blob);$('qr').src=qrURL;$('qr').style.display='block';lastQR=Date.now();}
+const names={connecting:'正在连接雨课堂…',waiting_for_scan:'请用微信扫码，并在微信中确认登录。',not_logged_in:'尚未登录，请选择版本并显示二维码。',expired:'二维码已过期，请重新显示二维码。',error:'登录连接失败，请检查网络或更换入口。',cancelled:'登录已取消。'};
+async function poll(){if(busy||selectedDirty)return;busy=true;try{const s=await request('status');$('region').value=s.region;if(s.state==='authenticated'){hideQR();message('status','已登录：'+(s.user?.name||'账号已验证'));$('login').textContent='重新扫码登录';}else{message('status',s.message||names[s.state]||'等待登录',s.state==='error');if(s.has_qr&&(!qrURL||Date.now()-lastQR>12000))await refreshQR();if(!s.has_qr)hideQR();}}catch(e){hideQR();message('status',e.message,true);}finally{busy=false;}}
+$('login').onclick=async()=>{selectedDirty=true;$('login').disabled=true;hideQR();try{message('status','正在获取二维码…');await request('login','POST',{region:$('region').value});lastQR=0;}catch(e){message('status',e.message,true);}finally{selectedDirty=false;$('login').disabled=false;await poll();}};
+$('region').onchange=()=>{selectedDirty=true;hideQR();$('courses').replaceChildren();message('status','已选择新版本，请点击显示登录二维码。');};
+$('load').onclick=async()=>{$('load').disabled=true;try{const d=await request('courses');$('courses').replaceChildren();for(const c of d.courses){const li=document.createElement('li');li.textContent=c.name+(c.teacher?' · '+c.teacher:'');$('courses').append(li);}message('course-status',d.courses.length?'已读取 '+d.courses.length+' 门课程（当前接口批次）。':'接口未返回课程，请核对入口、账号和学期。');}catch(e){message('course-status',e.message,true);}finally{$('load').disabled=false;}};
+$('diagnose').onclick=async()=>{$('diagnose').disabled=true;try{const d=await request('diagnose','POST',{region:$('region').value});message('status',d.host+'：HTTP '+d.http_status+'。'+d.message);}catch(e){message('status',e.message,true);}finally{$('diagnose').disabled=false;}};
+$('config').onclick=async()=>{try{configText=JSON.stringify(await request('config'),null,2);$('config-code').textContent=configText;$('config-code').hidden=false;$('copy').hidden=false;}catch(e){message('status',e.message,true);}};
+$('copy').onclick=async()=>{try{await navigator.clipboard.writeText(configText);$('copy').textContent='已复制';}catch(e){$('copy').textContent='请手动复制下方配置';}};
+setInterval(poll,2500);poll();
+</script></body></html>

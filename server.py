@@ -310,10 +310,15 @@ def build_server(client):
 
 def main():
     parser = argparse.ArgumentParser(description="雨课堂 MCP 测试版")
-    parser.add_argument("command", choices=["serve", "login"], nargs="?", default="serve")
+    parser.add_argument("command", choices=["serve", "login", "setup"], nargs="?", default="serve")
     parser.add_argument("--region", choices=HOSTS, default="standard")
     parser.add_argument("--transport", choices=["stdio", "streamable-http"], default="stdio")
+    parser.add_argument("--port", type=int, default=8766, help="本地扫码引导页端口，默认 8766")
     args = parser.parse_args()
+    if args.command == "setup":
+        from local_setup import run_setup
+        run_setup(args.region, args.port)
+        return
     client = RainClient(args.region)
     if args.command == "login":
         async def login():
