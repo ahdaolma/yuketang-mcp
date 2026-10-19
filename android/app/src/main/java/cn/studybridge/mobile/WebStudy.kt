@@ -9,6 +9,7 @@ import android.webkit.SslErrorHandler
 import android.net.http.SslError
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -141,6 +142,9 @@ class ChatGptWebSession(context: Context, private val changed: () -> Unit, priva
             override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) { changed() }
             override fun onReceivedError(view: WebView, request: WebResourceRequest, failure: WebResourceError) {
                 if (request.isForMainFrame) { this@ChatGptWebSession.error = "网页加载失败，请检查网络后重试，或在系统浏览器打开。"; this@ChatGptWebSession.progress = 100; changed() }
+            }
+            override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+                if (request.isForMainFrame) { this@ChatGptWebSession.error = "网页响应失败（HTTP ${response.statusCode}）。可刷新，或在系统浏览器核对访问情况。"; changed() }
             }
             override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) { handler.cancel(); this@ChatGptWebSession.error = "网页证书验证失败，连接已停止。"; changed() }
         }

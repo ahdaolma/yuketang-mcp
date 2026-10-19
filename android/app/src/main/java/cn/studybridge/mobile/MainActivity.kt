@@ -99,6 +99,7 @@ class MainActivity : ComponentActivity() {
     var previousTab by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(ui.tab) { if (ui.tab != 3) previousTab = ui.tab }
     var webRevision by remember { mutableIntStateOf(0) }
+    var initialWebLoaded by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val web = remember(context) { ChatGptWebSession(context, { webRevision++ }, { url ->
         runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
@@ -107,7 +108,10 @@ class MainActivity : ComponentActivity() {
         vm.bindWeb(web)
         onDispose { vm.bindWeb(null); web.destroy() }
     }
-    LaunchedEffect(ui.ready) { if (ui.ready && web.view.url == null) web.load(ui.data.webPending?.url ?: CHATGPT_WEB) }
+    LaunchedEffect(ui.ready, ui.data.usesWeb) {
+        if (ui.ready && ui.data.usesWeb && !initialWebLoaded) { initialWebLoaded = true; web.load(ui.data.webPending?.url ?: CHATGPT_WEB) }
+        if (ui.data.usesWeb) web.view.onResume() else web.view.onPause()
+    }
     LaunchedEffect(webRevision) { vm.webLocation(web.pageUrl) }
     BackHandler(enabled = ui.tab == 3) { vm.tab(previousTab) }
     val snackbar = remember { SnackbarHostState() }
