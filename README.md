@@ -2,7 +2,7 @@
 
 独立安卓 AI 学习客户端现默认加载真正的 ChatGPT 网页，采用「学习、课程、笔记」三项导航。可带入雨课堂课件、保存网页回答，并提供需显式启用的网页跟课适配（实验功能）。原有模型接口和 ChatGPT 套餐授权移入设置，需用户显式切换；网页模式不会调用这些接口。
 
-安卓源码、安装与功能边界见 [android/README.md](android/README.md)。GitHub Actions 的 **Android preview** 工作流提供测试与 APK 构建。内置学习助教和笔记助手两套可编辑的角色 Prompt，每次请求自动注入。
+安卓源码、安装与功能边界见 [android/README.md](android/README.md)。GitHub Actions 的 **Android preview** 工作流提供测试与 APK 构建。内置学习助教和笔记助手两套可编辑的角色 Prompt，应用管理的请求自动带入；网页自由对话需显式带入。设置中可填写「我的学习情况」，让讲解与笔记参考自己的基础、难点和目标。
 
 原有 MCP 继续提供微信扫码授权，让支持 MCP 的助手读取自己账号已开放的课程与课件。
 

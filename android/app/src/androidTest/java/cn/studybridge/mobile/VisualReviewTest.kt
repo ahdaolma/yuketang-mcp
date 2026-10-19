@@ -117,7 +117,7 @@ class VisualReviewTest {
         compose.onNodeWithText("学习方式").assertIsDisplayed(); shot("sample-settings-large-text")
         compose.onNodeWithText("我的学习情况").performScrollTo().performClick()
         compose.onNodeWithText("当前水平与学习需求").performScrollTo().assertIsDisplayed()
-        shot(if (state.value.tab == 3 && state.value.classUi.running) "sample-learner-class" else "sample-learner-settings")
+        shot("sample-learner-settings")
         compose.onNodeWithText("学习助手提示词").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { state.value = base.copy(tab = 2) }
         compose.onNodeWithText(firstNote.title).performClick()
