@@ -131,7 +131,7 @@ class RainApi {
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { finish { onError("登录通道已关闭，请重新开始。") } }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(1000, "closed") }
         })
-        timer.schedule(object : TimerTask() { override fun run() { finish { onError("二维码已过期，请重新开始。") } } }, 180000)
+        synchronized(lock) { if (finished) socket?.close(1000, "finished") else timer.schedule(object : TimerTask() { override fun run() { finish { onError("二维码已过期，请重新开始。") } } }, 180000) }
         return AutoCloseable { finish() }
     }
 }

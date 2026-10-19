@@ -55,7 +55,7 @@ class AiApi(private val client: OkHttpClient = OkHttpClient.Builder().followRedi
                             check(r.isSuccessful) { when (r.code) { 401, 403 -> "模型鉴权失败，请检查 API Key。"; 429 -> "模型请求受限或余额不足，请在服务商处核对。"; else -> "模型返回 HTTP ${r.code}，请核对地址和模型名称。" } }
                             val source = r.body?.source() ?: error("模型未返回内容。")
                             if (r.header("Content-Type", "")!!.contains("application/json")) {
-                                val message = JSONObject(source.readUtf8()).getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content")
+                                val message = JSONObject(String(readBounded(r, 1_000_000), Charsets.UTF_8)).getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content")
                                 check(message.isNotBlank()) { "模型未返回可显示的文字。" }; onText(message)
                             } else {
                                 var length = 0; var done = false
