@@ -333,6 +333,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun ModelScreen(ui: UiState, vm: StudyViewModel) {
     var adding by remember { mutableStateOf<Provider?>(null) }
+    LaunchedEffect(ui.data.selectedProvider) { adding = null }
     val current = adding ?: ui.data.provider()
     val usingChatGpt = current.chatgptAccountId.isNotBlank()
     var name by remember(current.id) { mutableStateOf(current.name) }
@@ -341,7 +342,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
     var model by remember(current.id) { mutableStateOf(current.model) }
     var protocol by remember(current.id) { mutableStateOf(current.protocol) }
     var images by remember(current.id) { mutableStateOf(current.images) }
-    var showConfig by remember(current.id) { mutableStateOf(usingChatGpt || current.key.isNotBlank()) }
+    var showConfig by remember(current.id) { mutableStateOf(usingChatGpt || current.key.isNotBlank() || adding != null) }
     var visible by remember { mutableStateOf(false) }
     var chooseModel by remember { mutableStateOf(false) }
     var modelQuery by remember { mutableStateOf("") }

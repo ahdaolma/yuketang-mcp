@@ -367,8 +367,10 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         if (accountId.isNotBlank() && selected == null) return
         val draft = draftClientId.takeIf { it in state.value.data.chatgptDraftClients } ?: ""
         val attemptId = newId(); authAttemptId = attemptId
-        state.update { it.copy(chatgptLoginActive = true, chatgptStage = "正在准备 ChatGPT 账号授权…", notice = "") }
+        state.update { it.copy(tab = 3, chatgptLoginActive = true, chatgptStage = "正在准备 ChatGPT 账号授权…", notice = "") }
         authJob = viewModelScope.launch {
+            var identityReceived = false
+            var credentialsSaved = false
             try {
                 if (state.value.data.chatgptHostId.isBlank()) { data { it.copy(chatgptHostId = "urn:uuid:${newId()}") }; saveNow() }
                 getApplication<Application>().startForegroundService(Intent(getApplication(), AuthorizationService::class.java))
@@ -385,7 +387,9 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                 state.update { it.copy(chatgptStage = "已收到授权，正在验证账号身份与套餐权限…") }
                 val account = withContext(Dispatchers.IO) { chatgpt.exchange(endpoints, attempt, callback, selected?.id ?: newId()) }
                 if (authAttemptId != attemptId) return@launch
+                identityReceived = true
                 accountLock.withLock { setChatGptAccount(account); data { it.copy(chatgptDraftClients = it.chatgptDraftClients.filterNot { id -> id == account.clientId }) }; saveNow() }
+                credentialsSaved = true
                 val p = chatGptProvider(account)
                 data { it.copy(providers = it.providers.filterNot { existing -> existing.id == p.id } + p, selectedProvider = p.id) }
                 saveNow()
@@ -406,7 +410,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 if (authAttemptId == attemptId) {
-                    val message = (e as? OAuthFailure)?.message ?: "ChatGPT 登录未完成，请检查网络后重试；原有登录未被替换。"
+                    val message = (e as? OAuthFailure)?.message ?: if (identityReceived && !credentialsSaved) "ChatGPT 授权已通过，但本机保存未完成。请检查存储空间，暂时不要关闭 App。" else if (credentialsSaved) "ChatGPT 登录已保存，后续配置未完成；可在模型页继续。" else "ChatGPT 登录未完成，请检查网络后重试；原有登录未被替换。"
                     state.update { it.copy(chatgptStage = message ?: "ChatGPT 登录未完成。", notice = message ?: "ChatGPT 登录未完成。") }
                 }
             } finally {
@@ -424,14 +428,13 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         accountLock.withLock {
             val account = state.value.data.chatgptAccounts.find { it.id == id } ?: return@withLock
             var revoked = account.refreshToken.isBlank()
-            if (!revoked) {
+            try { if (!revoked) {
                 for (attempt in 0..1) {
                     revoked = withContext(Dispatchers.IO) { runCatching { chatgpt.revoke(chatgpt.endpoints(), account) }.getOrDefault(false) }
                     if (revoked) break
                     if (attempt == 0) delay(1000)
                 }
-            }
-            withContext(NonCancellable) { setChatGptAccount(account.signedOut()); saveNow() }
+            } } finally { withContext(NonCancellable) { setChatGptAccount(account.signedOut()); saveNow() } }
             notice(if (revoked) "已退出此 ChatGPT 账号。其他账号和笔记已保留。" else "已清除本机登录，远端撤销未确认；可在 ChatGPT 的设置中断开雨课伴学。")
         }
     }

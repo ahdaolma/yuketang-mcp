@@ -46,7 +46,8 @@ fun presentationRefs(value: Any?): List<String> {
         when (v) {
             is JSONObject -> v.keys().forEach { k ->
                 val child = v.opt(k)
-                if (k in listOf("presentation_id", "presentationId") && child.toString().matches(Regex("[0-9]{1,24}"))) found.add(child.toString())
+                val id = child?.toString()
+                if (k in listOf("presentation_id", "presentationId") && id != null && id.matches(Regex("[0-9]{1,24}"))) found.add(id)
                 else walk(child, depth + 1)
             }
             is JSONArray -> (0 until v.length()).forEach { walk(v.opt(it), depth + 1) }

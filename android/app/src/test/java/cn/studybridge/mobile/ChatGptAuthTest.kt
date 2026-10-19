@@ -93,6 +93,14 @@ class ChatGptAuthTest {
         assertEquals("secret-test-code", withTimeout(5000) { result.await() }.code)
         assertTrue(runCatching { Socket("127.0.0.1", u.port).close() }.isFailure)
     }
+    @Test fun cancelingTheListenerClosesItsPortWithoutReceivingCredentials() = runBlocking {
+        val receiver = LoopbackReceiver()
+        val job = async(Dispatchers.IO) { receiver.receive(attempt().copy(redirect = receiver.redirect)) }
+        kotlinx.coroutines.delay(50)
+        job.cancel()
+        withTimeout(5000) { job.join() }
+        assertTrue(runCatching { Socket("127.0.0.1", receiver.redirect.toHttpUrl().port).close() }.isFailure)
+    }
     @Test fun signedIdentityIsCheckedBeforeTrustingEmailOrSubject() {
         val verified = verifyOpenAiIdToken(jwt(), jwks, "oaiapp_test", "test-nonce", now = now)
         assertEquals("test-subject", verified.subject); assertEquals("unit@example.com", verified.email)
