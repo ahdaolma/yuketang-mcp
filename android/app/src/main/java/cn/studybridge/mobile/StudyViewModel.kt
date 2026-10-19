@@ -320,7 +320,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         resumeClass()
     }
     fun resumeClass() {
-        if (state.value.busy || storageBlocked || state.value.classUi.let { it.running && !it.paused }) return
+        if (state.value.busy || state.value.chatgptLoginActive || storageBlocked || state.value.classUi.let { it.running && !it.paused }) return
         val run = state.value.data.classRun?.takeUnless { it.ended && it.pending.isEmpty() } ?: return
         val p = state.value.data.providers.find { it.id == run.providerId }
         val web = run.providerId == WEB_PROVIDER_ID
@@ -341,7 +341,10 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                     val page = current.pending.firstOrNull()
                     if (page == null) { classWake.receive(); continue }
                     state.update { it.copy(classUi = it.classUi.copy(current = page, status = "正在讲解第 ${page.page} 页")) }
-                    val (title, slides) = withContext(Dispatchers.IO) { rain.slides(saved, page.presentationId, lessonId = if (current.ended) current.lesson.id else "", authorization = classAccess?.authorization ?: "", onAuthorization = { classAccess?.authorization = it }) }
+                    // An old canceled HTTP request may finish after resume starts a new feed.
+                    // Its rotated authorization belongs only to the access object that sent it.
+                    val pageAccess = classAccess
+                    val (title, slides) = withContext(Dispatchers.IO) { rain.slides(saved, page.presentationId, lessonId = if (current.ended) current.lesson.id else "", authorization = pageAccess?.authorization ?: "", onAuthorization = { pageAccess?.authorization = it }) }
                     val slide = slides.find { it.page == page.page } ?: error("第 ${page.page} 页尚未开放，已暂停；可稍后继续。")
                     val a = withContext(Dispatchers.IO) { rain.attachment(title, slide) }
                     val text = StringBuilder()
