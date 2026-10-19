@@ -100,16 +100,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     fun saveWebAnswer() = operation("保存网页回答") {
         val pending = state.value.data.webPending
         val content = webDriver().capture(pending?.marker ?: "")
-        val run = state.value.data.classRun
-        if (pending != null && pending.noteId.isNotBlank() && run?.noteId == pending.noteId) {
-            check(pending.pageKey in run.pending.map { it.key }) { "待保存页与课堂队列不一致，请先核对课堂记录。" }
-            val note = state.value.data.notes.find { it.id == run.noteId } ?: error("课堂笔记已移除。")
-            data { it.copy(notes = it.notes.map { n -> if (n.id == note.id) n.copy(content = n.content + "## ${pending.label}\n\n$content\n\n---\n\n") else n }, classRun = run.copy(completed = (run.completed + pending.pageKey).distinct(), pending = run.pending.filterNot { p -> p.key == pending.pageKey }), webPending = null) }
-        } else {
-            val label = pending?.label ?: "ChatGPT 网页笔记"
-            val n = Note(title = label, content = content, source = label, model = "ChatGPT 网页 · 网页中选择的模式")
-            data { it.copy(notes = listOf(n) + it.notes, webPending = null) }
-        }
+        data { recoverWebAnswer(it, content) }
         saveNow(); notice("网页回答已存入笔记。")
     }
     fun discardWebPending() {

@@ -27,11 +27,11 @@ class WebStudyTest {
     }
     private class Page(var finish: Boolean = true, var foreign: Boolean = false, var prepare: Boolean = true) : WebPagePort {
         val actions = mutableListOf<String>()
-        var persisted = false; var answers = 0
+        var persisted = false; var answers = 0; var fileName = ""
         override suspend fun call(action: String, payload: JSONObject): JSONObject {
             actions.add(action)
             return when (action) {
-                "prepare" -> JSONObject().put("ok", prepare)
+                "prepare" -> { fileName = payload.optString("fileName"); JSONObject().put("ok", prepare) }
                 "ready" -> JSONObject().put("ready", true)
                 "send" -> { check(persisted); JSONObject().put("sent", true) }
                 "answer" -> JSONObject().put("finished", finish).put("otherUser", foreign).put("markdown", if (++answers == 1) "部分内容" else "# 完整笔记\n\n有效讲解")
@@ -66,5 +66,24 @@ class WebStudyTest {
         p.foreign = false; p.finish = false
         assertTrue(runCatching { WebStudyDriver(p, {}).capture("RS-test") }.isFailure)
         assertFalse("send" in p.actions)
+    }
+    @Test fun uploadFilenameMatchesItsRealImageFormat() = runBlocking {
+        val p = Page()
+        WebStudyDriver(p, {}).fill("解释", Attachment("data:image/jpeg;base64,dGVzdA==", "课件", ""))
+        assertEquals("rain-slide.jpg", p.fileName)
+    }
+    @Test fun recoveryAfterEndingClassAppendsOnceAndDoesNotTouchAnotherClass() {
+        val page = LivePage("42", 2)
+        val run = ClassRun(LiveLesson("1", "课程", "1"), providerId = WEB_PROVIDER_ID, ended = true)
+        val note = Note(run.noteId, "课堂笔记", "已完成内容\n", "课堂", "网页")
+        val pending = WebPending("RS-test", "第 2 页", pageKey = page.key, noteId = note.id)
+        val saved = Saved(notes = listOf(note), classRun = run, webPending = pending)
+        val recovered = recoverWebAnswer(saved, "新讲解")
+        assertNull(recovered.webPending); assertTrue(recovered.notes.single().content.contains("新讲解"))
+        assertEquals(listOf(page.key), recovered.classRun!!.completed)
+        assertEquals(recovered.notes, recoverWebAnswer(recovered.copy(webPending = pending), "不得重复追加").notes)
+        val other = ClassRun(LiveLesson("2", "另一课", "2"), providerId = WEB_PROVIDER_ID)
+        val separate = recoverWebAnswer(saved.copy(classRun = other), "旧课堂的回答")
+        assertEquals(other, separate.classRun); assertTrue(separate.notes.single().content.contains("旧课堂的回答"))
     }
 }

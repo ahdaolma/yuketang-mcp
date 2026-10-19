@@ -1,6 +1,7 @@
 package cn.studybridge.mobile
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -26,14 +27,19 @@ class WebPageTest {
     """.trimIndent()
     private suspend fun withPage(html: String, block: suspend (ChatGptWebSession) -> Unit) {
         lateinit var page: ChatGptWebSession
-        instrumentation.runOnMainSync {
-            page = ChatGptWebSession(instrumentation.targetContext, {}, {})
-            page.view.loadDataWithBaseURL(CHATGPT_WEB, html, "text/html", "UTF-8", null)
+        val scenario = ActivityScenario.launch(WebFixtureActivity::class.java)
+        scenario.onActivity { activity ->
+            page = ChatGptWebSession(activity, {}, {})
+            activity.setContentView(page.view)
+            page.view.loadDataWithBaseURL(CHATGPT_WEB, html, "text/html", "UTF-8", CHATGPT_WEB)
         }
         try {
             repeat(100) { if (page.progress != 100) delay(50) }
             block(page)
-        } finally { instrumentation.runOnMainSync { page.destroy() } }
+        } finally {
+            scenario.onActivity { (page.view.parent as? android.view.ViewGroup)?.removeView(page.view); page.destroy() }
+            scenario.close()
+        }
     }
     @Test fun actualWebViewAttachesImageUsesVisibleSendAndExtractsStructuredMarkdown() = runBlocking {
         withPage(fixture()) { page ->

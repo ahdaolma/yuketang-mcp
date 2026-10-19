@@ -44,6 +44,21 @@ data class WebPending(val marker: String, val label: String, val url: String = C
 }
 fun webPendingFromJson(o: JSONObject) = WebPending(o.getString("marker"), o.getString("label"), o.optString("url", CHATGPT_WEB).takeIf(::isChatGptPage) ?: CHATGPT_WEB, o.optString("pageKey"), o.optString("noteId"))
 
+fun recoverWebAnswer(saved: Saved, content: String): Saved {
+    require(content.isNotBlank())
+    val pending = saved.webPending
+    val note = pending?.noteId?.takeIf { it.isNotBlank() }?.let { id -> saved.notes.find { it.id == id } }
+    val run = saved.classRun?.takeIf { it.noteId == pending?.noteId }
+    if (note != null && pending != null) {
+        if (run != null && pending.pageKey in run.completed) return saved.copy(webPending = null)
+        require(run == null || run.ended || run.pending.any { it.key == pending.pageKey }) { "待保存页与课堂记录不一致，请先核对。" }
+        val updated = run?.copy(completed = (run.completed + pending.pageKey).distinct(), pending = run.pending.filterNot { it.key == pending.pageKey })
+        return saved.copy(notes = saved.notes.map { if (it.id == note.id) it.copy(content = it.content + "## ${pending.label}\n\n$content\n\n---\n\n") else it }, classRun = updated ?: saved.classRun, webPending = null)
+    }
+    val label = pending?.label ?: "ChatGPT 网页笔记"
+    return saved.copy(notes = listOf(Note(title = label, content = content, source = label, model = "ChatGPT 网页 · 网页中选择的模式")) + saved.notes, webPending = null)
+}
+
 interface WebPagePort {
     val pageUrl: String get() = CHATGPT_WEB
     suspend fun call(action: String, payload: JSONObject = JSONObject()): JSONObject
@@ -57,7 +72,9 @@ fun webReturnUrl(url: String): String = runCatching {
 // No networking API, Cookie extraction or OAuth credential is used by this workflow.
 class WebStudyDriver(private val page: WebPagePort, private val wait: suspend () -> Unit = { delay(1000) }, private val attempts: Int = 180) {
     suspend fun fill(prompt: String, attachment: Attachment?) {
-        val payload = JSONObject().put("text", prompt).put("image", attachment?.image ?: "").put("fileName", "rain-slide.png")
+        val mime = attachment?.image?.substringAfter("data:")?.substringBefore(';')
+        val extension = when (mime) { "image/jpeg" -> "jpg"; "image/webp" -> "webp"; "image/gif" -> "gif"; else -> "png" }
+        val payload = JSONObject().put("text", prompt).put("image", attachment?.image ?: "").put("fileName", "rain-slide.$extension")
         require(page.call("prepare", payload).optBoolean("ok")) { "网页输入框或附件入口不可用，或已有未发送的内容；请在网页检查。" }
     }
     suspend fun generate(prompt: String, attachment: Attachment, marker: String, beforeSend: suspend () -> Unit): String {
