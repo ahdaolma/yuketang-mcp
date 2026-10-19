@@ -176,11 +176,12 @@ class MainActivity : ComponentActivity() {
                 }
             }).build()
     }
-    val formatted by produceState<CharSequence>("", text, renderer) { value = withContext(Dispatchers.Default) { renderer.toMarkdown(text) } }
+    val formatted by produceState<android.text.Spanned?>(null, text, renderer) { value = withContext(Dispatchers.Default) { renderer.toMarkdown(text) } }
     AndroidView(factory = { TextView(it).apply { textSize = 16f; setTextIsSelectable(true); setLineSpacing(0f, 1.3f) } }, modifier = Modifier.fillMaxWidth(), update = {
         if (it.currentTextColor != color) it.setTextColor(color)
         if (kotlin.math.abs(it.textSize - bodySize) > 0.1f) it.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, bodySize)
-        if (it.tag !== formatted) { it.text = formatted; it.tag = formatted }
+        val parsed = formatted
+        if (parsed != null && it.tag !== parsed) { renderer.setParsedMarkdown(it, parsed); it.tag = parsed }
     })
 }
 

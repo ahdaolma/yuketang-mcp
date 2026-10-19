@@ -1,5 +1,6 @@
 """Run release checks and device tests, collecting synthetic UI review screenshots."""
 import pathlib
+import hashlib
 import subprocess
 import sys
 
@@ -17,3 +18,6 @@ finally:
         required = {'sample-courses-light.png', 'sample-notes-light.png', 'sample-note-reading.png', 'sample-class-large-text.png', 'sample-settings-large-text.png', 'sample-notes-dark.png', 'sample-settings-dark.png', 'sample-note-reading-dark.png', 'sample-note-reading-large-text.png'}
         found = {p.name for p in target.rglob('*.png')}
         assert required <= found, f'Missing UI review screenshots: {required - found}'
+        screenshots = [p for p in target.rglob('*.png') if p.name in required]
+        digests = {hashlib.sha256(p.read_bytes()).hexdigest() for p in screenshots}
+        assert len(digests) == len(required), 'UI screenshots captured a stale or duplicate frame'

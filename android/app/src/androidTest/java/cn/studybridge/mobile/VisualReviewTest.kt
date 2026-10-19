@@ -3,6 +3,7 @@ package cn.studybridge.mobile
 import android.graphics.Bitmap
 import android.content.ContentValues
 import android.provider.MediaStore
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -45,7 +46,7 @@ class VisualReviewTest {
     }
     private fun shot(name: String) {
         compose.waitForIdle()
-        val bitmap = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()) { "Screenshot unavailable" }
+        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
         // Shared media survives AGP uninstalling the debug app at the end of the test task.
         val resolver = compose.activity.contentResolver
         val values = ContentValues().apply { put(MediaStore.Images.Media.DISPLAY_NAME, "$name.png"); put(MediaStore.Images.Media.MIME_TYPE, "image/png"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/StudyUiReview"); put(MediaStore.Images.Media.IS_PENDING, 1) }
