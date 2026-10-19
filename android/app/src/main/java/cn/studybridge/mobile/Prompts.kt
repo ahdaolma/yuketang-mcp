@@ -62,3 +62,9 @@ const val NOTE_FORMAT = """输出可供学生复习的讲解型笔记，而非�
 ### 一句话回顾
 给出这页的知识主线；必要时标记待确认处。
 所有超出原页的信息都明确标为“AI 讲解/补充”；不虚构引文、老师口述、考点承诺或原页没有的实验结果。看不清的内容明确说明，不以猜测填补。只输出笔记正文。"""
+
+// Upgrade only the exact previous default; preserve user-written prompts.
+fun upgradedTutorPrompt(value: String): String {
+    val digest = java.security.MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+    return if (digest == "118659b533ab79e6bc35c7c41f67e4dd4bceb50e9f62917e06935b36392b96fc") TUTOR_PROMPT else value
+}

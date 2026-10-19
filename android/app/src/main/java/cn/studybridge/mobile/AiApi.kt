@@ -79,7 +79,10 @@ class AiApi(private val client: OkHttpClient = OkHttpClient.Builder().followRedi
                                         val chunk = JSONObject(event)
                                         check(!chunk.has("error")) { "模型返回生成错误，请核对配置或重试。" }
                                         val choice = chunk.optJSONArray("choices")?.optJSONObject(0)
-                                        if (choice?.optional("finish_reason") != null) terminated = true
+                                        choice?.optional("finish_reason")?.let { reason ->
+                                            check(reason == "stop") { "模型未完整生成，可能达到输出限制，请缩小范围后重试。" }
+                                            terminated = true
+                                        }
                                         val delta = choice?.optJSONObject("delta")?.optional("content") ?: ""
                                         if (delta.isNotEmpty()) { length += delta.length; check(length <= 1_000_000) { "生成内容过长。" }; batcher.append(delta) }
                                     }
@@ -112,7 +115,7 @@ fun responseBody(p: Provider, messages: List<Message>): JSONObject {
         val text = if (m.source == null) m.text else "来源：${m.source}\n${m.text}"
         val content = JSONArray().put(JSONObject().put("type", if (m.role == "assistant") "output_text" else "input_text").put("text", text))
         if (m.image != null && m.role == "user") content.put(JSONObject().put("type", "input_image").put("image_url", m.image))
-        JSONObject().put("role", m.role).put("content", content)
+        JSONObject().put("role", m.role).put("content", if (m.role == "assistant") text else content)
     }
     return JSONObject().put("model", p.model).put("stream", true).put("store", false).put("instructions", messages.filter { it.role == "system" }.joinToString("\n\n") { it.text }).put("input", JSONArray(input))
 }

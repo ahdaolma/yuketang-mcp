@@ -34,7 +34,7 @@ fun savedFromJson(o: JSONObject): Saved = Saved(
     selectedProvider = o.optString("selectedProvider"),
     conversations = o.getJSONArray("conversations").objects().map { c -> Conversation(c.getString("id"), c.getString("title"), c.getJSONArray("messages").objects().map { Message(it.getString("role"), it.getString("text"), it.optional("image"), it.optional("source")) }) }.ifEmpty { listOf(Conversation()) },
     currentChat = o.optString("currentChat"), notes = (o.optJSONArray("notes") ?: JSONArray()).objects().map { Note(it.getString("id"), it.getString("title"), it.getString("content"), it.getString("source"), it.getString("model"), it.getLong("createdAt")) },
-    autoNotes = o.optBoolean("autoNotes"), region = o.optString("region", "standard"), session = o.optString("session"), username = o.optString("username"), tutorPrompt = o.optString("tutorPrompt", TUTOR_PROMPT), notesPrompt = o.optString("notesPrompt", NOTES_PROMPT), sessionVerified = o.optBoolean("sessionVerified", o.optString("session").isNotBlank()), classRun = o.optJSONObject("classRun")?.let(::classRunFromJson)
+    autoNotes = o.optBoolean("autoNotes"), region = o.optString("region", "standard"), session = o.optString("session"), username = o.optString("username"), tutorPrompt = upgradedTutorPrompt(o.optString("tutorPrompt", TUTOR_PROMPT)), notesPrompt = o.optString("notesPrompt", NOTES_PROMPT), sessionVerified = o.optBoolean("sessionVerified", o.optString("session").isNotBlank()), classRun = o.optJSONObject("classRun")?.let(::classRunFromJson)
 )
 
 // Only explicitly named presentation IDs are accepted; lesson/courseware IDs are different.

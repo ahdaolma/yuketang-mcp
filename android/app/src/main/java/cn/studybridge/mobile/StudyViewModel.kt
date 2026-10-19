@@ -287,7 +287,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                 while (isActive) {
                     try {
                         rain.followLesson(saved, run.lesson, classAccess!!).collect { signal -> when (signal) {
-                            LiveSignal.Connected -> { attempt = 0; state.update { it.copy(classUi = it.classUi.copy(connected = true, status = "已连接课堂，跟随老师翻页")) } }
+                            LiveSignal.Connected -> { state.update { it.copy(classUi = it.classUi.copy(connected = true, status = "已连接课堂，跟随老师翻页")) } }
                             is LiveSignal.Pages -> { data { d -> d.copy(classRun = d.classRun?.let { enqueueClassPages(it, signal.pages) }) }; classWake.trySend(Unit) }
                             LiveSignal.Ended -> { data { it.copy(classRun = it.classRun?.copy(ended = true)) }; state.update { it.copy(classUi = it.classUi.copy(connected = false, status = "老师已下课，正在保存剩余讲解")) }; if (state.value.data.classRun?.pending?.isEmpty() == true) { classWriter?.cancel(); state.update { it.copy(classUi = ClassUi(status = "本节课堂笔记已完成")) } } }
                         } }

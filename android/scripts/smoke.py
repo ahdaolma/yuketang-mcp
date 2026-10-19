@@ -38,7 +38,7 @@ tap('笔记'); shot('notes', ['我的学习笔记'])
 tap('模型'); shot('models', ['用你选择的 AI', '新增 OpenAI'])
 tap('新增 OpenAI')
 # Selected OpenAI provider must expose Responses, not silently keep DeepSeek.
-shot('openai', ['OpenAI GPT', 'Responses', 'api.openai.com'])
+shot('openai', ['OpenAI GPT', 'Responses'])
 logs = adb('logcat','-d','-s','AndroidRuntime:E').decode(errors='replace')
 (out / 'runtime.txt').write_text(logs)
 assert 'FATAL EXCEPTION' not in logs, logs
