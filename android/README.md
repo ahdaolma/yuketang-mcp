@@ -1,6 +1,14 @@
-# 雨课伴学 Android 0.5.2 预览版
+# 雨课伴学 Android 0.5.3 预览版
 
 独立安卓 AI 学习客户端。配置自己的模型，连接自己的雨课堂，以逐页讲解形成课堂笔记。现有 Python / 云端 MCP 保留。
+
+## 0.5.3 固定发布签名
+
+0.5.2 及之前的发布包误用了 CI 临时调试密钥，跨构建会更换签名，导致无法覆盖安装。新的 release 配置只接受外部固定 PKCS12 密钥，不再回退到 debug 签名。仓库只保存公开证书的 SHA-256 指纹，私钥和密码通过 `ANDROID_RELEASE_SIGNING` 仓库 Actions Secret 恢复；密钥备份单独保存，不能放进源码或构建产物。
+
+配置 Secret 后，每次发布必须先校验密钥证书，再使用 Android `apksigner` 校验最终 APK 的固定指纹与 v2 签名，并在一次性模拟器上检查 `adb install -r` 覆盖安装及加密学习设置保留。测试完成后才上传安装包。未配置 Secret 时只跑内部 debug 测试，不发布任何安装包；PR 不发布 release，也不向 fork 提供密钥。
+
+旧版临时签名的私钥未被保存，无法从 APK 的公钥证书恢复，因此固定新签名不能直接替代旧签名的安装。旧版用户需先导出笔记再做一次迁移；后续固定签名版本才可正常覆盖更新。不会使用关闭系统签名校验来掩盖问题。
 
 ## 0.5.2 网页显示恢复
 
@@ -96,13 +104,15 @@ App 原生按钮、课程卡片、切换项和导航有按压动画与 Material 
 
 Android 8.0 及以上。GitHub Actions → Android preview → Artifacts → study-bridge-android-preview，解压安装 `app-release.apk`。
 
-预览包采用临时调试签名；新旧构建签名可能不同，无法覆盖时须先导出重要笔记，再卸载旧版安装。卸载会删除本机密钥与记录。这不是稳定发行签名。
+0.5.3 起采用固定发布签名；新版本需保持相同密钥并递增版本号。0.5.2 及之前属于旧临时签名，首次迁移前需导出重要笔记。卸载会删除本机密钥与记录，不能跳过备份。
 
 JDK 17、Gradle 8.11.1、SDK 35，在 `android/` 执行：
 
 ```sh
-gradle testDebugUnitTest assembleRelease
+gradle testDebugUnitTest assembleDebug
 ```
+
+本地 release 构建需先通过环境变量提供固定密钥路径、别名及密码（`RAIN_SIGNING_KEYSTORE`、`RAIN_SIGNING_KEY_ALIAS`、`RAIN_SIGNING_STORE_PASSWORD`、`RAIN_SIGNING_KEY_PASSWORD`）。`python3 scripts/verify_signing.py` 使用 SDK 35.0.0 的 apksigner 检查发布身份。切勿重新生成密钥来处理缺失配置。
 
 Release 启用 R8 与资源收缩。聊天流式文字按时间/大小合并刷新；生成中显示纯文字，结束后解析 Markdown；图片解码与 Markdown 解析移到后台，减少主线程负担。
 

@@ -10,21 +10,40 @@ android {
         applicationId = "cn.studybridge.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.5.2-preview"
+        versionCode = 9
+        versionName = "0.5.3-preview"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
+    signingConfigs {
+        create("release") {
+            storeFile = System.getenv("RAIN_SIGNING_KEYSTORE")?.let { file(it) }
+            storePassword = System.getenv("RAIN_SIGNING_STORE_PASSWORD")
+            keyAlias = System.getenv("RAIN_SIGNING_KEY_ALIAS")
+            keyPassword = System.getenv("RAIN_SIGNING_KEY_PASSWORD")
+            storeType = "PKCS12"
+        }
+    }
     buildTypes {
         getByName("release") {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
     kotlinOptions { jvmTarget = "17" }
+}
+// Never fall back to a fresh debug certificate for an installable release.
+tasks.configureEach {
+    if (name == "validateSigningRelease" || name == "packageRelease") {
+        doFirst {
+            check(listOf("RAIN_SIGNING_KEYSTORE", "RAIN_SIGNING_STORE_PASSWORD", "RAIN_SIGNING_KEY_ALIAS", "RAIN_SIGNING_KEY_PASSWORD").all { !System.getenv(it).isNullOrBlank() }) {
+                "Fixed release signing is required. Configure ANDROID_RELEASE_SIGNING; debug-key releases are disabled."
+            }
+        }
+    }
 }
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.04.01"))

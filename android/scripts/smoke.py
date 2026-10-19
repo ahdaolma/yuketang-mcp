@@ -1,5 +1,6 @@
 """Launch the built APK and inspect actual Compose UI on a clean emulator."""
 import pathlib
+import os
 import re
 import subprocess
 import time
@@ -36,7 +37,7 @@ def shot(name, required):
         assert label in text, f'{name}: missing {label}'
     (out / f'{name}.png').write_bytes(adb('exec-out','screencap','-p'))
 
-adb('install','-r','app/build/outputs/apk/release/app-release.apk')
+adb('install','-r',os.environ.get('RAIN_SMOKE_APK', 'app/build/outputs/apk/release/app-release.apk'))
 adb('logcat','-c')
 adb('shell','am','start','-W','-n','cn.studybridge.mobile/.MainActivity')
 time.sleep(3)

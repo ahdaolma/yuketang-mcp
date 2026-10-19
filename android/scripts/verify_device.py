@@ -3,9 +3,12 @@ import pathlib
 import hashlib
 import subprocess
 import sys
+import os
 
 passed = False
 try:
+    if os.environ.get('RAIN_VERIFY_RELEASE_UPDATE') == '1' and pathlib.Path('app/build/outputs/apk/release/app-release.apk').exists():
+        subprocess.run([sys.executable, 'scripts/verify_update.py'], check=True)
     subprocess.run([sys.executable, 'scripts/smoke.py'], check=True)
     subprocess.run(['gradle', '--no-daemon', 'connectedDebugAndroidTest'], check=True)
     passed = True
