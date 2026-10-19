@@ -1,9 +1,11 @@
 package cn.studybridge.mobile
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
@@ -22,7 +24,7 @@ class ControlFeedbackTest {
         compose.setContent {
             MaterialTheme {
                 CompositionLocalProvider(LocalControlFeedback provides ControlFeedback({ explanation.set(it) }, "请先准备资料")) {
-                    Column {
+                    Column(Modifier.systemBarsPadding()) {
                         FeedbackButton(onClick = { clicks.incrementAndGet() }) { Text("可用按钮") }
                         FeedbackButton(onClick = { clicks.addAndGet(100) }, enabled = false, unavailableReason = "请先选择课件") { Text("需要课件") }
                     }
