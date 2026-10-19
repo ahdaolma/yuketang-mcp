@@ -19,7 +19,8 @@ suspend fun buildNotebook(
     read: suspend (Slide) -> Attachment,
     generate: suspend (Attachment) -> String,
     checkpoint: suspend (NotebookProgress) -> Unit,
-    onPage: (Int, Int, Int) -> Unit = { _, _, _ -> }
+    onPage: (Int, Int, Int) -> Unit = { _, _, _ -> },
+    includeProgress: Boolean = true
 ) {
     require(pages.isNotEmpty() && pages.map { it.page }.distinct().size == pages.size)
     val sections = mutableListOf<Pair<Int, String>>()
@@ -32,10 +33,12 @@ suspend fun buildNotebook(
         sections.add(page.page to text)
         val content = buildString {
             append("# $title\n\n")
-            append("> 计划范围：第 ${pages.first().page}–${pages.last().page} 页。已完成 ${sections.size}/${pages.size} 页。")
-            if (sections.size < pages.size) append("当前为部分笔记；待处理第 ${pages[sections.size].page}–${pages.last().page} 页。")
-            else append("所选页面已全部整理。")
-            append("\n\n")
+            if (includeProgress) {
+                append("> 计划范围：第 ${pages.first().page}–${pages.last().page} 页。已完成 ${sections.size}/${pages.size} 页。")
+                if (sections.size < pages.size) append("当前为部分笔记；待处理第 ${pages[sections.size].page}–${pages.last().page} 页。")
+                else append("所选页面已全部整理。")
+                append("\n\n")
+            }
             sections.forEach { (number, note) -> append("## 第 $number 页\n\n$note\n\n---\n\n") }
         }
         checkpoint(NotebookProgress(sections.size, pages.size, content))

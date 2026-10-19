@@ -66,4 +66,14 @@ class WebPageTest {
             assertTrue(text.contains("知识点"))
         }
     }
+    @Test fun humanAttachmentIsPreservedAndPendingUserCanBeFoundBeforeFirstToken() = runBlocking {
+        withPage(fixture().replace("<form>", "<form><img alt='Uploaded image' src='data:image/png;base64,AA=='>")) { page ->
+            assertFalse(page.call("prepare", JSONObject().put("text", "不得覆盖附件")).optBoolean("ok"))
+        }
+        withPage("""<!doctype html><html><body><article><div data-message-author-role="user">RS-waiting</div></article></body></html>""") { page ->
+            val status = page.call("answer", JSONObject().put("marker", "RS-waiting"))
+            assertTrue(status.optBoolean("matchedUser")); assertFalse(status.optBoolean("finished"))
+            assertFalse(page.call("answer", JSONObject().put("marker", "RS-other")).optBoolean("matchedUser"))
+        }
+    }
 }

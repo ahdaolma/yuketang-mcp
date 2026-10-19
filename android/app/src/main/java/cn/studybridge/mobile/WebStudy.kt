@@ -40,12 +40,12 @@ fun allowedWebNavigation(url: String): Boolean = runCatching {
 }.getOrDefault(false)
 
 // A durable send intent prevents resubmission after cancellation, navigation or process death.
-data class WebPending(val marker: String, val label: String, val url: String = CHATGPT_WEB, val pageKey: String = "", val noteId: String = "") {
-    fun json() = JSONObject().put("marker", marker).put("label", label).put("url", url).put("pageKey", pageKey).put("noteId", noteId)
+data class WebPending(val marker: String, val label: String, val url: String = CHATGPT_WEB, val pageKey: String = "", val noteId: String = "", val noteSource: String = "") {
+    fun json() = JSONObject().put("marker", marker).put("label", label).put("url", url).put("pageKey", pageKey).put("noteId", noteId).put("noteSource", noteSource)
 }
-fun webPendingFromJson(o: JSONObject) = WebPending(o.getString("marker"), o.getString("label"), o.optString("url", CHATGPT_WEB).takeIf(::isChatGptPage) ?: CHATGPT_WEB, o.optString("pageKey"), o.optString("noteId"))
+fun webPendingFromJson(o: JSONObject) = WebPending(o.getString("marker"), o.getString("label"), webReturnUrl(o.optString("url", CHATGPT_WEB)), o.optString("pageKey"), o.optString("noteId"), o.optString("noteSource"))
 
-fun recoverWebAnswer(saved: Saved, content: String): Saved {
+fun recoverWebAnswer(saved: Saved, content: String, fallbackId: String = newId(), receivedAt: Long = System.currentTimeMillis()): Saved {
     require(content.isNotBlank())
     val pending = saved.webPending
     val note = pending?.noteId?.takeIf { it.isNotBlank() }?.let { id -> saved.notes.find { it.id == id } }
@@ -54,10 +54,20 @@ fun recoverWebAnswer(saved: Saved, content: String): Saved {
         if (run != null && pending.pageKey in run.completed) return saved.copy(webPending = null)
         require(run == null || run.ended || run.pending.any { it.key == pending.pageKey }) { "待保存页与课堂记录不一致，请先核对。" }
         val updated = run?.copy(completed = (run.completed + pending.pageKey).distinct(), pending = run.pending.filterNot { it.key == pending.pageKey })
-        return saved.copy(notes = saved.notes.map { if (it.id == note.id) it.copy(content = it.content + "## ${pending.label}\n\n$content\n\n---\n\n") else it }, classRun = updated ?: saved.classRun, webPending = null)
+        return saved.copy(notes = saved.notes.map { if (it.id == note.id) it.copy(content = it.content + "## ${pending.label}\n\n$content\n\n---\n\n", source = pending.noteSource.ifBlank { it.source }) else it }, classRun = updated ?: saved.classRun, webPending = null)
     }
     val label = pending?.label ?: "ChatGPT 网页笔记"
-    return saved.copy(notes = listOf(Note(title = label, content = content, source = label, model = "ChatGPT 网页 · 网页中选择的模式")) + saved.notes, webPending = null)
+    return saved.copy(notes = listOf(Note(fallbackId, title = label, content = content, source = label, model = "ChatGPT 网页 · 网页中选择的模式", createdAt = receivedAt)) + saved.notes, webPending = null)
+}
+
+// Only bind a pending intent to a conversation that visibly contains its marker.
+// Once bound, visiting another chat must never move the recovery link.
+suspend fun pendingConversationUrl(pending: WebPending, page: WebPagePort): String? {
+    if (webReturnUrl(pending.url) != CHATGPT_WEB) return null
+    val safe = webReturnUrl(page.pageUrl)
+    if (safe == CHATGPT_WEB) return null
+    val answer = page.call("answer", JSONObject().put("marker", pending.marker))
+    return safe.takeIf { answer.optBoolean("matchedUser") && !answer.optBoolean("otherUser") }
 }
 
 interface WebPagePort {
@@ -78,7 +88,7 @@ class WebStudyDriver(private val page: WebPagePort, private val wait: suspend ()
         val payload = JSONObject().put("text", prompt).put("image", attachment?.image ?: "").put("fileName", "rain-slide.$extension")
         require(page.call("prepare", payload).optBoolean("ok")) { "网页输入框或附件入口不可用，或已有未发送的内容；请在网页检查。" }
     }
-    suspend fun generate(prompt: String, attachment: Attachment, marker: String, beforeSend: suspend () -> Unit): String {
+    suspend fun generate(prompt: String, attachment: Attachment, marker: String, onMatched: suspend () -> Unit = {}, beforeSend: suspend () -> Unit): String {
         fill("$prompt\n\n资料来源：${attachment.label}\n${attachment.text}\n\n本页对应标记：$marker", attachment)
         var ready = false
         for (i in 0 until 30) {
@@ -94,7 +104,7 @@ class WebStudyDriver(private val page: WebPagePort, private val wait: suspend ()
             wait()
             val s = page.call("answer", JSONObject().put("marker", marker))
             check(!matched || !s.optBoolean("otherUser")) { "网页对话发生变化，已暂停；请检查待完成回答。" }
-            if (s.optBoolean("matchedUser")) matched = true
+            if (s.optBoolean("matchedUser")) { matched = true; onMatched() }
             val text = s.optString("markdown")
             stable = if (!s.optBoolean("otherUser") && s.optBoolean("finished") && text.isNotBlank() && text == previous) stable + 1 else 0
             previous = text

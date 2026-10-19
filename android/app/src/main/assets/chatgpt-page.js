@@ -6,6 +6,7 @@ function rainStudyPage(action, payload) {
     const send = () => document.querySelector('button[data-testid="send-button"]');
     const busy = () => !!document.querySelector('button[data-testid="stop-button"],button[data-testid="stop-streaming-button"],[data-is-streaming="true"]');
     const content = e => e ? (e.value === undefined ? e.innerText : e.value) || '' : '';
+    const hasAttachment = () => !!form()?.querySelector('button[aria-label*="Remove file"],button[aria-label*="Remove attachment"],button[aria-label*="移除附件"],button[aria-label*="删除附件"],img[alt="Uploaded image"],img[src^="blob:"]') || Array.from(document.querySelectorAll('input[type="file"]')).some(e => e.files?.length);
     function markdown(node) {
         if (node.nodeType === 3) return node.textContent;
         if (node.nodeType !== 1) return '';
@@ -35,7 +36,7 @@ function rainStudyPage(action, payload) {
     function markdownChildren(node) { return Array.from(node.childNodes).map(markdown).join(''); }
     if (action === 'prepare') {
         const el = composer();
-        if (!el || busy() || content(el).trim() || !payload.text || payload.text.length > 100000) return {ok:false};
+        if (!el || busy() || content(el).trim() || hasAttachment() || !payload.text || payload.text.length > 100000) return {ok:false};
         if (payload.image) {
             const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(payload.image);
             const file = document.querySelector('input[type="file"][accept*="image"],input[type="file"]');
@@ -66,7 +67,7 @@ function rainStudyPage(action, payload) {
         if(user<0) return {finished:false};
         if(payload.marker && !content(messages[user]).includes(payload.marker)) return {finished:false,otherUser:true};
         const assistant=messages.slice(user+1).filter(m=>m.getAttribute('data-message-author-role')==='assistant').pop();
-        if(!assistant) return {finished:false};
+        if(!assistant) return {finished:false,matchedUser:true};
         const article=assistant.closest('article') || assistant.parentElement;
         const done=!!article?.querySelector('[data-testid="copy-turn-action-button"],[data-testid="good-response-turn-action-button"],[data-testid="bad-response-turn-action-button"]');
         const body=assistant.querySelector('.markdown') || assistant;

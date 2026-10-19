@@ -62,6 +62,7 @@ fun presentationRefs(value: Any?): List<String> {
 }
 
 fun Saved.providerReady(p: Provider): Boolean = if (p.chatgptAccountId.isBlank()) p.key.isNotBlank() else chatgptAccounts.any { it.id == p.chatgptAccountId && it.planGranted && it.connected }
+fun Saved.noteWritable(id: String): Boolean = webPending?.noteId != id && classRun?.let { it.noteId != id || it.ended && it.pending.isEmpty() } != false
 fun Saved.canUseLearningMode(mode: String): Boolean {
     if (mode !in setOf("web", "native")) return false
     val run = classRun ?: return true

@@ -95,4 +95,59 @@ class WebStudyTest {
         assertTrue(web.canUseLearningMode("web")); assertFalse(web.canUseLearningMode("native"))
         assertTrue(migrated.copy(classRun = run.copy(ended = true)).canUseLearningMode("web"))
     }
+    @Test fun recoveryLinkOnlyBindsToMatchingConversationAndNeverFollowsAnotherChat() = runBlocking {
+        var matches = false
+        val page = object : WebPagePort {
+            override val pageUrl = "https://chatgpt.com/c/11111111-2222-3333?ignored=secret"
+            override suspend fun call(action: String, payload: JSONObject) = JSONObject().put("matchedUser", matches).put("otherUser", !matches)
+        }
+        val pending = WebPending("RS-original", "第 1 页")
+        assertNull(pendingConversationUrl(pending, page))
+        matches = true
+        assertEquals("https://chatgpt.com/c/11111111-2222-3333", pendingConversationUrl(pending, page))
+        assertNull(pendingConversationUrl(pending.copy(url = "https://chatgpt.com/c/aaaaaaaa-bbbb-cccc"), page))
+        assertEquals(CHATGPT_WEB, webPendingFromJson(pending.json().put("url", "https://chatgpt.com/auth/callback?code=secret")).url)
+    }
+    @Test fun failedDiskWriteKeepsPendingAndRetryPreservesEventsReceivedDuringIo() = runBlocking {
+        val pending = WebPending("RS-recover", "第 1 页")
+        var current = Saved(webPending = pending)
+        val original = current
+        val failed = runCatching {
+            saveBeforePublish({ current }, { throw java.io.IOException("disk full") }, { change -> current = change(current) }) {
+                recoverWebAnswer(it, "完整回答", "fixed-note", 123L)
+            }
+        }
+        assertTrue(failed.isFailure); assertEquals(original, current)
+        var disk: Saved? = null
+        saveBeforePublish({ current }, { value -> disk = value; current = current.copy(autoNotes = true) }, { change -> current = change(current) }) {
+            recoverWebAnswer(it, "完整回答", "fixed-note", 123L)
+        }
+        assertNull(current.webPending); assertTrue(current.autoNotes)
+        assertEquals("fixed-note", current.notes.single().id)
+        assertEquals(disk!!.notes, current.notes); assertNull(disk!!.webPending)
+    }
+    @Test fun interruptedWebBatchRecoversIntoOriginalNotebookWithUpdatedProgress() = runBlocking {
+        val note = Note("batch-note", "三页课件", "# 三页课件\n\n", "已完成 0/3 页", "网页")
+        var current = Saved(notes = listOf(note))
+        var index = 0
+        val result = runCatching {
+            buildNotebook("三页课件", (1..3).map { Slide(it, "", "原文") },
+                read = { Attachment(null, "课件 · 第 ${it.page} 页", it.text) },
+                generate = { a ->
+                    current = current.copy(webPending = WebPending("RS-$index", a.label, pageKey = "batch:$index", noteId = note.id, noteSource = "已完成 $index/3 页"))
+                    if (index == 2) error("网页中断")
+                    "第一段讲解"
+                },
+                checkpoint = { progress -> current = current.copy(notes = listOf(note.copy(content = progress.markdown, source = "已完成 ${progress.completed}/3 页")), webPending = null) },
+                onPage = { _, pageIndex, _ -> index = pageIndex }, includeProgress = false)
+        }
+        assertTrue(result.isFailure); assertEquals("已完成 1/3 页", current.notes.single().source)
+        assertFalse(current.noteWritable(note.id))
+        current = savedFromJson(current.toJson())
+        val recovered = recoverWebAnswer(current, "第二段恢复讲解")
+        assertEquals(note.id, recovered.notes.single().id)
+        assertTrue(recovered.notes.single().content.contains("第一段讲解")); assertTrue(recovered.notes.single().content.contains("第二段恢复讲解"))
+        assertEquals("已完成 2/3 页", recovered.notes.single().source)
+        assertNull(recovered.webPending); assertTrue(recovered.noteWritable(note.id))
+    }
 }
