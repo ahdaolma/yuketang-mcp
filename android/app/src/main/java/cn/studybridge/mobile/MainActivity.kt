@@ -237,6 +237,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
     var navigation by remember { mutableStateOf(false) }
     val chrome = LocalReadingChrome.current
     val inlineHeader = LocalInlineReadingHeader.current
+    val compactFraction = LocalReadingCompactFraction.current
     DisposableEffect(chrome) { onDispose { chrome?.locked = false } }
     val chat = ui.data.chat()
     val latestMessages by rememberUpdatedState(chat.messages)
@@ -275,7 +276,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             if (inlineHeader) IconButton(onClick = { vm.tab(3) }) { Icon(Icons.Outlined.Settings, "设置") }
         }
     }, body = {
-        LazyColumn(Modifier.fillMaxSize().testTag("学习正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
+        LazyColumn(Modifier.fillMaxSize().testTag("学习正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(top = 8.dp, bottom = if (compactFraction > 0.5f) 72.dp else 8.dp)) {
             if (chat.messages.isEmpty()) item { StudyEmpty(Icons.Outlined.Description, "从一页课件开始", "选择一页课件，提问或整理笔记。", Modifier.padding(top = 24.dp)) { Spacer(Modifier.height(4.dp)); OutlinedButton(onClick = { vm.tab(1) }) { Text("选择课程") } } }
             itemsIndexed(chat.messages, key = { index, _ -> "${chat.id}:$index" }, contentType = { _, m -> m.role }) { index, m -> ChatMessageCard(m, "${chat.id}:$index", ui.data.provider().name, ui.busy && m.role == "assistant" && index == chat.messages.lastIndex) }
         }
@@ -455,9 +456,16 @@ private fun preview(bytes: ByteArray): Bitmap? {
     var actionNoteId by rememberSaveable { mutableStateOf<String?>(null) }
     var initialListAction by rememberSaveable { mutableStateOf("options") }
     NoteListActions(ui, vm, actionNoteId, initialListAction) { actionNoteId = null }
-    val visibleNotes by produceState(ui.data.notes, ui.data.notes, query, selectedFolder, ui.data.noteFolders) {
-        kotlinx.coroutines.delay(140)
-        value = withContext(Dispatchers.Default) { findNotes(ui.data.notes.filter { selectedFolder == null || ui.data.effectiveFolder(it) == selectedFolder }, query) }
+    val sortedNotes = remember(ui.data.notes) { findNotes(ui.data.notes, "") }
+    val searchedNotes by produceState(sortedNotes, sortedNotes, query) {
+        if (query.isBlank()) value = sortedNotes
+        else {
+            kotlinx.coroutines.delay(140)
+            value = withContext(Dispatchers.Default) { findNotes(sortedNotes, query) }
+        }
+    }
+    val visibleNotes = remember(searchedNotes, selectedFolder, ui.data.noteFolders) {
+        searchedNotes.filter { selectedFolder == null || ui.data.effectiveFolder(it) == selectedFolder }
     }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -518,7 +526,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 }
             } else PagedNoteContent(note, Modifier.weight(1f), independentScroll = true, header = heading, trailingActions = actions, titleAlreadyShown = true, onBack = { requestClose() }, onSettings = { vm.tab(3) })
         }
-    } else LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)) {
+    } else LazyColumn(Modifier.fillMaxSize().testTag("笔记列表").padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)) {
         item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(if (query.isBlank()) "${visibleNotes.size} 份笔记" else "找到 ${visibleNotes.size} 份", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             IconButton(onClick = { vm.createManualNote(selectedFolder ?: "") }, enabled = !ui.locked) { Icon(Icons.Outlined.Add, "新建笔记") }
@@ -531,14 +539,12 @@ private fun preview(bytes: ByteArray): Bitmap? {
         if (ui.classUi.running || ui.data.classRun?.let { !it.ended || it.pending.isNotEmpty() } == true) item { ClassModePanel(ui, vm) }
         if (ui.noteDraft.isNotBlank()) item { StudyPanel { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("正在整理", style = MaterialTheme.typography.titleSmall); Text(ui.noteDraft.takeLast(1600), maxLines = 8, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } } }
         if (ui.data.notes.isEmpty() && query.isBlank()) item { StudyEmpty(Icons.Outlined.AutoStories, "还没有笔记", "新建自己的笔记，或从学习页保存回答，随时回看、编辑或导出。") { Spacer(Modifier.height(4.dp)); OutlinedButton(onClick = { vm.tab(0) }) { Text("去学习") } } }
-        items(visibleNotes, key = { it.id }) { n -> NoteListCard(n, ui.data.folderName(n), onOpen = { reader.open(n); details = false }, onActions = { initialListAction = "options"; actionNoteId = n.id }) {
+        items(visibleNotes, key = { it.id }) { n -> NoteListCard(n, onOpen = { reader.open(n); details = false }, onActions = { initialListAction = "options"; actionNoteId = n.id }) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (n.pinned) Icon(Icons.Outlined.PushPin, "已置顶", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                    Text(n.source, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text("${ui.data.folderName(n)} · ${n.source}", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(remember(n.createdAt) { java.text.SimpleDateFormat("MM月dd日", java.util.Locale.CHINA).format(java.util.Date(n.createdAt)) }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text(n.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(remember(n.content) { notePreview(n.content) }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         } }
@@ -549,6 +555,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
 @Composable fun PagedNoteContent(note: Note, modifier: Modifier = Modifier, independentScroll: Boolean = false, header: @Composable () -> Unit = {}, trailingActions: @Composable () -> Unit = {}, titleAlreadyShown: Boolean = false, onBack: () -> Unit = {}, onSettings: () -> Unit = {}) {
     val chrome = LocalReadingChrome.current
     val inlineHeader = LocalInlineReadingHeader.current
+    val compactFraction = LocalReadingCompactFraction.current
     var index by rememberSaveable(note.id) { mutableIntStateOf(0) }
     var jump by remember(note.id) { mutableStateOf(false) }
     var navigation by remember(note.id) { mutableStateOf(false) }
@@ -567,14 +574,16 @@ private fun preview(bytes: ByteArray): Bitmap? {
     if (jump) JumpDialog("笔记目录 / 阅读分段", labels, { jump = false }) { index = it; jump = false }
     ReadingChatLayout(false, modifier, toolbar = {
         val floatingTools = LocalFloatingReadingTools.current
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val showArrows = !floatingTools && maxWidth >= (if (inlineHeader) 352.dp else 256.dp)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (inlineHeader) IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "返回笔记列表") }
-            if (segments.size > 1 && !floatingTools) IconButton(onClick = { index = selected - 1 }, enabled = selected > 0) { Icon(Icons.Default.ChevronLeft, "上一段") }
+            if (segments.size > 1 && showArrows) IconButton(onClick = { index = selected - 1 }, enabled = selected > 0) { Icon(Icons.Default.ChevronLeft, "上一段") }
             TextButton(onClick = { jump = true }, modifier = Modifier.weight(1f).semantics {
                 contentDescription = "目录跳转"
                 stateDescription = "阅读分段 ${selected + 1} / ${segments.size} · 完整笔记已保留"
             }) { Text(if (segments.size > 1) "${selected + 1} / ${segments.size} ▾" else "目录 ▾", maxLines = 1) }
-            if (segments.size > 1 && !floatingTools) IconButton(onClick = { index = selected + 1 }, enabled = selected < segments.lastIndex) { Icon(Icons.Default.ChevronRight, "下一段") }
+            if (segments.size > 1 && showArrows) IconButton(onClick = { index = selected + 1 }, enabled = selected < segments.lastIndex) { Icon(Icons.Default.ChevronRight, "下一段") }
             if (independentScroll) Box {
                 IconButton(onClick = { navigation = true }) { Icon(Icons.Default.SwapVert, "阅读跳转") }
                 DropdownMenu(expanded = navigation, onDismissRequest = { navigation = false }) {
@@ -589,11 +598,12 @@ private fun preview(bytes: ByteArray): Bitmap? {
             trailingActions()
             if (inlineHeader) IconButton(onClick = onSettings) { Icon(Icons.Outlined.Settings, "设置") }
         }
+        }
     }, body = {
         Column(if (independentScroll) Modifier.fillMaxSize().testTag("笔记正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier).verticalScroll(scroll) else Modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             header()
             key(note.id, selected) { IllustratedMarkdown(if (titleAlreadyShown && selected == 0) noteTextForDisplay(segments[selected].display(note.content), note.title) else segments[selected].display(note.content)) }
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(if (compactFraction > 0.5f) 72.dp else 24.dp))
         }
     }, composer = {})
 }

@@ -8,12 +8,10 @@ import android.provider.MediaStore
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.*
 import org.junit.Assert.*
 import org.junit.Rule
@@ -45,9 +43,14 @@ class NoteOrganizationWorkflowTest {
         val store = ViewModelStore()
         val owner = object : ViewModelStoreOwner { override val viewModelStore = store }
         lateinit var vm: StudyViewModel
-        var clearFocus: () -> Unit = {}
         fun hideKeyboard() {
-            compose.runOnIdle { clearFocus(); WindowInsetsControllerCompat(compose.activity.window, compose.activity.window.decorView).hide(WindowInsetsCompat.Type.ime()) }
+            // A category text field lives in a Dialog window, so the Activity's
+            // insets controller cannot close its keyboard. Use the system Back
+            // action, exactly as a user does, only while the IME is visible.
+            compose.waitUntil(5000) { ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true }
+            if (ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true) {
+                androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("input keyevent KEYCODE_BACK").let { descriptor -> android.os.ParcelFileDescriptor.AutoCloseInputStream(descriptor).use { it.readBytes() } }
+            }
             compose.waitUntil(5000) { ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) != true }
         }
         compose.runOnIdle { vm = ViewModelProvider(owner, object : ViewModelProvider.Factory {
@@ -56,8 +59,6 @@ class NoteOrganizationWorkflowTest {
         try {
             compose.setContent {
                 val ui by vm.ui.collectAsState()
-                val focus = LocalFocusManager.current
-                SideEffect { clearFocus = { focus.clearFocus() } }
                 StudyTheme(false) { StudyFrame(ui, vm::tab, {}, vm::stop) { padding ->
                     Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) { NotesScreen(ui, vm) }
                 } }
@@ -79,6 +80,7 @@ class NoteOrganizationWorkflowTest {
             compose.onNodeWithText("遗传学 1").performClick()
             compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记卡片 untouched").fetchSemanticsNodes().isEmpty() }
             assertEquals(first.copy(folderId = vm.ui.value.data.noteFolders.single().id), vm.ui.value.data.notes.single { it.id == first.id })
+            compose.waitUntil(5000) { vault.load().noteFolders.singleOrNull()?.name == "遗传学" && vault.load().notes.single { it.id == first.id }.folderId.isNotEmpty() }
             shot("sample-note-categories")
             compose.onNodeWithText("搜索笔记").performTextInput("保留正文")
             compose.waitUntil(5000) { compose.onAllNodesWithText("找到 1 份").fetchSemanticsNodes().isNotEmpty() }

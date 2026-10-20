@@ -14,6 +14,8 @@ class NoteOrganizationTest {
         assertEquals(note, loaded.notes.single())
         assertTrue(loaded.noteFolders.isEmpty())
         assertEquals("未分类", loaded.folderName(note))
+        assertEquals("原文 [图片]", notePreview(note.content))
+        assertEquals("原文 链接", notePreview("原文 [链接](https://example.org/secret)"))
     }
     @Test fun deletingFolderOnlyChangesMembershipAndNeverDeletesNotes() {
         val other = note.copy(id = "other", folderId = "other-folder")

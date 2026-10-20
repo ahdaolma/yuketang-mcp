@@ -102,10 +102,13 @@ class VisualReviewTest {
     }
     @Test fun narrowLargeTextReaderKeepsBodySpaceAndMenuActionsReachable() {
         val state = mutableStateOf(sample().copy(tab = 2)); render(state, scale = 1.5f, width = 320)
-        compose.onNodeWithText(firstNote.title).performClick()
+        compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).performClick()
         assertReadingArea()
         compose.onNodeWithText(firstNote.title).assertIsDisplayed()
-        compose.onNodeWithContentDescription("下一段").performClick()
+        if (compose.onAllNodesWithContentDescription("下一段").fetchSemanticsNodes().isEmpty()) {
+            compose.onNodeWithContentDescription("阅读跳转").performClick()
+            compose.onNodeWithText("下一段").performClick()
+        } else compose.onNodeWithContentDescription("下一段").performClick()
         assertReadingArea()
         compose.onNodeWithText(firstNote.title).assertIsDisplayed()
         shot("sample-note-reading-compact")
@@ -121,8 +124,8 @@ class VisualReviewTest {
         val state = mutableStateOf(sample()); render(state)
         compose.onNodeWithText(courseTitle).assertIsDisplayed(); shot("sample-courses-light")
         compose.onNodeWithText("笔记").performClick()
-        compose.onNodeWithText(firstNote.title).assertIsDisplayed(); shot("sample-notes-light")
-        compose.onNodeWithText(firstNote.title).performClick()
+        compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).assertIsDisplayed(); shot("sample-notes-light")
+        compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).performClick()
         compose.onNodeWithContentDescription("笔记选项").assertIsDisplayed(); verifyTableRows(); shot("sample-note-reading")
         compose.onNodeWithContentDescription("笔记选项").performClick()
         compose.onNodeWithText("编辑笔记").performClick()
@@ -153,7 +156,7 @@ class VisualReviewTest {
         shot("sample-learner-settings")
         compose.onNodeWithText("学习助手提示词").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { state.value = base.copy(tab = 2) }
-        compose.onNodeWithText(firstNote.title).performClick()
+        compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).performClick()
         assertReadingArea()
         shot("sample-note-reading-large-text")
         compose.onNodeWithContentDescription("笔记选项").performClick()
@@ -161,8 +164,8 @@ class VisualReviewTest {
     }
     @Test fun darkScreensUseTheSameReadingAndSettingsHierarchy() {
         val state = mutableStateOf(sample().copy(tab = 2)); render(state, mutableStateOf(true))
-        compose.onNodeWithText(firstNote.title).assertIsDisplayed(); shot("sample-notes-dark")
-        compose.onNodeWithText(firstNote.title).performClick(); verifyTableRows(); shot("sample-note-reading-dark")
+        compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).assertIsDisplayed(); shot("sample-notes-dark")
+        compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).performClick(); verifyTableRows(); shot("sample-note-reading-dark")
         compose.runOnIdle { state.value = state.value.copy(tab = 3) }
         compose.onNodeWithText("学习方式").assertIsDisplayed(); compose.onNodeWithText("ChatGPT 网页").assertIsSelected(); shot("sample-settings-dark")
         compose.onNodeWithText("我的学习情况").performScrollTo().performClick()

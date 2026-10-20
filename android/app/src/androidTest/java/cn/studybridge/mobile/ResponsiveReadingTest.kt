@@ -65,13 +65,14 @@ class ResponsiveReadingTest {
         compose.waitForIdle()
         val compact = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
         assertTrue("Reading gestures must reclaim height", (compact.bottom - compact.top).value > (before.bottom - before.top).value + 60f)
+        assertTrue("Floating controls must not narrow the text column", compact.right - compact.left >= before.right - before.left)
         compose.onNodeWithTag("应用顶部栏").assertDoesNotExist()
         compose.onNodeWithTag("应用时间栏").assertIsDisplayed()
         compose.waitUntil(5000) { androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars()) == false }
         compose.onNodeWithContentDescription("悬浮阅读工具").assertIsDisplayed().performClick()
         compose.onNodeWithTag("应用底部导航").assertIsDisplayed()
         listOf("学习资料", "新对话", "生成笔记", "消息跳转", "设置", "课程").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
-        shot("sample-chat-reading-narrow-bars")
+        shot("sample-chat-reading-narrow-bars", system = true)
         compose.onNodeWithContentDescription("消息跳转").performClick()
         compose.onNodeWithText("跳转消息").performClick()
         compose.onNodeWithText("跳转到消息").assertIsDisplayed()
@@ -93,7 +94,7 @@ class ResponsiveReadingTest {
         assertTrue("Notes must reclaim height too", (noteCompact.bottom - noteCompact.top).value > (noteBefore.bottom - noteBefore.top).value + 60f)
         compose.onNodeWithContentDescription("悬浮阅读工具").performClick()
         listOf("返回笔记列表", "目录跳转", "阅读跳转", "笔记选项", "设置").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
-        shot("sample-note-floating-controls")
+        shot("sample-note-floating-controls", system = true)
         compose.onNodeWithContentDescription("阅读跳转").performClick()
         compose.onNodeWithText("下一段").assertIsDisplayed().performClick()
         compose.onNodeWithContentDescription("目录跳转").assertIsDisplayed()

@@ -49,13 +49,13 @@ import androidx.compose.ui.window.PopupProperties
         val toolStrip = (tools.height * (1f - compact)).toInt()
         val controlsHeight = if (floating) input.height else if (side) maxOf(tools.height, input.height) else toolStrip + input.height
         val viewportHeight = (height - controlsHeight).coerceAtLeast(0)
-        val textWidth = (width - 56.dp.roundToPx() * (if (floating) 1f else compact)).toInt().coerceAtLeast(0)
+        val textWidth = if (floating) (width - 56.dp.roundToPx()).coerceAtLeast(0) else width
         val viewport = children[1].measure(slot(textWidth, viewportHeight).copy(minHeight = viewportHeight))
         layout(width, height) {
             viewport.placeRelative(0, if (side || floating) 0 else toolStrip)
             tools.placeRelative(
                 if (compactTools) width - tools.width + (112.dp.roundToPx() * (1f - compact)).toInt() else if (floating) width - tools.width else 0,
-                if (compactTools) toolStrip + ((viewportHeight - tools.height) / 2).coerceAtLeast(0) else if (floating) ((viewportHeight - tools.height) / 2).coerceAtLeast(0) else if (side) height - controlsHeight + (controlsHeight - tools.height) / 2 else -(tools.height * compact).toInt()
+                if (compactTools) toolStrip + (viewportHeight - tools.height - 8.dp.roundToPx()).coerceAtLeast(0) else if (floating) ((viewportHeight - tools.height) / 2).coerceAtLeast(0) else if (side) height - controlsHeight + (controlsHeight - tools.height) / 2 else -(tools.height * compact).toInt()
             )
             input.placeRelative(if (side) toolsWidth else 0, height - input.height)
         }

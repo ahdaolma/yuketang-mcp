@@ -74,13 +74,13 @@ fun Saved.folderName(note: Note) = noteFolders.find { it.id == note.folderId }?.
 // The same explicit entry is available through long press, the overflow button,
 // and accessibility. A destructive action always opens a separate confirmation.
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-@Composable fun NoteListCard(note: Note, folderName: String, onOpen: () -> Unit, onActions: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+@Composable fun NoteListCard(note: Note, onOpen: () -> Unit, onActions: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     val haptic = LocalHapticFeedback.current
     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainer, border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)) {
-        Column(Modifier.fillMaxWidth().testTag("笔记卡片 ${note.id}").combinedClickable(onClick = onOpen, onLongClickLabel = "笔记操作", onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onActions() }).padding(20.dp)) {
+        Column(Modifier.fillMaxWidth().testTag("笔记卡片 ${note.id}").combinedClickable(onClick = onOpen, onLongClickLabel = "笔记操作", onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onActions() }).padding(16.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.FolderOpen, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                Text(folderName, Modifier.weight(1f).padding(start = 6.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (note.pinned) Icon(Icons.Outlined.PushPin, "已置顶", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                Text(note.title, Modifier.weight(1f).padding(start = if (note.pinned) 6.dp else 0.dp), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 FeedbackIconButton(onClick = onActions, modifier = Modifier.size(48.dp)) { Icon(Icons.Outlined.MoreHoriz, "笔记操作 ${note.title}") }
             }
             Column(verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
