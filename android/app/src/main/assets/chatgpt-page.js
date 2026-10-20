@@ -75,7 +75,7 @@ function rainStudyPage(action, payload) {
         if(!assistant) return {finished:false,matchedUser:true,phase:'waiting'};
         const article=assistant.closest('[data-testid^="conversation-turn-"],[data-turn="assistant"],article') || assistant.parentElement;
         const done=Array.from(article?.querySelectorAll('button') || []).some(button => {
-            if (!visible(button)) return false;
+            if (!visible(button) || button.closest(".markdown,pre,code")) return false;
             const testId=button.getAttribute('data-testid') || '';
             const label=button.getAttribute('aria-label') || button.getAttribute('title') || '';
             return /^(copy-turn-action-button|good-response-turn-action-button|bad-response-turn-action-button)$/.test(testId)

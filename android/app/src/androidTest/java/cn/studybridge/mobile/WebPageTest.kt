@@ -75,6 +75,11 @@ class WebPageTest {
             assertTrue(driver.awaitAnswer("RS-localized", requireCurrent = true).contains("酶活性中心"))
             assertTrue(runCatching { driver.capture("RS-another-page") }.isFailure)
         }
+        val codeOnly = pageHtml.replace("<div><button aria-label=\"复制\">copy</button><button aria-label=\"差评\">bad</button></div>", "")
+            .replace("</p></div>", "</p><pre><button aria-label=\"复制\">copy code</button></pre></div>")
+        withPage(codeOnly) { page ->
+            assertFalse(page.call("answer", JSONObject().put("marker", "RS-localized")).optBoolean("finished"))
+        }
         withPage(pageHtml.replace("</form>", "<button aria-label=\"停止生成\">Stop</button></form>")) { page ->
             val status = page.call("answer", JSONObject().put("marker", "RS-localized"))
             assertEquals("generating", status.optString("phase")); assertFalse(status.optBoolean("finished"))
