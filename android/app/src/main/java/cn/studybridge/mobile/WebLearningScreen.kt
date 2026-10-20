@@ -57,7 +57,7 @@ import androidx.compose.ui.viewinterop.AndroidView
     Column(Modifier.fillMaxSize()) {
         if (active) {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val labelledSave = maxWidth >= 360.dp && LocalDensity.current.fontScale <= 1.2f
+            val labelledSave = maxWidth >= 420.dp && LocalDensity.current.fontScale <= 1.2f
             Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 20.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("ChatGPT 网页", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 MaterialsButton(ui, vm)

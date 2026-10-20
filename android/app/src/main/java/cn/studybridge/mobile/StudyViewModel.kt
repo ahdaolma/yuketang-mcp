@@ -345,6 +345,9 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     fun explainPage(slide: Slide) = operation("讲解并保存") {
         val s = state.value
         val a = withContext(Dispatchers.IO) { readAttachment(s, slide) }
+        explainAttachment(a, s)
+    }
+    private suspend fun explainAttachment(a: Attachment, s: UiState) {
         state.update { it.copy(materialsOpen = false, tab = 0, pending = null) }
         val note = generateNote(a)
         if (!s.data.usesWeb) checkpoint { d -> d.copy(conversations = d.conversations.map { c -> if (c.id == s.data.chat().id) c.copy(messages = c.messages + Message("user", a.text, a.image, a.label) + Message("assistant", note.content)) else c }) }
@@ -353,9 +356,8 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         val material = state.value.data.materials.find { it.id == note.materialId }
         if (material != null) { openMaterial(material); return }
         if (note.content.length > 100_000) { notice("这份笔记较长，请导出后通过「导入笔记」分段讲解。"); return }
-        operation("准备笔记讲解") {
-            state.update { it.copy(pending = Attachment(null, note.title, "用户选择的笔记原文：\n${note.content}"), materialsOpen = false, tab = 0) }
-            notice("笔记已带入学习，请输入问题或带入网页讲解。")
+        operation("讲解笔记并保存") {
+            explainAttachment(Attachment(null, note.title, "用户选择的笔记原文：\n${note.content}"), state.value)
         }
     }
     fun setDownloadDirectory(uri: Uri?) = operation("设置下载文件夹") {

@@ -119,7 +119,7 @@ class MaterialStore(private val context: Context) {
         val bitmap = when (m.format) {
             "pdf" -> PdfRenderer(ParcelFileDescriptor.open(path(m.id), ParcelFileDescriptor.MODE_READ_ONLY)).use { renderer -> renderer.openPage(page - 1).use { pdf ->
                 val scale = 1600f / maxOf(pdf.width, pdf.height); val w = (pdf.width * scale).toInt().coerceAtLeast(1); val h = (pdf.height * scale).toInt().coerceAtLeast(1)
-                Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { it.eraseColor(Color.WHITE); pdf.render(it, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) }
+                Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { bitmap -> try { bitmap.eraseColor(Color.WHITE); pdf.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY) } catch (e: Exception) { bitmap.recycle(); throw e } }
             } }
             "image" -> path(m.id).inputStream().use { boundedBitmap(it.readBytes()) }
             "pptx", "docx" -> if (p.images.isNotEmpty()) officeImage(path(m.id), p.images) else null
@@ -141,12 +141,14 @@ class MaterialStore(private val context: Context) {
             val presentation = xml(zip, "ppt/presentation.xml"); val ids = presentation.getElementsByTagNameNS("*", "sldId")
             require(ids.length in 1..500) { "PPTX 需为 1–500 页，请拆分后导入。" }
             val rels = relationMap(zip, "ppt/_rels/presentation.xml.rels", "ppt/presentation.xml")
+            var totalText = 0
             val pages = (0 until ids.length).map { index ->
                 val id = (ids.item(index) as Element).getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships", "id")
                 val part = rels[id] ?: error("PPTX 页面引用无法读取。")
                 require(part.startsWith("ppt/slides/"))
                 val slide = xml(zip, part); val nodes = slide.getElementsByTagNameNS("*", "t")
                 val text = (0 until nodes.length).joinToString("\n") { nodes.item(it).textContent }; require(text.length <= 100_000) { "单页文字过多，请转为 PDF。" }
+                totalText += text.length; require(totalText <= 500_000) { "文档文字过多，请拆分后导入。" }
                 val folder = part.substringBeforeLast('/'); val name = part.substringAfterLast('/')
                 val images = relationships(zip, "$folder/_rels/$name.rels", part)
                 val warning = "PPTX 为文字及嵌入图片提取视图，矢量图、公式和复杂版式可能未保留；需要原版视觉内容时请导入 PDF。" + if (images.size > 6) "本页图片超过 6 张，仅带入前 6 张。" else ""

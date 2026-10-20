@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.dp
     ModalBottomSheet(onDismissRequest = vm::closeMaterials, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 680.dp), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("学习资料", style = MaterialTheme.typography.titleLarge); if (ui.materialPane != "home") TextButton(onClick = { vm.materialPane("home") }, enabled = !ui.locked) { Text("返回资料") } } }
+            if (ui.busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()); Row { Text(ui.operation, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); TextButton(onClick = vm::stop) { Text("停止") } } }
+            if (ui.notice.isNotBlank()) item { Text(ui.notice, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
             if (ui.materialPane == "home") {
                 item { StudySectionLabel("选择资料") }
                 item { MaterialRow("雨课堂课件", "选择课程、查看原名与时间，下载或讲解", !ui.locked, vm::browseRainMaterials) }
