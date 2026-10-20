@@ -114,6 +114,7 @@ class ResponsiveReadingTest {
             compose.onNodeWithContentDescription("发送给所选模型").assertIsDisplayed().assertIsEnabled()
             compose.onNodeWithContentDescription("悬浮阅读工具").assertIsDisplayed().performClick()
             listOf("学习", "课程", "笔记", "学习资料", "新对话", "生成笔记", "消息跳转", "设置").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
+            shot("sample-chat-floating-tools", system = true)
             compose.onNodeWithContentDescription("收起悬浮工具").performClick()
             val typingBody = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
             assertTrue("Landscape composer must leave a usable scroll viewport", (typingBody.bottom - typingBody.top).value > 48f)
@@ -130,8 +131,19 @@ class ResponsiveReadingTest {
             compose.runOnIdle {
                 androidx.core.view.WindowInsetsControllerCompat(compose.activity.window, compose.activity.window.decorView).hide(androidx.core.view.WindowInsetsCompat.Type.ime())
             }
-            compose.waitUntil(5000) { androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == false }
+            // IME visibility is its target state, and can become false before
+            // the native closing animation has restored Compose's constraints.
+            compose.waitUntil(5000) {
+                androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == false &&
+                    compose.onAllNodesWithContentDescription("消息跳转").fetchSemanticsNodes().isNotEmpty() &&
+                    compose.onAllNodesWithContentDescription("悬浮阅读工具").fetchSemanticsNodes().isEmpty()
+            }
             compose.waitForIdle()
+            compose.onNodeWithContentDescription("消息跳转").assertIsDisplayed().assertIsEnabled()
+            compose.onNode(hasSetTextAction()).assertTextEquals(longDraft)
+            val restoredBody = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
+            assertTrue("Closing the keyboard must restore the reading viewport", (restoredBody.bottom - restoredBody.top).value >= (screen.bottom - screen.top).value * 0.5f)
+            shot("sample-chat-landscape-restored", system = true)
             compose.onNodeWithContentDescription("消息跳转").performClick()
             compose.onNodeWithText("顶部").performClick()
             compose.onNodeWithText("展开原文").assertIsDisplayed()
