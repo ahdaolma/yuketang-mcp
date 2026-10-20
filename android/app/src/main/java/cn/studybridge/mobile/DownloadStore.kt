@@ -7,7 +7,17 @@ import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import java.io.InputStream
 
-fun downloadName(title: String, extension: String): String = title.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_").trim().take(120).ifBlank { "学习资料" }.removeSuffix(".$extension") + ".$extension"
+fun downloadName(title: String, extension: String): String {
+    val clean = title.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_").trim().removeSuffix(".$extension").ifBlank { "学习资料" }
+    val name = StringBuilder(); var offset = 0; var bytes = 0
+    while (offset < clean.length && name.length < 120) {
+        val count = Character.charCount(clean.codePointAt(offset)); val part = clean.substring(offset, offset + count)
+        val size = part.toByteArray(Charsets.UTF_8).size
+        if (bytes + size > 220) break
+        name.append(part); bytes += size; offset += count
+    }
+    return name.toString() + ".$extension"
+}
 
 class DownloadStore(private val context: Context) {
     private val resolver get() = context.contentResolver

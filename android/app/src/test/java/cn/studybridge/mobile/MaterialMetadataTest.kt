@@ -26,5 +26,8 @@ class MaterialMetadataTest {
         assertTrue(pages.size > 1); assertTrue(pages.all { it.text.length <= 6000 })
         assertEquals(original.trimEnd(), pages.joinToString("") { it.text }.trimEnd())
         assertEquals("医学遗传学_Medical Genetics.pdf", downloadName("医学遗传学/Medical Genetics", "pdf"))
+        val longName = downloadName("医学遗传学🧬".repeat(40), "pdf")
+        assertTrue(longName.toByteArray(Charsets.UTF_8).size < 255)
+        assertFalse(longName.contains('\uFFFD')); assertTrue(longName.endsWith(".pdf"))
     }
 }
