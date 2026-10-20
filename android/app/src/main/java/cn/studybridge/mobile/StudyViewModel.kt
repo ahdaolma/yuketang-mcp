@@ -355,6 +355,12 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                     val answer = webDriver().awaitAnswer(pending.marker, onMatched = { webLocation(webPage?.pageUrl ?: CHATGPT_WEB) }, requireCurrent = true)
                     val receivedAt = System.currentTimeMillis()
                     checkpoint { recoverWebAnswer(it, answer, receivedAt = receivedAt) }
+                    state.update { u ->
+                        if (u.classUi.paused) u else u.copy(noteDraft = "", classUi = u.classUi.copy(status =
+                            if (classAccess == null && u.data.classRun?.ended != true) "上一页已保存，正在连接课堂…"
+                            else if (u.data.classRun?.pending?.isNotEmpty() == true) "上一页已保存，继续整理后续课件"
+                            else "上一页已保存，等待老师翻页"))
+                    }
                 }
                 while (isActive) {
                     val current = state.value.data.classRun ?: break
