@@ -19,16 +19,12 @@ class MaterialsUiTest {
         val state = mutableStateOf(UiState(ready = true, materialsOpen = true, materialPane = "rain", course = Course("1", "医学遗传学"), presentations = listOf(Presentation("12", title, recordedAt = "2026-10-20 08:00"))))
         lateinit var vm: StudyViewModel
         compose.activityRule.scenario.onActivity { vm = ViewModelProvider(it)[StudyViewModel::class.java] }
+        val beforeDialog = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
         compose.setContent { StudyTheme(false) { if (state.value.materialsOpen) LearningMaterialsHost(state.value, vm) else ModelScreen(state.value, vm) } }
         compose.onNodeWithText(title).assertIsDisplayed()
         compose.onNodeWithText("课件 · 2026-10-20 08:00").assertIsDisplayed()
         compose.waitForIdle()
-        compose.waitUntil(10000) {
-            InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()?.let { shot ->
-                try { val pixel = shot.getPixel(12, shot.height / 6); android.graphics.Color.red(pixel) < 210 && android.graphics.Color.green(pixel) < 210 && android.graphics.Color.blue(pixel) < 210 } finally { shot.recycle() }
-            } ?: false
-        }
-        val bitmap = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+        val bitmap = dialogScreenshot(compose, beforeDialog)
         try { val resolver = compose.activity.contentResolver; val uri = requireNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply { put(MediaStore.Images.Media.DISPLAY_NAME, "sample-materials.png"); put(MediaStore.Images.Media.MIME_TYPE, "image/png"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/StudyUiReview"); put(MediaStore.Images.Media.IS_PENDING, 1) })); requireNotNull(resolver.openOutputStream(uri)).use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }; resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null) } finally { bitmap.recycle() }
         compose.runOnIdle { state.value = state.value.copy(materialsOpen = false, tab = 3, data = state.value.data.copy(downloadDirectoryName = "学习资料文件夹", downloadTreeUri = "content://fixture/tree/notes")) }
         compose.onNodeWithText("文件与下载").performScrollTo().assertIsDisplayed()

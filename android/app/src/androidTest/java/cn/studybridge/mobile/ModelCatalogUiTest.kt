@@ -34,14 +34,12 @@ class ModelCatalogUiTest {
         compose.onNodeWithText("配置模型与账号").performScrollTo().performClick()
         compose.onNodeWithText("配置连接").performScrollTo().performClick()
         compose.onNodeWithText("模型 ID").assertDoesNotExist()
-        compose.onNodeWithText("选择模型").performScrollTo().performClick()
+        compose.onNodeWithText("选择模型").performScrollTo()
+        compose.onRoot().captureToImage()
+        val beforeDialog = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+        compose.onNodeWithText("选择模型").performClick()
         compose.onNodeWithText("视觉讲解").assertIsDisplayed()
-        compose.waitUntil(10000) {
-            InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()?.let { shot ->
-                try { val pixel = shot.getPixel(12, shot.height / 6); android.graphics.Color.red(pixel) < 210 && android.graphics.Color.green(pixel) < 210 && android.graphics.Color.blue(pixel) < 210 } finally { shot.recycle() }
-            } ?: false
-        }
-        val bitmap = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+        val bitmap = dialogScreenshot(compose, beforeDialog)
         try {
             val resolver = compose.activity.contentResolver
             val values = ContentValues().apply { put(MediaStore.Images.Media.DISPLAY_NAME, "sample-model-picker.png"); put(MediaStore.Images.Media.MIME_TYPE, "image/png"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/StudyUiReview"); put(MediaStore.Images.Media.IS_PENDING, 1) }
