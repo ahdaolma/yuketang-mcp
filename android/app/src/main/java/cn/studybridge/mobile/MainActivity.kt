@@ -135,6 +135,8 @@ class MainActivity : ComponentActivity() {
         }
     }
     val unavailable = when {
+        ui.storageError.isNotBlank() -> "本机记录不可写，已保留原数据；请先排查解密问题。"
+        !ui.ready -> "正在读取本机记录，请稍候。"
         ui.chatgptLoginActive -> "正在等待账号授权，请先完成或取消本次授权。"
         ui.busy -> "正在${ui.operation}，请稍候或点击停止。"
         ui.classUi.running && !ui.classUi.paused -> "上课模式正在运行，请先暂停再操作。"
@@ -144,6 +146,7 @@ class MainActivity : ComponentActivity() {
     CompositionLocalProvider(LocalControlFeedback provides controlFeedback) {
     StudyFrame(ui, onTab = { target -> if (target == 3) previousTab = ui.tab; vm.tab(target) }, onBack = { if (ui.tab == 2) vm.noteReader.closeRequested = true else vm.tab(previousTab) }, onStop = vm::stop, snackbar = snackbar, noteOpen = ui.tab == 2 && ui.data.notes.any { it.id == vm.noteReader.id }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
+            if (ui.storageError.isNotBlank()) Text(ui.storageError, Modifier.fillMaxWidth().padding(16.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
             if (ui.busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(ui.operation, Modifier.padding(horizontal = 16.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall) }
             if (!ui.ready) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             else StudyPageContent(ui, vm, web, webRevision)

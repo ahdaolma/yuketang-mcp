@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-data class UiState(val data: Saved = Saved(), val tab: Int = 0, val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val activityPage: Int = 0, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi(), val chatgptLoginActive: Boolean = false, val chatgptStage: String = "", val chatgptPlanWelcome: Boolean = false, val modelNames: Map<String, String> = emptyMap(), val modelListRequest: String = "", val materialsOpen: Boolean = false, val materialPane: String = "home", val localDocument: MaterialDocument? = null, val slideRecordedAt: String = "") { val locked get() = busy || chatgptLoginActive || (classUi.running && !classUi.paused) }
+data class UiState(val data: Saved = Saved(), val tab: Int = 0, val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val activityPage: Int = 0, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi(), val chatgptLoginActive: Boolean = false, val chatgptStage: String = "", val chatgptPlanWelcome: Boolean = false, val modelNames: Map<String, String> = emptyMap(), val modelListRequest: String = "", val materialsOpen: Boolean = false, val materialPane: String = "home", val localDocument: MaterialDocument? = null, val slideRecordedAt: String = "", val storageError: String = "") { val locked get() = !ready || storageError.isNotBlank() || busy || chatgptLoginActive || (classUi.running && !classUi.paused) }
 
 class StudyViewModel(app: Application) : AndroidViewModel(app) {
     val noteReader = NoteReader()
@@ -52,13 +52,13 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch {
             try { val saved = withContext(Dispatchers.IO) { vault.load() }; state.update { it.copy(data = saved, ready = true) } }
-            catch (_: Exception) { storageBlocked = true; state.update { it.copy(ready = true, notice = "本机记录无法解密，已停止写入以保留原记录。请备份原安装后排查系统密钥，勿直接覆盖数据。") } }
+            catch (_: Exception) { storageBlocked = true; state.update { it.copy(ready = true, storageError = "本机记录无法解密，已停止写入以保留原记录。请备份原安装后排查系统密钥，勿直接覆盖数据。") } }
         }
     }
     fun notice(value: String) { state.update { it.copy(notice = value) } }
     fun tab(value: Int) { state.update { if (value == 1 && it.localDocument != null) it.copy(tab = value, localDocument = null, slides = emptyList()) else it.copy(tab = value) }; if (value == 1) onResume() }
     private fun persist() { viewModelScope.launch(Dispatchers.IO) { disk.withLock { if (!storageBlocked) try { vault.save(state.value.data) } catch (_: Exception) { notice("本机记录保存失败，请检查存储空间。") } } } }
-    private fun data(change: (Saved) -> Saved) { state.update { it.copy(data = change(it.data)) }; persist() }
+    private fun data(change: (Saved) -> Saved) { if (storageBlocked || !state.value.ready) { notice("本机记录尚不可写，设置未保存。"); return }; state.update { it.copy(data = change(it.data)) }; persist() }
     private suspend fun checkpoint(change: (Saved) -> Saved) = withContext(NonCancellable + Dispatchers.Main.immediate) {
         disk.withLock {
             check(!storageBlocked) { "本机记录不可写，已保留待恢复状态。" }
@@ -70,7 +70,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun saveProvider(p: Provider): Boolean {
         try {
-            validateProviderDestination(p); aiEndpoint(p.baseUrl); require(p.name.isNotBlank() && p.model.isNotBlank()) { "请填写名称和模型名称。" }
+            check(!storageBlocked && state.value.ready) { "本机记录尚不可写，模型配置未保存。" }; validateProviderDestination(p); aiEndpoint(p.baseUrl); require(p.name.isNotBlank() && p.model.isNotBlank()) { "请填写名称和模型名称。" }
             data { it.copy(providers = it.providers.filterNot { v -> v.id == p.id } + if (p.chatgptAccountId.isBlank()) p else p.copy(key = ""), selectedProvider = p.id) }
             notice("模型配置已保存。")
             return true
