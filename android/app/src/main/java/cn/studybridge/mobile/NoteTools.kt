@@ -21,9 +21,9 @@ data class NoteTextEdit(val text: String, val start: Int, val end: Int)
 fun formatNoteSelection(text: String, start: Int, end: Int, kind: String): NoteTextEdit {
     val first = minOf(start, end).coerceIn(0, text.length)
     val last = maxOf(start, end).coerceIn(first, text.length)
-    if (kind == "bold" || kind == "code") {
-        val mark = if (kind == "bold") "**" else "`"
-        val selected = text.substring(first, last).ifEmpty { if (kind == "bold") "文字" else "代码" }
+    if (kind == "bold" || kind == "code" || kind.startsWith("mark:")) {
+        val mark = if (kind.startsWith("mark:")) StudyMark.entries.firstOrNull { it.name == kind.removePrefix("mark:") }?.marker ?: return NoteTextEdit(text, first, last) else if (kind == "bold") "**" else "`"
+        val selected = text.substring(first, last).ifEmpty { if (kind.startsWith("mark:")) "关键内容" else if (kind == "bold") "文字" else "代码" }
         return NoteTextEdit(text.replaceRange(first, last, mark + selected + mark), first + mark.length, first + mark.length + selected.length)
     }
     val prefix = when (kind) { "heading" -> "## "; "list" -> "- "; "todo" -> "- [ ] "; "quote" -> "> "; else -> return NoteTextEdit(text, first, last) }
@@ -39,7 +39,7 @@ fun formatNoteSelection(text: String, start: Int, end: Int, kind: String): NoteT
     LaunchedEffect(text) { if (text != value.text) value = TextFieldValue(text, TextRange(text.length)) }
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
-            listOf("标题" to "heading", "加粗" to "bold", "列表" to "list", "待办" to "todo", "引用" to "quote", "代码" to "code").forEach { (label, kind) ->
+            (listOf("标题" to "heading", "加粗" to "bold", "列表" to "list", "待办" to "todo", "引用" to "quote", "代码" to "code") + StudyMark.entries.map { it.label to "mark:${it.name}" }).forEach { (label, kind) ->
                 FeedbackTextButton(onClick = {
                     val edit = formatNoteSelection(value.text, value.selection.start, value.selection.end, kind)
                     value = TextFieldValue(edit.text, TextRange(edit.start, edit.end)); onChange(edit.text)

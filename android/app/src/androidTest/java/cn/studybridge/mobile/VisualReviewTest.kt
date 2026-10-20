@@ -131,7 +131,8 @@ class VisualReviewTest {
         compose.onNodeWithText("编辑笔记").performClick()
         compose.onNode(hasSetTextAction()).performTextInput("\n新增草稿内容")
         compose.runOnIdle { state.value = state.value.copy(tab = 1) }
-        compose.onNodeWithText(courseTitle).assertIsDisplayed()
+        compose.waitUntil(5000) { androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) != true }
+        compose.onNodeWithText(courseTitle).performScrollTo().assertIsDisplayed()
         compose.runOnIdle { state.value = state.value.copy(tab = 2) }
         compose.onNodeWithText("保存修改").assertIsDisplayed()
         compose.runOnIdle { assertTrue(vm.noteReader.draft.contains("新增草稿内容")); assertTrue(vm.noteReader.editing) }

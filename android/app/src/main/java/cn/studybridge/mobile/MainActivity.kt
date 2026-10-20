@@ -61,6 +61,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
@@ -94,6 +95,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -160,7 +163,7 @@ class MainActivity : ComponentActivity() {
     }
     val controlFeedback = remember(vm, unavailable) { ControlFeedback(vm::notice, unavailable) }
     CompositionLocalProvider(LocalControlFeedback provides controlFeedback) {
-    StudyFrame(ui, onTab = { target -> if (target == 3) previousTab = ui.tab; vm.tab(target) }, onBack = { if (ui.tab == 2) vm.noteReader.closeRequested = true else vm.tab(previousTab) }, onStop = vm::stop, snackbar = snackbar, noteOpen = ui.tab == 2 && ui.data.notes.any { it.id == vm.noteReader.id }) { padding ->
+    StudyFrame(ui, onTab = { target -> if (target == 3) previousTab = ui.tab; vm.tab(target) }, onBack = { if (ui.tab == 2) vm.noteReader.closeRequested = true else vm.tab(previousTab) }, onStop = vm::stop, snackbar = snackbar, noteOpen = ui.tab == 2 && ui.data.notes.any { it.id == vm.noteReader.id }, onClassToggle = { if (ui.classUi.paused) vm.resumeClass() else vm.pauseClass() }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             if (ui.storageError.isNotBlank()) Text(ui.storageError, Modifier.fillMaxWidth().padding(16.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
             StudyOperationProgress(ui)
@@ -208,7 +211,8 @@ class MainActivity : ComponentActivity() {
                 }
             }).build()
     }
-    val formatted by produceState<android.text.Spanned?>(null, text, renderer) { value = withContext(Dispatchers.Default) { renderer.toMarkdown(text) } }
+    val dark = colors.background.luminance() < 0.5f
+    val formatted by produceState<android.text.Spanned?>(null, text, renderer, density, dark) { value = withContext(Dispatchers.Default) { renderStudyMarks(renderer.toMarkdown(text), density, dark) } }
     AndroidView(factory = { TextView(it).apply { textSize = 16f; setTextIsSelectable(true); setLineSpacing(0f, 1.3f) } }, modifier = Modifier.fillMaxWidth(), update = {
         if (it.currentTextColor != color) it.setTextColor(color)
         if (kotlin.math.abs(it.textSize - bodySize) > 0.1f) it.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, bodySize)
@@ -447,8 +451,10 @@ private fun preview(bytes: ByteArray): Bitmap? {
     val note = ui.data.notes.find { it.id == reader.id }
     var leaving by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
+    var deletingPages by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var details by remember { mutableStateOf(false) }
+    var markLegend by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     var titleDraft by remember { mutableStateOf("") }
     var query by rememberSaveable { mutableStateOf("") }
@@ -479,7 +485,8 @@ private fun preview(bytes: ByteArray): Bitmap? {
     }
     if (note != null) {
         val writable = !ui.locked && ui.data.noteWritable(note.id)
-        if (leaving) AlertDialog(onDismissRequest = { leaving = false }, title = { Text("保存这次修改？") }, text = { Text("切换底部标签会保留草稿。返回笔记列表前，可以保存或放弃这次修改。") }, confirmButton = { TextButton(onClick = { if (vm.editNote(note.id, reader.draft)) { reader.close(); leaving = false } }, enabled = writable) { Text("保存并返回") } }, dismissButton = { FlowRow { TextButton(onClick = { reader.close(); leaving = false }) { Text("放弃修改") }; TextButton(onClick = { leaving = false }) { Text("继续编辑") } } })
+        if (leaving) AlertDialog(onDismissRequest = { leaving = false }, title = { Text("保存这次修改？") }, text = { Text("切换底部标签会保留草稿。返回笔记列表前，可以保存或放弃这次修改。") }, confirmButton = { TextButton(onClick = { if (vm.editNote(note.id, reader.draft)) { reader.close(); leaving = false } }, enabled = writable) { Text("保存并返回") } }, dismissButton = { FlowRow { TextButton(onClick = { vm.discardNoteDraft(note.id); reader.close(); leaving = false }) { Text("放弃修改") }; TextButton(onClick = { leaving = false }) { Text("继续编辑") } } })
+        if (deletingPages) NotePageDeletion(note, vm, writable && !reader.editing) { deletingPages = false }
         if (deleting) AlertDialog(onDismissRequest = { deleting = false }, title = { Text("删除这份笔记？") }, text = { Text("“${note.title}”将从本机删除，此操作无法撤销。") }, confirmButton = { TextButton(onClick = { if (vm.deleteNote(note.id)) { reader.close(); deleting = false } }, enabled = writable, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("删除笔记") } }, dismissButton = { TextButton(onClick = { deleting = false }) { Text("保留笔记") } })
         if (renaming) AlertDialog(onDismissRequest = { renaming = false }, title = { Text("重命名笔记") }, text = {
             OutlinedTextField(titleDraft, { titleDraft = it.take(120) }, label = { Text("笔记标题") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -498,12 +505,15 @@ private fun preview(bytes: ByteArray): Bitmap? {
                         if (ui.data.downloadTreeUri.isNotBlank()) vm.exportNote(note, text) else { exportSnapshot = note to text; export.launch(downloadName(note.title, "md")) }
                     })
                     DropdownMenuItem(text = { Text("AI 讲解") }, enabled = !ui.locked && (!reader.editing || reader.draft == note.content), onClick = { menu = false; vm.explainNote(note) })
+                    DropdownMenuItem(text = { Text("标记说明") }, onClick = { menu = false; markLegend = true })
                     DropdownMenuItem(text = { Text("来源与模型") }, onClick = { menu = false; details = true })
                     HorizontalDivider()
-                    DropdownMenuItem(text = { Text("删除笔记…") }, enabled = writable, onClick = { menu = false; deleting = true })
+                    DropdownMenuItem(text = { Text("按页删除内容…") }, enabled = writable && !reader.editing, onClick = { menu = false; deletingPages = true })
+                    DropdownMenuItem(text = { Text("删除整份笔记…") }, enabled = writable, onClick = { menu = false; deleting = true })
                 }
             }
         }
+        if (markLegend) StudyMarkLegend { markLegend = false }
         if (details) AlertDialog(onDismissRequest = { details = false }, title = { Text("来源与模型") }, text = {
             Text("来源：${note.source}\n\n模型：${note.model}", Modifier.verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodyMedium)
         }, confirmButton = { TextButton(onClick = { details = false }) { Text("关闭") } })
@@ -522,9 +532,11 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 }
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     heading()
+                    Text(if (ui.noteDraftSaveError.isNotBlank()) ui.noteDraftSaveError else if (ui.noteDraftSaving) "正在自动保存草稿…" else if (ui.noteDraftSavedAt > 0) "草稿已自动保存" else "修改会自动保存为草稿", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    NoteImageEditor(reader.draft, { reader.draft = it }, vm.sourceImages, writable, vm::notice)
                     NoteEditor(reader.draft, { reader.draft = it }, writable)
                 }
-            } else PagedNoteContent(note, Modifier.weight(1f), independentScroll = true, header = heading, trailingActions = actions, titleAlreadyShown = true, onBack = { requestClose() }, onSettings = { vm.tab(3) })
+            } else PagedNoteContent(note, Modifier.weight(1f), independentScroll = true, header = heading, trailingActions = actions, titleAlreadyShown = true, onBack = { requestClose() }, onSettings = { vm.tab(3) }, bookmark = vm.readingMemory.position(note.id), onReadingPosition = vm.readingMemory::remember, sourceImages = vm.sourceImages)
         }
     } else LazyColumn(Modifier.fillMaxSize().testTag("笔记列表").padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)) {
         item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -552,7 +564,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable fun PagedNoteContent(note: Note, modifier: Modifier = Modifier, independentScroll: Boolean = false, header: @Composable () -> Unit = {}, trailingActions: @Composable () -> Unit = {}, titleAlreadyShown: Boolean = false, onBack: () -> Unit = {}, onSettings: () -> Unit = {}) {
+@Composable fun PagedNoteContent(note: Note, modifier: Modifier = Modifier, independentScroll: Boolean = false, header: @Composable () -> Unit = {}, trailingActions: @Composable () -> Unit = {}, titleAlreadyShown: Boolean = false, onBack: () -> Unit = {}, onSettings: () -> Unit = {}, bookmark: NoteReadingPosition? = null, onReadingPosition: (NoteReadingPosition) -> Unit = {}, sourceImages: SourceImages? = null) {
     val chrome = LocalReadingChrome.current
     val inlineHeader = LocalInlineReadingHeader.current
     val compactFraction = LocalReadingCompactFraction.current
@@ -566,11 +578,38 @@ private fun preview(bytes: ByteArray): Bitmap? {
     val segments = prepared?.takeIf { it.first == note.content }?.second
     if (segments == null) { CircularProgressIndicator(Modifier.size(24.dp)); return }
     val selected = index.coerceIn(0, segments.lastIndex)
-    LaunchedEffect(note.id, selected) { if (independentScroll) scroll.scrollTo(0) }
     val labels = remember(note.content, segments) { segments.mapIndexed { i, part ->
         val text = note.content.substring(part.start, minOf(part.end, part.start + 300))
         (readingHeadings(text).firstOrNull { it.second.contains(Regex("第\\s*\\d+\\s*页")) } ?: readingHeadings(text).firstOrNull())?.second ?: "第 ${i + 1} 段 · ${notePreview(text).take(50)}"
     } }
+    val hash = remember(note.content) { noteContentHash(note.content) }
+    val initialBookmark = remember(note.id) { bookmark }
+    var restored by remember(note.id, note.content) { mutableStateOf(false) }
+    var previousSelection by remember(note.id, note.content) { mutableIntStateOf(-1) }
+    LaunchedEffect(note.id, note.content, labels) {
+        if (independentScroll && !restored) {
+            index = restoredNoteIndex(initialBookmark, hash, labels)
+            if (initialBookmark != null && initialBookmark.contentHash == hash && initialBookmark.scroll > 0) {
+                kotlinx.coroutines.withTimeoutOrNull(1800) { snapshotFlow { scroll.maxValue }.first { it >= initialBookmark.scroll } }
+                scroll.scrollTo(initialBookmark.scroll.coerceAtMost(scroll.maxValue))
+            }
+            previousSelection = index; restored = true
+        }
+    }
+    LaunchedEffect(selected, restored) {
+        if (independentScroll && restored && previousSelection != selected) { scroll.scrollTo(0); previousSelection = selected }
+    }
+    val latestSelection by rememberUpdatedState(selected)
+    val latestLabels by rememberUpdatedState(labels)
+    val latestPositionCallback by rememberUpdatedState(onReadingPosition)
+    LaunchedEffect(note.id, hash, restored) {
+        if (independentScroll && restored) snapshotFlow { latestSelection to scroll.value }.debounce(180).collect { (page, offset) ->
+            latestPositionCallback(NoteReadingPosition(note.id, page, offset, latestLabels[page], hash))
+        }
+    }
+    DisposableEffect(note.id, hash, scroll, restored) {
+        onDispose { if (independentScroll && restored) latestPositionCallback(NoteReadingPosition(note.id, latestSelection, scroll.value, latestLabels[latestSelection], hash)) }
+    }
     if (jump) JumpDialog("笔记目录 / 阅读分段", labels, { jump = false }) { index = it; jump = false }
     ReadingChatLayout(false, modifier, toolbar = {
         val floatingTools = LocalFloatingReadingTools.current
@@ -587,6 +626,10 @@ private fun preview(bytes: ByteArray): Bitmap? {
             if (independentScroll) Box {
                 IconButton(onClick = { navigation = true }) { Icon(Icons.Default.SwapVert, "阅读跳转") }
                 DropdownMenu(expanded = navigation, onDismissRequest = { navigation = false }) {
+                    if (initialBookmark != null) DropdownMenuItem(text = { Text("回到上次阅读") }, onClick = {
+                        navigation = false; index = restoredNoteIndex(initialBookmark, hash, labels)
+                        scope.launch { kotlinx.coroutines.delay(40); scroll.scrollTo(if (initialBookmark.contentHash == hash) initialBookmark.scroll.coerceAtMost(scroll.maxValue) else 0) }
+                    })
                     if (segments.size > 1) {
                         DropdownMenuItem(text = { Text("上一段") }, enabled = selected > 0, onClick = { navigation = false; index = selected - 1 })
                         DropdownMenuItem(text = { Text("下一段") }, enabled = selected < segments.lastIndex, onClick = { navigation = false; index = selected + 1 })
@@ -602,7 +645,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
     }, body = {
         Column(if (independentScroll) Modifier.fillMaxSize().testTag("笔记正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier).verticalScroll(scroll) else Modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             header()
-            key(note.id, selected) { IllustratedMarkdown(if (titleAlreadyShown && selected == 0) noteTextForDisplay(segments[selected].display(note.content), note.title) else segments[selected].display(note.content)) }
+            key(note.id, selected) { IllustratedMarkdown(if (titleAlreadyShown && selected == 0) noteTextForDisplay(segments[selected].display(note.content), note.title) else segments[selected].display(note.content), sourceImages) }
             Spacer(Modifier.height(if (compactFraction > 0.5f) 72.dp else 24.dp))
         }
     }, composer = {})

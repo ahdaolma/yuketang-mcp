@@ -142,9 +142,9 @@ class MaterialPreviews(context: Context) {
     }
 }
 
-@Composable fun IllustratedMarkdown(text: String) {
+@Composable fun IllustratedMarkdown(text: String, sourceImages: SourceImages? = null) {
     val context = LocalContext.current
-    val images = remember(context) { SourceImages(context) }
+    val images = sourceImages ?: remember(context) { SourceImages(context) }
     val repository = remember(context) { MaterialPreviews(context) }
     // Only our private, content-addressed images are loaded. Arbitrary model links
     // remain ordinary Markdown and never trigger file or network image access.

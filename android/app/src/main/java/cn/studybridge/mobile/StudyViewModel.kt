@@ -22,10 +22,20 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-data class UiState(val data: Saved = Saved(), val tab: Int = 0, val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val activityPage: Int = 0, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi(), val chatgptLoginActive: Boolean = false, val chatgptStage: String = "", val chatgptPlanWelcome: Boolean = false, val modelNames: Map<String, String> = emptyMap(), val modelListRequest: String = "", val materialsOpen: Boolean = false, val materialPane: String = "home", val localDocument: MaterialDocument? = null, val slideRecordedAt: String = "", val storageError: String = "") { val locked get() = !ready || storageError.isNotBlank() || busy || chatgptLoginActive || (classUi.running && !classUi.paused) }
+data class UiState(val data: Saved = Saved(), val tab: Int = 0, val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val activityPage: Int = 0, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi(), val chatgptLoginActive: Boolean = false, val chatgptStage: String = "", val chatgptPlanWelcome: Boolean = false, val modelNames: Map<String, String> = emptyMap(), val modelListRequest: String = "", val materialsOpen: Boolean = false, val materialPane: String = "home", val localDocument: MaterialDocument? = null, val slideRecordedAt: String = "", val storageError: String = "", val noteDraftSaving: Boolean = false, val noteDraftSavedAt: Long = 0L, val noteDraftSaveError: String = "") { val locked get() = !ready || storageError.isNotBlank() || busy || chatgptLoginActive || (classUi.running && !classUi.paused) }
 
 class StudyViewModel @JvmOverloads constructor(app: Application, private val rain: RainApi = RainApi()) : AndroidViewModel(app) {
-    val noteReader = NoteReader()
+    val noteReader = NoteReader(
+        storedDraft = { id -> savedDrafts.find { it.noteId == id && it.content != state.value.data.notes.find { n -> n.id == id }?.content }?.content },
+        onDraft = ::stageNoteDraft
+    )
+    val readingMemory = NoteReadingMemory(app, viewModelScope, ::notice)
+    private val draftVault = Vault(app, "note-drafts-v1.enc")
+    private val draftDisk = Mutex()
+    private var savedDrafts = emptyList<NoteDraft>()
+    private var draftRevision = 0L
+    private var draftStorageBlocked = false
+    private val draftWrites = Channel<Unit>(Channel.CONFLATED)
     private val vault = Vault(app)
     private val disk = Mutex()
     private val materials = MaterialStore(app)
@@ -51,13 +61,63 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
     private var loginAttempt = newId()
     init {
         viewModelScope.launch {
-            try { val saved = withContext(Dispatchers.IO) { vault.load().also { loaded -> runCatching { sourceImages.prune(loaded) } } }; state.update { it.copy(data = saved, ready = true) } }
+            try {
+                val loaded = withContext(Dispatchers.IO) {
+                    val saved = vault.load()
+                    val drafts = runCatching { draftVault.load().noteDrafts }.getOrElse { draftStorageBlocked = true; emptyList() }
+                        .filter { draft -> saved.notes.any { it.id == draft.noteId && it.content != draft.content } }
+                    runCatching { sourceImages.prune(saved.copy(noteDrafts = drafts)) }
+                    saved to drafts
+                }
+                savedDrafts = loaded.second
+                readingMemory.load(loaded.first.notes.map { it.id }.toSet())
+                state.update { it.copy(data = loaded.first, ready = true) }
+                savedDrafts.maxByOrNull { it.updatedAt }?.let { draft -> loaded.first.notes.find { it.id == draft.noteId }?.let { note ->
+                    noteReader.open(note); state.update { it.copy(tab = 2, notice = "已恢复上次自动保存的笔记草稿。", noteDraftSavedAt = draft.updatedAt) }
+                } }
+                if (draftStorageBlocked) { state.update { it.copy(noteDraftSaveError = "自动保存不可用：草稿文件暂时无法读取") }; notice("草稿暂时无法读取，已保留原文件；已保存笔记仍可查看。") }
+            }
             catch (_: Exception) { storageBlocked = true; state.update { it.copy(ready = true, storageError = "本机记录无法解密，已停止写入以保留原记录。请备份原安装后排查系统密钥，勿直接覆盖数据。") } }
         }
     }
+    init { viewModelScope.launch { for (signal in draftWrites) writeDraftSnapshot() } }
+    private fun stageNoteDraft(id: String, text: String) {
+        if (!state.value.ready || storageBlocked || draftStorageBlocked) return
+        val note = state.value.data.notes.find { it.id == id } ?: return
+        savedDrafts = savedDrafts.filterNot { it.noteId == id } + if (text == note.content) emptyList() else listOf(NoteDraft(id, text))
+        draftRevision++
+        state.update { it.copy(noteDraftSaving = true, noteDraftSaveError = "") }
+        draftWrites.trySend(Unit)
+    }
+    private suspend fun writeDraftSnapshot() = withContext(NonCancellable) {
+        draftDisk.withLock {
+            val revision = draftRevision
+            val snapshot = savedDrafts
+            try {
+                withContext(Dispatchers.IO) { if (!draftStorageBlocked) draftVault.save(Saved(noteDrafts = snapshot)) }
+                if (revision == draftRevision) state.update { it.copy(noteDraftSaving = false, noteDraftSavedAt = System.currentTimeMillis()) }
+            } catch (_: Exception) { state.update { it.copy(noteDraftSaveError = "草稿保存失败，请手动保存并检查存储空间") }; notice("草稿自动保存失败，请检查存储空间；当前草稿仍在编辑器中。") }
+        }
+    }
+    fun discardNoteDraft(id: String) {
+        if (draftStorageBlocked) return
+        savedDrafts = savedDrafts.filterNot { it.noteId == id }; draftRevision++
+        state.update { it.copy(noteDraftSaving = true) }; draftWrites.trySend(Unit)
+    }
     fun notice(value: String) { state.update { it.copy(notice = value) } }
     fun tab(value: Int) { state.update { if (value == 1 && it.localDocument != null) it.copy(tab = value, localDocument = null, slides = emptyList()) else it.copy(tab = value) } }
-    private fun persist() { viewModelScope.launch(Dispatchers.IO) { disk.withLock { if (!storageBlocked) try { vault.save(state.value.data) } catch (_: Exception) { notice("本机记录保存失败，请检查存储空间。") } } } }
+    private fun persist() { viewModelScope.launch(Dispatchers.IO) { disk.withLock { if (!storageBlocked) try {
+        val snapshot = state.value.data
+        vault.save(snapshot)
+        withContext(Dispatchers.Main.immediate) {
+            val remaining = savedDrafts.filter { draft ->
+                val current = state.value.data.notes.find { it.id == draft.noteId }
+                val written = snapshot.notes.find { it.id == draft.noteId }
+                current != null && (written?.content != draft.content || current.content != draft.content)
+            }
+            if (remaining != savedDrafts) { savedDrafts = remaining; draftRevision++; draftWrites.trySend(Unit) }
+        }
+    } catch (_: Exception) { notice("本机记录保存失败，请检查存储空间。") } } } }
     private fun data(change: (Saved) -> Saved) { if (storageBlocked || !state.value.ready) { notice("本机记录尚不可写，设置未保存。"); return }; state.update { it.copy(data = change(it.data)) }; persist() }
     private suspend fun checkpoint(change: (Saved) -> Saved) = withContext(NonCancellable + Dispatchers.Main.immediate) {
         disk.withLock {
@@ -161,6 +221,14 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
     fun toggleNotePin(id: String) {
         if (state.value.locked) return
         data { it.copy(notes = it.notes.map { n -> if (n.id == id) n.copy(pinned = !n.pinned) else n }) }
+    }
+    fun deleteNotePages(id: String, snapshot: String, selected: Set<Int>): Boolean {
+        val note = state.value.data.notes.find { it.id == id } ?: return false
+        if (note.content != snapshot) { notice("笔记已发生变化，请重新选择要删除的页。"); return false }
+        return try {
+            val next = removeNotePages(snapshot, selected)
+            if (!editNote(id, next)) false else { if (noteReader.id == id && !noteReader.editing) noteReader.draft = next; true }
+        } catch (e: IllegalArgumentException) { notice(e.message ?: "页码无效。"); false }
     }
     fun deleteNote(id: String): Boolean { if (state.value.locked || !state.value.data.noteWritable(id) || classWriter?.isActive == true && state.value.data.classRun?.noteId == id) { notice("请先结束整理并恢复待保存回答，再删除笔记。"); return false }; if (state.value.data.notes.none { it.id == id }) return false; data { it.copy(notes = it.notes.filterNot { n -> n.id == id }) }; return true }
     fun saveNoteFolder(id: String?, name: String): Boolean {
@@ -588,7 +656,7 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         state.update { it.copy(classUi = it.classUi.copy(paused = true, connected = false, current = null, status = reason), noteDraft = "") }
         persist()
     }
-    fun background() { if (state.value.classUi.running && !state.value.classUi.paused) pauseClass("已切到后台，上课模式已暂停；回到 App 后点击继续。") }
+    fun background() { if (state.value.noteDraftSaving) draftWrites.trySend(Unit); if (state.value.classUi.running && !state.value.classUi.paused) pauseClass("已切到后台，上课模式已暂停；回到 App 后点击继续。") }
     fun endClass() { pauseClass(); data { it.copy(classRun = it.classRun?.copy(ended = true, pending = emptyList())) }; state.update { it.copy(classUi = ClassUi(status = "本节已结束，已完成的笔记已保留")) } }
     private suspend fun saveNow() = withContext(NonCancellable + Dispatchers.IO) { disk.withLock { check(!storageBlocked); vault.save(state.value.data) } }
     private fun setChatGptAccount(account: ChatGptAccount) { state.update { u -> u.copy(data = u.data.copy(chatgptAccounts = u.data.chatgptAccounts.filterNot { it.id == account.id } + account)) } }

@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.role
@@ -95,10 +97,13 @@ import androidx.compose.ui.unit.dp
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-@Composable fun StudyFrame(ui: UiState, onTab: (Int) -> Unit, onBack: () -> Unit, onStop: () -> Unit, snackbar: SnackbarHostState = remember { SnackbarHostState() }, noteOpen: Boolean = false, content: @Composable (PaddingValues) -> Unit) {
+@Composable fun StudyFrame(ui: UiState, onTab: (Int) -> Unit, onBack: () -> Unit, onStop: () -> Unit, snackbar: SnackbarHostState = remember { SnackbarHostState() }, noteOpen: Boolean = false, onClassToggle: () -> Unit = {}, content: @Composable (PaddingValues) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
     val wide = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && maxWidth > maxHeight && maxHeight < 500.dp
     val landscapeKeyboard = wide && WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val focus = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(ui.tab) { focus.clearFocus(); keyboard?.hide() }
     val reading = (ui.tab == 0 && !ui.data.usesWeb) || noteOpen
     val inlineHeader = reading
     val density = LocalDensity.current
@@ -163,6 +168,7 @@ import androidx.compose.ui.unit.dp
             Box(Modifier.weight(1f).fillMaxHeight()) { content(PaddingValues(0.dp)) }
         } else content(padding)
     }
+    if (ui.classUi.running && ui.data.classRun != null) ClassFloatingControl(ui.classUi.paused, ui.data.classRun.noteId, onClassToggle)
     }
     }
 }
@@ -233,13 +239,23 @@ fun studyClockText(now: Long = System.currentTimeMillis()): String =
 }
 
 // ViewModel-owned: switching tabs or rotating does not silently discard an unsaved draft.
-class NoteReader {
+data class NoteDraft(val noteId: String, val content: String, val updatedAt: Long = System.currentTimeMillis())
+
+class NoteReader(private val storedDraft: (String) -> String? = { null }, private val onDraft: (String, String) -> Unit = { _, _ -> }) {
     var id by mutableStateOf<String?>(null)
     var editing by mutableStateOf(false)
-    var draft by mutableStateOf("")
+    private var draftText by mutableStateOf("")
+    var draft: String
+        get() = draftText
+        set(value) { if (value == draftText) return; draftText = value; if (editing) id?.let { onDraft(it, value) } }
     var closeRequested by mutableStateOf(false)
-    fun open(note: Note) { id = note.id; draft = note.content; editing = false; closeRequested = false }
-    fun close() { id = null; draft = ""; editing = false; closeRequested = false }
+    fun open(note: Note) {
+        editing = false; id = note.id
+        val recovered = storedDraft(note.id)
+        draftText = recovered ?: note.content
+        editing = recovered != null; closeRequested = false
+    }
+    fun close() { editing = false; id = null; draftText = ""; closeRequested = false }
 }
 
 private val previewTags = Regex("</?(?:p|br|div|span|strong|em|b|i|h[1-6]|li|ul|ol|table|tr|td|th)(?:\\s[^<>]*)?/?>", RegexOption.IGNORE_CASE)
@@ -249,6 +265,7 @@ private val previewLinks = Regex("\\[([^\\]\\r\\n]+)\\]\\([^\\r\\n)]*\\)")
 private val previewWhitespace = Regex("\\s+")
 // Preview a bounded prefix; scrolling the list must never parse an entire long notebook.
 fun notePreview(text: String) = text.take(2048)
+    .replace(studyMarkPattern) { it.groupValues[2] }
     .replace(previewImages, "[图片]").replace(previewLinks) { it.groupValues[1] }
     .replace(previewTags, " ").replace(previewMarkers, "")
     .replace("**", "").replace("__", "").replace("`", "")

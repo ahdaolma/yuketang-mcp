@@ -13,12 +13,13 @@ import javax.crypto.spec.GCMParameterSpec
 import org.json.JSONObject
 
 // Neither API keys nor Rain cookies are stored unencrypted or included in backups.
-class Vault(context: Context) {
-    private val file = AtomicFile(File(context.noBackupFilesDir, "study-v1.enc"))
-    private fun key(): SecretKey {
+class Vault(context: Context, name: String = "study-v1.enc") {
+    private val file = AtomicFile(File(context.noBackupFilesDir, name))
+    companion object { private val keyLock = Any() }
+    private fun key(): SecretKey = synchronized(keyLock) {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getKey("study-bridge-v1", null) as? SecretKey)?.let { return it }
-        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
+        (store.getKey("study-bridge-v1", null) as? SecretKey)?.let { return@synchronized it }
+        KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply {
             init(KeyGenParameterSpec.Builder("study-bridge-v1", KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build())
         }.generateKey()
     }

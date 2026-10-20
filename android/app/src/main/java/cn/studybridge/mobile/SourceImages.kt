@@ -34,7 +34,7 @@ class SourceImages(context: Context) {
         return id
     }
     fun prune(saved: Saved) {
-        val active = saved.notes.flatMap { note -> sourceImagePattern.findAll(note.content).map { it.groupValues[2] }.toList() }.toMutableSet()
+        val active = (saved.notes.map { it.content } + saved.noteDrafts.map { it.content }).flatMap { text -> sourceImagePattern.findAll(text).map { it.groupValues[2] }.toList() }.toMutableSet()
         saved.webPending?.imageRef?.takeIf { imageIdPattern.matches(it) }?.let(active::add)
         root.listFiles()?.filter { it.extension == "image" && it.nameWithoutExtension !in active }?.forEach { it.delete() }
     }
