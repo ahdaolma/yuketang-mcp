@@ -121,6 +121,12 @@ class ResponsiveReadingTest {
             listOf("DNA 结构课件 · 第 1 页", "移除课件附件", "管理 ChatGPT 用量").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
             compose.onNodeWithText("DNA 结构课件 · 第 1 页").performClick()
             compose.onNode(hasSetTextAction()).assertTextEquals("解释复制")
+            val longDraft = "解释复制：" + "模板方向、配对关系和具体步骤。".repeat(50)
+            compose.onNode(hasSetTextAction()).performTextReplacement(longDraft)
+            compose.onNode(hasSetTextAction()).assertTextEquals(longDraft)
+            compose.onNodeWithContentDescription("发送给所选模型").assertIsDisplayed().assertIsEnabled()
+            val longDraftBody = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
+            assertTrue("Long drafts must not consume the landscape viewport", (longDraftBody.bottom - longDraftBody.top).value > 48f)
             compose.runOnIdle {
                 androidx.core.view.WindowInsetsControllerCompat(compose.activity.window, compose.activity.window.decorView).hide(androidx.core.view.WindowInsetsCompat.Type.ime())
             }
