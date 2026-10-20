@@ -111,8 +111,9 @@ class ResponsiveReadingTest {
             compose.waitForIdle()
             shot("sample-chat-landscape-typing", system = true)
             compose.onNodeWithContentDescription("发送给所选模型").assertIsDisplayed().assertIsEnabled()
+            listOf("学习", "课程", "笔记", "学习资料", "新对话", "生成笔记", "消息跳转", "设置").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
             val typingBody = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
-            assertTrue("Landscape composer must leave a usable scroll viewport", (typingBody.bottom - typingBody.top).value > 24f)
+            assertTrue("Landscape composer must leave a usable scroll viewport", (typingBody.bottom - typingBody.top).value > 48f)
             compose.runOnIdle {
                 androidx.core.view.WindowInsetsControllerCompat(compose.activity.window, compose.activity.window.decorView).hide(androidx.core.view.WindowInsetsCompat.Type.ime())
             }

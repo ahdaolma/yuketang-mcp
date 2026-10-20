@@ -251,9 +251,10 @@ private fun preview(bytes: ByteArray): Bitmap? {
             delay(160)
         }
     }
-    Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
+    val keyboardBeside = inlineHeader && WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    ReadingChatLayout(keyboardBeside, Modifier.fillMaxSize().padding(horizontal = 14.dp), toolbar = {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("学习工具栏"), verticalAlignment = Alignment.CenterVertically) {
-            if (inlineHeader) Text("学习", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(end = 12.dp))
+            if (inlineHeader && !keyboardBeside) Text("学习", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(end = 12.dp))
             Box { TextButton(onClick = { history = true }) { Text("会话 ▾") }; DropdownMenu(expanded = history, onDismissRequest = { history = false }) {
                 ui.data.conversations.forEach { c -> DropdownMenuItem(text = { Text(c.title) }, onClick = { vm.selectChat(c.id); history = false }, trailingIcon = { IconButton(onClick = { vm.deleteChat(c.id); history = false }, enabled = !ui.locked) { Icon(Icons.Default.DeleteOutline, "删除对话") } }) }
             } }
@@ -272,17 +273,21 @@ private fun preview(bytes: ByteArray): Bitmap? {
             }
             if (inlineHeader) IconButton(onClick = { vm.tab(3) }) { Icon(Icons.Outlined.Settings, "设置") }
         }
-        LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("学习正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
+    }, body = {
+        LazyColumn(Modifier.fillMaxSize().testTag("学习正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
             if (chat.messages.isEmpty()) item { StudyEmpty(Icons.Outlined.Description, "从一页课件开始", "选择一页课件，提问或整理笔记。", Modifier.padding(top = 24.dp)) { Spacer(Modifier.height(4.dp)); OutlinedButton(onClick = { vm.tab(1) }) { Text("选择课程") } } }
             itemsIndexed(chat.messages, key = { index, _ -> "${chat.id}:$index" }, contentType = { _, m -> m.role }) { index, m -> ChatMessageCard(m, "${chat.id}:$index", ui.data.provider().name, ui.busy && m.role == "assistant" && index == chat.messages.lastIndex) }
         }
+    }, composer = {
+        Column {
         ui.pending?.let { a -> ElevatedCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) { Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.AttachFile, null); Text(a.label, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); IconButton(onClick = vm::clearAttachment, enabled = !ui.locked) { Icon(Icons.Default.Close, "移除课件附件") } } } }
         if (ui.data.provider().chatgptAccountId.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) { Text("使用 ChatGPT 套餐", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary); TextButton(onClick = { vm.openLink(CHATGPT_USAGE) }) { Text("管理用量") } }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
             OutlinedTextField(input, { if (it.length <= 20000) input = it }, Modifier.weight(1f).onFocusChanged { chrome?.locked = it.isFocused }, placeholder = { Text("问问这页课件…", style = MaterialTheme.typography.bodyMedium) }, textStyle = MaterialTheme.typography.bodyMedium, shape = RoundedCornerShape(14.dp), maxLines = if (inlineHeader) 2 else 4, enabled = !ui.locked)
             FilledIconButton(onClick = { if (vm.send(input.trim())) input = "" }, enabled = !ui.locked && input.isNotBlank(), unavailableReason = if (input.isBlank()) "先输入你的问题，再发送。" else null) { Icon(Icons.Default.ArrowUpward, "发送给所选模型") }
         }
-    }
+        }
+    })
 }
 
 @OptIn(ExperimentalLayoutApi::class)

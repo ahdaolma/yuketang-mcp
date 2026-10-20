@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
 import android.graphics.Bitmap
 import android.os.SystemClock
 import android.util.Base64
@@ -44,6 +45,11 @@ class RainLoginBackgroundTest {
     }
     @Suppress("DEPRECATION") private fun foreground(context: Context) = context.getSystemService(ActivityManager::class.java).getRunningServices(100).any {
         it.service.className == RainLoginService::class.java.name && it.foreground
+    }
+    private fun returnToApp() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        context.startActivity(Intent(context, WebFixtureActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        compose.waitUntil(10000) { compose.activityRule.scenario.state == Lifecycle.State.RESUMED }
     }
     @Test fun savedQrSurvivesBackgroundBeyondOldRefreshIntervalAndConfirmationPersists() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -106,7 +112,7 @@ class RainLoginBackgroundTest {
             compose.waitUntil(10000) { !vm.ui.value.loginActive && vm.ui.value.data.sessionVerified && !vm.ui.value.busy }
             assertEquals("fixture-session-123", Vault(app).load().session)
             compose.waitUntil(5000) { !foreground(context) }
-            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            returnToApp()
             compose.runOnIdle { vm.logout(); vm.startLogin() }
             compose.waitUntil(10000) { vm.ui.value.qr != null && requests.get() == 2 }
             val canceledSocket = socket.get()
@@ -117,8 +123,9 @@ class RainLoginBackgroundTest {
             assertNull(vm.ui.value.qr)
             assertTrue(vm.ui.value.data.session.isBlank())
         } finally {
-            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
-            compose.runOnIdle { store.clear() }
+            try { returnToApp() } finally {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync { store.clear() }
+            }
             client.dispatcher.executorService.shutdown()
             client.connectionPool.evictAll()
             server.shutdown()

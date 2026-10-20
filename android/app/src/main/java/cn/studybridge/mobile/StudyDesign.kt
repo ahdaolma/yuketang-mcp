@@ -73,10 +73,11 @@ import androidx.compose.ui.unit.dp
     ), content = content)
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable fun StudyFrame(ui: UiState, onTab: (Int) -> Unit, onBack: () -> Unit, onStop: () -> Unit, snackbar: SnackbarHostState = remember { SnackbarHostState() }, noteOpen: Boolean = false, content: @Composable (PaddingValues) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
     val wide = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && maxWidth > maxHeight && maxHeight < 500.dp
+    val landscapeKeyboard = wide && WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val reading = (ui.tab == 0 && !ui.data.usesWeb) || noteOpen
     val inlineHeader = wide && reading && !ui.busy
     val density = LocalDensity.current
@@ -126,8 +127,8 @@ import androidx.compose.ui.unit.dp
         } },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { padding ->
-        if (wide && ui.tab != 3) Row(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
-            Column(Modifier.width(64.dp).fillMaxHeight().testTag("横屏导航"), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        if (wide && ui.tab != 3) Row(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
+            FlowRow(Modifier.width(if (landscapeKeyboard) 96.dp else 64.dp).fillMaxHeight().testTag("横屏导航"), horizontalArrangement = Arrangement.Center, verticalArrangement = Arrangement.Center, maxItemsInEachRow = if (landscapeKeyboard) 2 else 1) {
                 labels.forEachIndexed { index, label ->
                     FeedbackIconButton(onClick = { onTab(index) }, modifier = Modifier.size(48.dp).semantics { contentDescription = label; selected = ui.tab == index; role = Role.Tab }) {
                         Surface(shape = RoundedCornerShape(12.dp), color = if (ui.tab == index) MaterialTheme.colorScheme.primaryContainer else Color.Transparent) {
