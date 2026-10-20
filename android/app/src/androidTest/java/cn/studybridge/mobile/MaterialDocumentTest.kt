@@ -15,6 +15,31 @@ import java.util.zip.ZipOutputStream
 class MaterialDocumentTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private fun archive(parts: Map<String, String>): ByteArray = ByteArrayOutputStream().also { out -> ZipOutputStream(out).use { zip -> parts.forEach { (name, text) -> zip.putNextEntry(ZipEntry(name)); zip.write(text.toByteArray()); zip.closeEntry() } } }.toByteArray()
+    @Test fun imageDocxAndUtf16TextProduceReadableAttachmentsAndInvalidFilesLeaveNoCopy() {
+        val store = MaterialStore(context)
+        val image = Bitmap.createBitmap(120, 80, Bitmap.Config.ARGB_8888)
+        val bytes = try { image.eraseColor(Color.GREEN); ByteArrayOutputStream().also { check(image.compress(Bitmap.CompressFormat.PNG, 100, it)) }.toByteArray() } finally { image.recycle() }
+        val picture = store.importStream(bytes.inputStream(), "外部图片.png", "courseware")
+        try {
+            val a = store.attachment(picture, 1)
+            val jpeg = android.util.Base64.decode(a.image!!.substringAfter(','), android.util.Base64.DEFAULT)
+            val decoded = requireNotNull(android.graphics.BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size))
+            try { assertEquals(120, decoded.width); assertEquals(80, decoded.height); assertTrue(Color.green(decoded.getPixel(60, 40)) > 200) } finally { decoded.recycle() }
+        } finally { store.remove(picture.material.id) }
+        val word = archive(mapOf("word/document.xml" to """<w:document xmlns:w="urn:w"><w:body><w:p><w:r><w:t>病理学 Pathology</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>炎症机制</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"""))
+        val docx = store.importStream(word.inputStream(), "笔记.docx", "notes")
+        try { assertTrue(docx.noteText.contains("Pathology")); assertTrue(docx.noteText.contains("炎症机制")); assertTrue(store.attachment(docx, 1).text.contains("分段编号")) } finally { store.remove(docx.material.id) }
+        val text = "# 原始笔记\n中文 English"
+        val utf16 = byteArrayOf(0xff.toByte(), 0xfe.toByte()) + text.toByteArray(Charsets.UTF_16LE)
+        val txt = store.importStream(utf16.inputStream(), "笔记.txt", "notes")
+        try { assertEquals(text, txt.noteText); assertTrue(store.attachment(txt, 1).text.contains(text)) } finally { store.remove(txt.material.id) }
+        val directory = File(context.noBackupFilesDir, "learning-materials")
+        val before = directory.list().orEmpty().toSet()
+        for ((name, content) in listOf("empty.md" to byteArrayOf(), "bad.pdf" to "%PDF-invalid".toByteArray(), "bad.txt" to byteArrayOf(0, 0, 0), "unknown.ppt" to byteArrayOf(1, 2, 3))) {
+            try { store.importStream(content.inputStream(), name, "notes"); fail("Invalid import must fail: $name") } catch (_: Exception) { }
+            assertEquals(before, directory.list().orEmpty().toSet())
+        }
+    }
     @Test fun pptxUsesPresentationOrderAndTextImportPreservesOriginalNotes() {
         val store = MaterialStore(context)
         val ppt = archive(mapOf(
