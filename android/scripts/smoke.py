@@ -5,14 +5,43 @@ import re
 import subprocess
 import time
 import xml.etree.ElementTree as ET
+import sys
 
 out = pathlib.Path('smoke-artifacts')
 out.mkdir(exist_ok=True)
 def adb(*args):
-    return subprocess.check_output(['adb', *args])
+    return subprocess.check_output(['adb', *args], timeout=25)
+
+def failure_diagnostics(kind, value, traceback):
+    for name, args in {
+        'failure.png': ('exec-out', 'screencap', '-p'),
+        'failure-runtime.txt': ('logcat', '-d'),
+        'failure-activity.txt': ('shell', 'dumpsys', 'activity', 'activities'),
+        'failure-ui.xml': ('shell', 'cat', '/sdcard/ui.xml'),
+    }.items():
+        try:
+            (out / name).write_bytes(adb(*args))
+        except Exception:
+            pass
+    sys.__excepthook__(kind, value, traceback)
+
+sys.excepthook = failure_diagnostics
+
 def nodes():
-    adb('shell', 'uiautomator', 'dump', '/sdcard/ui.xml')
-    return ET.fromstring(adb('shell', 'cat', '/sdcard/ui.xml')).iter('node')
+    # Chromium/activity handoff can temporarily return a null accessibility root.
+    # Remove stale dumps and retry acquisition only; required app controls still
+    # must exist in a newly obtained tree for the test to pass.
+    for attempt in range(6):
+        try:
+            adb('shell', 'rm', '-f', '/sdcard/ui.xml')
+            adb('shell', 'uiautomator', 'dump', '/sdcard/ui.xml')
+            result = list(ET.fromstring(adb('shell', 'cat', '/sdcard/ui.xml')).iter('node'))
+            if result:
+                return result
+        except (subprocess.SubprocessError, ET.ParseError):
+            pass
+        time.sleep(0.5)
+    raise AssertionError('Emulator accessibility root did not become available')
 def reveal(label):
     size = adb('shell', 'wm', 'size').decode()
     width, height = map(int, re.findall(r'(\d+)x(\d+)', size)[-1])
@@ -30,8 +59,13 @@ def tap(label):
     adb('shell','input','tap',str(x),str(y))
     time.sleep(1)
 def shot(name, required):
-    items = list(nodes())
-    text = '\n'.join((n.get('text', '') + ' ' + n.get('content-desc', '')) for n in items)
+    # A successful launch command is not a Compose frame/readiness fence.
+    for attempt in range(8):
+        items = nodes()
+        text = '\n'.join((n.get('text', '') + ' ' + n.get('content-desc', '')) for n in items)
+        if all(label in text for label in required):
+            break
+        time.sleep(0.5)
     (out / f'{name}.txt').write_text(text)
     for label in required:
         assert label in text, f'{name}: missing {label}'
