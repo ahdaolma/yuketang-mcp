@@ -56,6 +56,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
@@ -411,26 +415,43 @@ private fun preview(bytes: ByteArray): Bitmap? {
         val writable = !ui.locked && ui.data.noteWritable(note.id)
         if (leaving) AlertDialog(onDismissRequest = { leaving = false }, title = { Text("保存这次修改？") }, text = { Text("切换底部标签会保留草稿。返回笔记列表前，可以保存或放弃这次修改。") }, confirmButton = { TextButton(onClick = { if (vm.editNote(note.id, reader.draft)) { reader.close(); leaving = false } }, enabled = writable) { Text("保存并返回") } }, dismissButton = { FlowRow { TextButton(onClick = { reader.close(); leaving = false }) { Text("放弃修改") }; TextButton(onClick = { leaving = false }) { Text("继续编辑") } } })
         if (deleting) AlertDialog(onDismissRequest = { deleting = false }, title = { Text("删除这份笔记？") }, text = { Text("“${note.title}”将从本机删除，此操作无法撤销。") }, confirmButton = { TextButton(onClick = { if (vm.deleteNote(note.id)) { reader.close(); deleting = false } }, enabled = writable, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("删除笔记") } }, dismissButton = { TextButton(onClick = { deleting = false }) { Text("保留笔记") } })
-        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                FilledTonalButton(onClick = { if (reader.editing) { if (vm.editNote(note.id, reader.draft)) reader.editing = false } else { reader.draft = note.content; reader.editing = true } }, enabled = writable, unavailableReason = "请先结束整理并恢复待保存回答，再编辑笔记。") { Icon(if (reader.editing) Icons.Default.Check else Icons.Outlined.Edit, null, Modifier.size(17.dp)); Spacer(Modifier.width(6.dp)); Text(if (reader.editing) "保存修改" else "编辑笔记") }
-                OutlinedButton(onClick = { val text = if (reader.editing) reader.draft else note.content; if (ui.data.downloadTreeUri.isNotBlank()) vm.exportNote(note, text) else { exportSnapshot = note to text; export.launch(downloadName(note.title, "md")) } }, enabled = !ui.locked) { Icon(Icons.Outlined.FileDownload, null, Modifier.size(17.dp)); Spacer(Modifier.width(6.dp)); Text("导出 Markdown") }
-                TextButton(onClick = { vm.explainNote(note) }, enabled = !ui.locked && (!reader.editing || reader.draft == note.content), unavailableReason = "请先保存笔记修改，再带入 AI 讲解。") { Text("AI 讲解") }
+        val actions: @Composable () -> Unit = {
+            Box {
+                IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreHoriz, "笔记选项", Modifier.size(22.dp)) }
+                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    if (!reader.editing) DropdownMenuItem(text = { Text("编辑笔记") }, enabled = writable, onClick = { menu = false; reader.draft = note.content; reader.editing = true })
+                    DropdownMenuItem(text = { Text("导出 Markdown") }, enabled = !ui.locked, onClick = {
+                        menu = false
+                        val text = if (reader.editing) reader.draft else note.content
+                        if (ui.data.downloadTreeUri.isNotBlank()) vm.exportNote(note, text) else { exportSnapshot = note to text; export.launch(downloadName(note.title, "md")) }
+                    })
+                    DropdownMenuItem(text = { Text("AI 讲解") }, enabled = !ui.locked && (!reader.editing || reader.draft == note.content), onClick = { menu = false; vm.explainNote(note) })
+                    DropdownMenuItem(text = { Text("来源与模型") }, onClick = { menu = false; details = true })
+                    HorizontalDivider()
+                    DropdownMenuItem(text = { Text("删除笔记…") }, enabled = writable, onClick = { menu = false; deleting = true })
+                }
             }
-                Box { IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreHoriz, "笔记选项", Modifier.size(22.dp)) }; DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) { DropdownMenuItem(text = { Text("删除笔记…") }, enabled = writable, onClick = { menu = false; deleting = true }) } }
-            }
+        }
+        if (details) AlertDialog(onDismissRequest = { details = false }, title = { Text("来源与模型") }, text = {
+            Text("来源：${note.source}\n\n模型：${note.model}", Modifier.verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodyMedium)
+        }, confirmButton = { TextButton(onClick = { details = false }) { Text("关闭") } })
+        Column(Modifier.fillMaxSize().testTag("笔记阅读页").padding(horizontal = 20.dp, vertical = 8.dp)) {
             val heading: @Composable () -> Unit = {
                 Text(note.title, style = MaterialTheme.typography.headlineSmall)
-                TextButton(onClick = { details = !details }) { Text("来源与模型"); Icon(if (details) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, Modifier.size(18.dp)) }
-                if (details) StudyPanel { Text("来源：${note.source}\n模型：${note.model}", Modifier.padding(14.dp), style = MaterialTheme.typography.bodySmall) }
                 OriginalNotePages(note, ui, vm)
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             }
-            if (reader.editing) Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                heading()
-                OutlinedTextField(reader.draft, { reader.draft = it }, Modifier.fillMaxWidth().heightIn(min = 360.dp), label = { Text("Markdown 笔记") }, enabled = writable)
-            } else PagedNoteContent(note, Modifier.weight(1f), independentScroll = true, header = heading)
+            if (reader.editing) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("编辑笔记", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                    TextButton(onClick = { if (vm.editNote(note.id, reader.draft)) reader.editing = false }, enabled = writable) { Text("保存修改") }
+                    actions()
+                }
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    heading()
+                    OutlinedTextField(reader.draft, { reader.draft = it }, Modifier.fillMaxWidth().heightIn(min = 360.dp), label = { Text("Markdown 笔记") }, enabled = writable)
+                }
+            } else PagedNoteContent(note, Modifier.weight(1f), independentScroll = true, header = heading, trailingActions = actions)
         }
     } else LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)) {
         item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -454,9 +475,10 @@ private fun preview(bytes: ByteArray): Bitmap? {
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable fun PagedNoteContent(note: Note, modifier: Modifier = Modifier, independentScroll: Boolean = false, header: @Composable () -> Unit = {}) {
+@Composable fun PagedNoteContent(note: Note, modifier: Modifier = Modifier, independentScroll: Boolean = false, header: @Composable () -> Unit = {}, trailingActions: @Composable () -> Unit = {}) {
     var index by rememberSaveable(note.id) { mutableIntStateOf(0) }
     var jump by remember(note.id) { mutableStateOf(false) }
+    var navigation by remember(note.id) { mutableStateOf(false) }
     val scroll = rememberScrollState(); val scope = rememberCoroutineScope()
     val prepared by produceState<Pair<String, List<NoteReadingSegment>>?>(null, note.id, note.content) {
         value = withContext(Dispatchers.Default) { note.content to noteReadingSegments(note.content) }
@@ -471,19 +493,23 @@ private fun preview(bytes: ByteArray): Bitmap? {
     } }
     if (jump) JumpDialog("笔记目录 / 阅读分段", labels, { jump = false }) { index = it; jump = false }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (segments.size > 1) {
-            Text("阅读分段 ${selected + 1} / ${segments.size} · 完整笔记已保留", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = { index = selected - 1 }, enabled = selected > 0) { Text("上一段") }
-                TextButton(onClick = { index = selected + 1 }, enabled = selected < segments.lastIndex) { Text("下一段") }
-                TextButton(onClick = { jump = true }) { Text("目录跳转") }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (segments.size > 1) IconButton(onClick = { index = selected - 1 }, enabled = selected > 0) { Icon(Icons.Default.ChevronLeft, "上一段") }
+            TextButton(onClick = { jump = true }, modifier = Modifier.weight(1f).semantics {
+                contentDescription = "目录跳转"
+                stateDescription = "阅读分段 ${selected + 1} / ${segments.size} · 完整笔记已保留"
+            }) { Text(if (segments.size > 1) "${selected + 1} / ${segments.size} ▾" else "目录 ▾", maxLines = 1) }
+            if (segments.size > 1) IconButton(onClick = { index = selected + 1 }, enabled = selected < segments.lastIndex) { Icon(Icons.Default.ChevronRight, "下一段") }
+            if (independentScroll) Box {
+                IconButton(onClick = { navigation = true }) { Icon(Icons.Default.SwapVert, "阅读跳转") }
+                DropdownMenu(expanded = navigation, onDismissRequest = { navigation = false }) {
+                    DropdownMenuItem(text = { Text("本段顶部") }, onClick = { navigation = false; scope.launch { scroll.scrollTo(0) } })
+                    DropdownMenuItem(text = { Text("本段底部") }, onClick = { navigation = false; scope.launch { scroll.scrollTo(scroll.maxValue) } })
+                }
             }
+            trailingActions()
         }
-        if (independentScroll) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = { scope.launch { scroll.scrollTo(0) } }) { Text("本段顶部") }
-            TextButton(onClick = { scope.launch { scroll.scrollTo(scroll.maxValue) } }) { Text("本段底部") }
-        }
-        Column(if (independentScroll) Modifier.weight(1f).verticalScroll(scroll) else Modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(if (independentScroll) Modifier.weight(1f).testTag("笔记正文").verticalScroll(scroll) else Modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             header()
             key(note.id, selected) { IllustratedMarkdown(segments[selected].display(note.content)) }
             Spacer(Modifier.height(24.dp))

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -30,16 +31,18 @@ class VisualReviewTest {
             Note("ui-note-2", "细胞膜的物质转运与静息电位", "## 主动转运\n\n区分能量来源、方向与载体，理解浓度梯度和电化学梯度。", "生理学 · 第 4–8 页", "ChatGPT 网页"),
             Note("ui-note-3", "孟德尔遗传规律：从家系图到风险判断", "## 先观察家系\n\n结合代际分布、性别比例与亲子关系，逐步判断遗传方式。", "医学遗传学 · 第 20–23 页", "ChatGPT 网页"))),
         courses = listOf(Course("1", courseTitle, "秋季学期 · 本科课程"), Course("2", "生物化学", "秋季学期 · 本科课程"), Course("3", "生理学", "秋季学期 · 本科课程")))
-    private fun render(state: MutableState<UiState>, dark: MutableState<Boolean> = mutableStateOf(false), scale: Float = 1f) {
+    private fun render(state: MutableState<UiState>, dark: MutableState<Boolean> = mutableStateOf(false), scale: Float = 1f, width: Int? = null) {
         compose.activityRule.scenario.onActivity { vm = ViewModelProvider(it)[StudyViewModel::class.java] }
         compose.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, scale)) {
                 StudyTheme(dark.value) {
+                    Box(if (width == null) Modifier.fillMaxSize() else Modifier.width(width.dp).fillMaxHeight()) {
                     StudyFrame(state.value, onTab = { state.value = state.value.copy(tab = it) }, onBack = { if (state.value.tab == 2) vm.noteReader.closeRequested = true else state.value = state.value.copy(tab = 2) }, onStop = {}, noteOpen = state.value.tab == 2 && state.value.data.notes.any { it.id == vm.noteReader.id }) { padding ->
                         Box(Modifier.fillMaxSize().padding(padding).imePadding()) {
                             when (state.value.tab) { 1 -> RainScreen(state.value, vm); 2 -> NotesScreen(state.value, vm); else -> ModelScreen(state.value, vm) }
                         }
+                    }
                     }
                 }
             }
@@ -57,7 +60,7 @@ class VisualReviewTest {
         bitmap.recycle()
     }
     private fun verifyTableRows() {
-        compose.onNodeWithText("目录跳转").performClick()
+        compose.onNodeWithContentDescription("目录跳转").performClick()
         compose.onNodeWithText("2. 对照理解").performClick()
         // A plain TextView.text assignment bypasses Markwon's table invalidation hooks.
         // Check the final Android layout, not just that table words exist in a string.
@@ -87,13 +90,41 @@ class VisualReviewTest {
             laidOut
         }
     }
+    private fun assertReadingArea() {
+        compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记正文").fetchSemanticsNodes().isNotEmpty() }
+        val page = compose.onNodeWithTag("笔记阅读页").getUnclippedBoundsInRoot()
+        val body = compose.onNodeWithTag("笔记正文").getUnclippedBoundsInRoot()
+        assertTrue("Body should occupy at least 80% of the note reader: $body / $page", body.height.value >= page.height.value * 0.80f)
+        compose.onNodeWithContentDescription("目录跳转").assertIsDisplayed()
+        compose.onNodeWithContentDescription("阅读跳转").assertIsDisplayed()
+        compose.onNodeWithText("编辑笔记").assertDoesNotExist()
+        compose.onNodeWithText("导出 Markdown").assertDoesNotExist()
+    }
+    @Test fun narrowLargeTextReaderKeepsBodySpaceAndMenuActionsReachable() {
+        val state = mutableStateOf(sample().copy(tab = 2)); render(state, scale = 1.5f, width = 320)
+        compose.onNodeWithText(firstNote.title).performClick()
+        assertReadingArea()
+        compose.onNodeWithText(firstNote.title).assertIsDisplayed()
+        compose.onNodeWithContentDescription("下一段").performClick()
+        assertReadingArea()
+        compose.onNodeWithText(firstNote.title).assertIsDisplayed()
+        shot("sample-note-reading-compact")
+        compose.onNodeWithContentDescription("笔记选项").performClick()
+        compose.onNodeWithText("编辑笔记").assertIsEnabled()
+        compose.onNodeWithText("导出 Markdown").assertIsEnabled()
+        compose.onNodeWithText("AI 讲解").assertIsEnabled()
+        compose.onNodeWithText("来源与模型").performClick()
+        compose.onNodeWithText("关闭").performClick()
+        assertReadingArea()
+    }
     @Test fun populatedScreensAndDraftSurviveTabChanges() {
         val state = mutableStateOf(sample()); render(state)
         compose.onNodeWithText(courseTitle).assertIsDisplayed(); shot("sample-courses-light")
         compose.onNodeWithText("笔记").performClick()
         compose.onNodeWithText(firstNote.title).assertIsDisplayed(); shot("sample-notes-light")
         compose.onNodeWithText(firstNote.title).performClick()
-        compose.onNodeWithText("编辑笔记").assertIsDisplayed(); verifyTableRows(); shot("sample-note-reading")
+        compose.onNodeWithContentDescription("笔记选项").assertIsDisplayed(); verifyTableRows(); shot("sample-note-reading")
+        compose.onNodeWithContentDescription("笔记选项").performClick()
         compose.onNodeWithText("编辑笔记").performClick()
         compose.onNode(hasSetTextAction()).performTextInput("\n新增草稿内容")
         compose.runOnIdle { state.value = state.value.copy(tab = 1) }
@@ -123,7 +154,10 @@ class VisualReviewTest {
         compose.onNodeWithText("学习助手提示词").performScrollTo().assertIsDisplayed()
         compose.runOnIdle { state.value = base.copy(tab = 2) }
         compose.onNodeWithText(firstNote.title).performClick()
-        compose.onNodeWithText("导出 Markdown").assertIsDisplayed(); shot("sample-note-reading-large-text")
+        assertReadingArea()
+        shot("sample-note-reading-large-text")
+        compose.onNodeWithContentDescription("笔记选项").performClick()
+        compose.onNodeWithText("导出 Markdown").assertIsDisplayed()
     }
     @Test fun darkScreensUseTheSameReadingAndSettingsHierarchy() {
         val state = mutableStateOf(sample().copy(tab = 2)); render(state, mutableStateOf(true))

@@ -79,14 +79,16 @@ class PreviewNavigationTest {
         val content = "# 图文笔记\n\n## 第 1 页\n\n" + sourceImageMarkdown(id, "第 1 页原图") + "### 讲解\n\n" + "前页讲解。\n\n".repeat(300) + "## 第 8 页\n\n" + sourceImageMarkdown(id, "第 8 页原图") + "末页讲解"
         val note = Note(title = "图文笔记", content = content, source = "合成课件", model = "测试")
         compose.setContent { StudyTheme(false) { PagedNoteContent(note, Modifier.fillMaxSize(), independentScroll = true) } }
-        compose.waitUntil(5000) { compose.onAllNodesWithText("目录跳转").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("目录跳转").performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("目录跳转").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("目录跳转").performClick()
         compose.onNode(hasSetTextAction()).performTextInput("第 8 页")
         compose.onNodeWithText("2. 第 8 页").performClick()
         compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("第 8 页原图 缩略图").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("第 8 页原图 缩略图").assertIsDisplayed()
+        compose.onNodeWithContentDescription("阅读跳转").performClick()
         compose.onNodeWithText("本段底部").performClick()
-        compose.onNodeWithText("目录跳转").assertIsDisplayed()
+        compose.onNodeWithContentDescription("目录跳转").assertIsDisplayed()
+        compose.onNodeWithContentDescription("阅读跳转").performClick()
         compose.onNodeWithText("本段顶部").performClick()
         shot("sample-note-with-slide")
         assertEquals(content, note.content)

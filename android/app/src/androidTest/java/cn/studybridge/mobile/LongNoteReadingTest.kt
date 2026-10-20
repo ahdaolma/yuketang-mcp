@@ -33,15 +33,15 @@ class LongNoteReadingTest {
         val note = mutableStateOf(Note("long-note", "长笔记", content, "合成资料", "fixture"))
         val count = noteReadingSegments(content).size
         compose.setContent { StudyTheme(false) { Column(Modifier.verticalScroll(rememberScrollState())) { PagedNoteContent(note.value) } } }
-        compose.waitUntil(5000) { compose.onAllNodesWithText("阅读分段 1 / $count · 完整笔记已保留").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("阅读分段 1 / $count · 完整笔记已保留").assertIsDisplayed()
+        compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("目录跳转").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("目录跳转").assertIsDisplayed()
         waitForNativeText("开头标记")
-        repeat(count - 1) { compose.onNodeWithText("下一段").performClick() }
+        repeat(count - 1) { compose.onNodeWithContentDescription("下一段").performClick() }
         waitForNativeText("最终段标记")
-        compose.onNodeWithText("下一段").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("下一段").assertIsNotEnabled()
         assertEquals(content, note.value.content)
         compose.runOnIdle { note.value = note.value.copy(content = "短笔记仍完整") }
         waitForNativeText("短笔记仍完整")
-        compose.onNodeWithText("下一段").assertDoesNotExist()
+        compose.onNodeWithContentDescription("下一段").assertDoesNotExist()
     }
 }
