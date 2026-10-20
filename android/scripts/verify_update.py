@@ -23,6 +23,24 @@ def nodes():
             adb('shell', 'rm', '-f', '/sdcard/update-ui.xml')
             adb('shell', 'uiautomator', 'dump', '/sdcard/update-ui.xml')
             result = list(ET.fromstring(adb('shell', 'cat', '/sdcard/update-ui.xml')).iter('node'))
+            # Some cold Google API emulators show an ANR from their own launcher
+            # after boot. Dismiss only that exact system-owned dialog; an ANR
+            # from our application must still fail and preserve diagnostics.
+            launcher_dialog = any(n.get('package') == 'android' and n.get('text') == "Pixel Launcher isn't responding" for n in result)
+            if launcher_dialog:
+                activities = adb('shell', 'dumpsys', 'activity', 'activities')
+                if b'Application Not Responding: com.google.android.apps.nexuslauncher' in activities:
+                    close = next((n for n in result if n.get('package') == 'android' and n.get('resource-id') == 'android:id/aerr_close'), None)
+                    if close is not None:
+                        (out / 'launcher-anr.png').write_bytes(adb('exec-out', 'screencap', '-p'))
+                        (out / 'launcher-anr.xml').write_bytes(adb('shell', 'cat', '/sdcard/update-ui.xml'))
+                        (out / 'launcher-anr-activity.txt').write_bytes(activities)
+                        x1, y1, x2, y2 = map(int, re.findall(r'\d+', close.get('bounds')))
+                        assert x2 > x1 and y2 > y1
+                        adb('shell', 'input', 'tap', str((x1+x2)//2), str((y1+y2)//2))
+                        (out / 'launcher-recovery.txt').write_text('Dismissed the emulator Pixel Launcher ANR; application checks remain mandatory.\n')
+                        time.sleep(1)
+                        continue
             if result:
                 return result
         except (subprocess.CalledProcessError, ET.ParseError):
