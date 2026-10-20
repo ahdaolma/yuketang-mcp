@@ -33,6 +33,7 @@ class LongNoteReadingTest {
         val note = mutableStateOf(Note("long-note", "长笔记", content, "合成资料", "fixture"))
         val count = noteReadingSegments(content).size
         compose.setContent { StudyTheme(false) { Column(Modifier.verticalScroll(rememberScrollState())) { PagedNoteContent(note.value) } } }
+        compose.waitUntil(5000) { compose.onAllNodesWithText("阅读分段 1 / $count · 完整笔记已保留").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("阅读分段 1 / $count · 完整笔记已保留").assertIsDisplayed()
         waitForNativeText("开头标记")
         repeat(count - 1) { compose.onNodeWithText("下一段").performClick() }
