@@ -144,3 +144,7 @@ args = ['D:\yuketang-mcp\server.py', 'serve', '--region', 'standard']
 - https://github.com/modelcontextprotocol/python-sdk/tree/v1.x （本版固定使用 MCP Python SDK 1.x）
 - https://learn.chatgpt.com/docs/extend/mcp （本地与云端接入方式）
 
+
+### 0.8.0 阅读布局
+
+学习页将跳转入口合并到一行，向上阅读时顶部栏和底部导航随手势平滑收窄、标签向下滑出、图标移至紧凑位置，松手后柔和归位，所有按钮保留点击能力；反向滑动恢复，输入和编辑时不触发收窄。横屏短窗口改为左侧导航和单行工具栏，避免正文被顶部和底部控件挤空。长参考笔记默认显示可展开摘要，原文与导出不变；统一 Markdown 标题层级，去掉标题下重复横线，新生成笔记按实际知识组织，封面页简短处理。

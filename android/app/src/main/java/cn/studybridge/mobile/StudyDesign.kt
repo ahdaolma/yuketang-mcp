@@ -24,11 +24,18 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.core.view.WindowCompat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 @Composable fun StudyTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     val colors = if (dark) darkColorScheme(
@@ -67,31 +74,73 @@ import androidx.compose.ui.unit.sp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun StudyFrame(ui: UiState, onTab: (Int) -> Unit, onBack: () -> Unit, onStop: () -> Unit, snackbar: SnackbarHostState = remember { SnackbarHostState() }, noteOpen: Boolean = false, content: @Composable (PaddingValues) -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val wide = maxWidth > maxHeight && maxHeight < 500.dp
+    val reading = (ui.tab == 0 && !ui.data.usesWeb) || noteOpen
+    val inlineHeader = wide && reading && !ui.busy
+    val density = LocalDensity.current
+    val chrome = remember(ui.tab, noteOpen, ui.data.currentChat) { ReadingChromeState(with(density) { 24.dp.toPx() }) }
+    LaunchedEffect(ui.busy) { if (ui.busy) chrome.restore() }
+    val slide by animateFloatAsState(if (reading && !ui.busy) { if (wide) 1f else chrome.fraction } else 0f, spring(dampingRatio = 1f, stiffness = 500f), label = "reading-toolbar-slide")
+    val topHeight = (64f - 16f * slide).dp
+    val titleSize = 22f - 4f * slide
     val labels = listOf("学习", "课程", "笔记")
     val icons = listOf(Icons.Outlined.ChatBubbleOutline, Icons.Outlined.School, Icons.Outlined.AutoStories)
     val selectedIcons = listOf(Icons.Filled.ChatBubble, Icons.Filled.School, Icons.Filled.AutoStories)
-    val navigationHeight = (68f + (LocalDensity.current.fontScale - 1f).coerceAtLeast(0f) * 24f).dp
+    val expandedNavigation = 68f + (density.fontScale - 1f).coerceAtLeast(0f) * 24f
+    val navigationHeight = (expandedNavigation + (52f - expandedNavigation) * slide).dp
+    CompositionLocalProvider(LocalReadingChrome provides if (reading) chrome else null, LocalInlineReadingHeader provides inlineHeader) {
     Scaffold(
-        topBar = { if (!(ui.data.usesWeb && ui.tab == 0)) TopAppBar(
-            title = { Text(if (ui.tab == 3) "设置" else labels.getOrElse(ui.tab) { "学习" }, style = MaterialTheme.typography.titleLarge) },
+        topBar = { if (!(ui.data.usesWeb && ui.tab == 0) && !inlineHeader) TopAppBar(
+            modifier = Modifier.testTag("应用顶部栏"), expandedHeight = topHeight,
+            title = { Text(if (ui.tab == 3) "设置" else labels.getOrElse(ui.tab) { "学习" }, style = MaterialTheme.typography.titleLarge.copy(fontSize = titleSize.sp), maxLines = 1) },
             navigationIcon = { if (ui.tab == 3 || noteOpen) FeedbackIconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, if (noteOpen) "返回笔记列表" else "返回学习", Modifier.size(22.dp)) } },
             actions = { if (ui.busy) FeedbackTextButton(onClick = onStop) { Text("停止") }; if (ui.tab != 3) FeedbackIconButton(onClick = { onTab(3) }) { Icon(Icons.Outlined.Settings, "设置", Modifier.size(22.dp)) } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
         ) },
-        bottomBar = { if (ui.tab != 3) Column {
+        bottomBar = { if (ui.tab != 3 && !wide) Column {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
-            NavigationBar(Modifier.height(navigationHeight), containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp, windowInsets = WindowInsets(0, 0, 0, 0)) {
+            if (reading) Row(Modifier.fillMaxWidth().height(navigationHeight).clipToBounds().testTag("应用底部导航")) {
+                labels.forEachIndexed { index, label ->
+                    val isSelected = ui.tab == index
+                    FeedbackIconButton(onClick = { onTab(index) }, modifier = Modifier.weight(1f).fillMaxHeight().semantics { contentDescription = label; selected = isSelected; role = Role.Tab }) {
+                        Box(Modifier.fillMaxSize()) {
+                            Surface(Modifier.align(Alignment.TopCenter).offset(y = (6f + 4f * slide).dp), shape = RoundedCornerShape(11.dp), color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent) {
+                                Icon(if (isSelected) selectedIcons[index] else icons[index], null, Modifier.padding(horizontal = 12.dp, vertical = 6.dp).size(21.dp), tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text(label, Modifier.align(Alignment.BottomCenter).offset(y = (20f * slide - 4f).dp).alpha(1f - slide).clearAndSetSemantics {}, style = MaterialTheme.typography.labelMedium, color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            } else NavigationBar(Modifier.height(navigationHeight).testTag("应用底部导航"), containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp, windowInsets = WindowInsets(0, 0, 0, 0)) {
                 labels.forEachIndexed { index, label ->
                     val selected = ui.tab == index
                     FeedbackNavigationBarItem(selected = selected, onClick = { onTab(index) },
                         icon = { Surface(shape = RoundedCornerShape(11.dp), color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent) { Icon(if (selected) selectedIcons[index] else icons[index], null, Modifier.padding(horizontal = 12.dp, vertical = 6.dp).size(21.dp)) } },
-                        label = { Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal) })
+                        label = { Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal) },
+                        modifier = Modifier.semantics { contentDescription = label })
                 }
             }
             Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
         } },
-        snackbarHost = { SnackbarHost(snackbar) }, content = content
-    )
+        snackbarHost = { SnackbarHost(snackbar) }
+    ) { padding ->
+        if (wide && ui.tab != 3) Row(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
+            Column(Modifier.width(64.dp).fillMaxHeight().testTag("横屏导航"), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                labels.forEachIndexed { index, label ->
+                    FeedbackIconButton(onClick = { onTab(index) }, modifier = Modifier.size(56.dp).semantics { contentDescription = label; selected = ui.tab == index; role = Role.Tab }) {
+                        Surface(shape = RoundedCornerShape(12.dp), color = if (ui.tab == index) MaterialTheme.colorScheme.primaryContainer else Color.Transparent) {
+                            Icon(if (ui.tab == index) selectedIcons[index] else icons[index], null, Modifier.padding(10.dp).size(22.dp), tint = if (ui.tab == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+            VerticalDivider(Modifier.fillMaxHeight(), color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+            Box(Modifier.weight(1f).fillMaxHeight()) { content(PaddingValues(0.dp)) }
+        } else content(padding)
+    }
+    }
+    }
 }
 
 @Composable fun StudySectionLabel(text: String) {
@@ -99,7 +148,7 @@ import androidx.compose.ui.unit.sp
 }
 
 @Composable fun StudyPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Surface(modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainer, border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)) { Column(content = content) }
+    Surface(modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainer, border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)) { Column(content = content) }
 }
 
 @Composable fun StudyEmpty(icon: ImageVector, title: String, body: String, modifier: Modifier = Modifier, actions: @Composable ColumnScope.() -> Unit = {}) {
@@ -113,7 +162,8 @@ import androidx.compose.ui.unit.sp
 }
 
 @Composable fun SettingOption(title: String, summary: String, icon: ImageVector, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    FeedbackCard(onClick = onClick, enabled = enabled, modifier = Modifier.semantics { this.selected = selected; role = Role.RadioButton }, colors = CardDefaults.cardColors(containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f) else Color.Transparent), shape = RoundedCornerShape(16.dp)) {
+    val selectionColor by animateColorAsState(if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f) else Color.Transparent, label = "setting-selection")
+    FeedbackCard(onClick = onClick, enabled = enabled, modifier = Modifier.semantics { this.selected = selected; role = Role.RadioButton }, colors = CardDefaults.cardColors(containerColor = selectionColor), shape = RoundedCornerShape(16.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Surface(shape = RoundedCornerShape(11.dp), color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh) { Icon(icon, null, Modifier.padding(9.dp).size(20.dp), tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(title, style = MaterialTheme.typography.titleSmall); Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }

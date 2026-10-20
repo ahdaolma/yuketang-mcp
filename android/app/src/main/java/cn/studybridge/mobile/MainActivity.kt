@@ -6,6 +6,14 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import android.app.Activity
 import android.view.WindowManager
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import android.os.Bundle
@@ -61,6 +69,8 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -150,7 +160,7 @@ class MainActivity : ComponentActivity() {
     val controlFeedback = remember(vm, unavailable) { ControlFeedback(vm::notice, unavailable) }
     CompositionLocalProvider(LocalControlFeedback provides controlFeedback) {
     StudyFrame(ui, onTab = { target -> if (target == 3) previousTab = ui.tab; vm.tab(target) }, onBack = { if (ui.tab == 2) vm.noteReader.closeRequested = true else vm.tab(previousTab) }, onStop = vm::stop, snackbar = snackbar, noteOpen = ui.tab == 2 && ui.data.notes.any { it.id == vm.noteReader.id }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
+        Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             if (ui.storageError.isNotBlank()) Text(ui.storageError, Modifier.fillMaxWidth().padding(16.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
             if (ui.busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text(ui.operation, Modifier.padding(horizontal = 16.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall) }
             if (!ui.ready) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -164,8 +174,15 @@ class MainActivity : ComponentActivity() {
 @Composable fun StudyPageContent(ui: UiState, vm: StudyViewModel, web: ChatGptWebSession, webRevision: Int) {
     Box(Modifier.fillMaxSize()) {
         if (ui.data.usesWeb) WebLearningScreen(ui, vm, web, ui.tab == 0, webRevision)
-        if (ui.tab != 0 || !ui.data.usesWeb) Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            when (ui.tab) { 0 -> ChatScreen(ui, vm); 1 -> RainScreen(ui, vm); 2 -> NotesScreen(ui, vm); else -> ModelScreen(ui, vm) }
+        AnimatedContent(targetState = if (ui.tab == 0 && ui.data.usesWeb) -1 else ui.tab, modifier = Modifier.fillMaxSize(), transitionSpec = {
+            val direction = if (targetState > initialState) 1 else -1
+            (slideInHorizontally(tween(240, easing = FastOutSlowInEasing)) { direction * it / 18 } + fadeIn(tween(180))) togetherWith
+                (slideOutHorizontally(tween(220, easing = FastOutSlowInEasing)) { -direction * it / 24 } + fadeOut(tween(130)))
+        }, label = "study-page-slide") { page ->
+            if (page >= 0) Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                val screen = ui.copy(tab = page)
+                when (page) { 0 -> ChatScreen(screen, vm); 1 -> RainScreen(screen, vm); 2 -> NotesScreen(screen, vm); else -> ModelScreen(screen, vm) }
+            }
         }
     }
 }
@@ -186,7 +203,7 @@ class MainActivity : ComponentActivity() {
             .usePlugin(TablePlugin.create { builder -> builder.tableBorderColor(line).tableBorderWidth(maxOf(1, (density * 0.5f).toInt())).tableCellPadding((8 * density).toInt()).tableHeaderRowBackgroundColor(code).tableOddRowBackgroundColor(row).tableEvenRowBackgroundColor(background) })
             .usePlugin(object : AbstractMarkwonPlugin() {
                 override fun configureTheme(builder: MarkwonTheme.Builder) {
-                    builder.linkColor(link).codeTextColor(color).codeBlockTextColor(color).codeBackgroundColor(code).codeBlockBackgroundColor(code).blockQuoteColor(link).headingBreakColor(line).thematicBreakColor(line).listItemColor(link).headingTextSizeMultipliers(floatArrayOf(1.4f, 1.25f, 1.12f, 1.05f, 1f, 1f))
+                    builder.linkColor(link).codeTextColor(color).codeBlockTextColor(color).codeBackgroundColor(code).codeBlockBackgroundColor(code).blockQuoteColor(link).blockQuoteWidth((2 * density).toInt()).headingBreakHeight(0).thematicBreakColor(line).listItemColor(link).headingTextSizeMultipliers(floatArrayOf(1.28f, 1.16f, 1.06f, 1f, 1f, 1f))
                 }
             }).build()
     }
@@ -215,6 +232,10 @@ private fun preview(bytes: ByteArray): Bitmap? {
 @Composable fun ChatScreen(ui: UiState, vm: StudyViewModel) {
     var input by rememberSaveable { mutableStateOf("") }
     var history by remember { mutableStateOf(false) }
+    var navigation by remember { mutableStateOf(false) }
+    val chrome = LocalReadingChrome.current
+    val inlineHeader = LocalInlineReadingHeader.current
+    DisposableEffect(chrome) { onDispose { chrome?.locked = false } }
     val chat = ui.data.chat()
     val latestMessages by rememberUpdatedState(chat.messages)
     val listState = rememberLazyListState()
@@ -229,30 +250,34 @@ private fun preview(bytes: ByteArray): Bitmap? {
         }
     }
     Column(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("学习工具栏"), verticalAlignment = Alignment.CenterVertically) {
+            if (inlineHeader) Text("学习", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(end = 12.dp))
             Box { TextButton(onClick = { history = true }) { Text("会话 ▾") }; DropdownMenu(expanded = history, onDismissRequest = { history = false }) {
                 ui.data.conversations.forEach { c -> DropdownMenuItem(text = { Text(c.title) }, onClick = { vm.selectChat(c.id); history = false }, trailingIcon = { IconButton(onClick = { vm.deleteChat(c.id); history = false }, enabled = !ui.locked) { Icon(Icons.Default.DeleteOutline, "删除对话") } }) }
             } }
             MaterialsButton(ui, vm)
-            TextButton(onClick = vm::newChat, enabled = !ui.locked) { Text("新对话") }
-            Spacer(Modifier.weight(1f)); TextButton(onClick = vm::notes, enabled = !ui.locked && (chat.messages.isNotEmpty() || ui.pending != null), unavailableReason = if (chat.messages.isEmpty() && ui.pending == null) "先选择一页课件或进行对话，再生成笔记。" else null) { Text("生成笔记") }
+            IconButton(onClick = vm::newChat, enabled = !ui.locked) { Icon(Icons.Outlined.AddComment, "新对话") }
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = vm::notes, enabled = !ui.locked && (chat.messages.isNotEmpty() || ui.pending != null), unavailableReason = if (chat.messages.isEmpty() && ui.pending == null) "先选择一页课件或进行对话，再生成笔记。" else null) { Icon(Icons.Outlined.NoteAdd, "生成笔记") }
+            if (chat.messages.isNotEmpty()) Box {
+                IconButton(onClick = { navigation = true }) { Icon(Icons.Outlined.SwapVert, "消息跳转") }
+                DropdownMenu(expanded = navigation, onDismissRequest = { navigation = false }) {
+                    DropdownMenuItem(text = { Text("顶部") }, onClick = { navigation = false; scope.launch { listState.scrollToItem(0) } })
+                    DropdownMenuItem(text = { Text("底部") }, onClick = { navigation = false; scope.launch { listState.scrollToItem(chat.messages.lastIndex); listState.scrollBy(1_000_000f) } })
+                    DropdownMenuItem(text = { Text("跳转消息") }, onClick = { navigation = false; jump = true })
+                    DropdownMenuItem(text = { Text("最新回答") }, enabled = chat.messages.any { it.role == "assistant" }, onClick = { navigation = false; val target = chat.messages.indexOfLast { it.role == "assistant" }; if (target >= 0) scope.launch { listState.scrollToItem(target) } })
+                }
+            }
+            if (inlineHeader) IconButton(onClick = { vm.tab(3) }) { Icon(Icons.Outlined.Settings, "设置") }
         }
-        if (chat.messages.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            TextButton(onClick = { scope.launch { listState.scrollToItem(0) } }) { Text("顶部") }
-            TextButton(onClick = { scope.launch { listState.scrollToItem(chat.messages.lastIndex); listState.scrollBy(1_000_000f) } }) { Text("底部") }
-            TextButton(onClick = { jump = true }) { Text("跳转消息") }
-            TextButton(onClick = { val target = chat.messages.indexOfLast { it.role == "assistant" }; if (target >= 0) scope.launch { listState.scrollToItem(target) } }, enabled = chat.messages.any { it.role == "assistant" }) { Text("最新回答") }
-        }
-        LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
+        LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("学习正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
             if (chat.messages.isEmpty()) item { StudyEmpty(Icons.Outlined.Description, "从一页课件开始", "选择一页课件，提问或整理笔记。", Modifier.padding(top = 24.dp)) { Spacer(Modifier.height(4.dp)); OutlinedButton(onClick = { vm.tab(1) }) { Text("选择课程") } } }
-            itemsIndexed(chat.messages, key = { index, _ -> "${chat.id}:$index" }, contentType = { _, m -> m.role }) { index, m -> Surface(color = if (m.role == "user") MaterialTheme.colorScheme.primaryContainer else Color.Transparent, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth().padding(start = if (m.role == "user") 32.dp else 0.dp)) {
-                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text(if (m.role == "user") "你" else ui.data.provider().name, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant); m.source?.let { Text(it, style = MaterialTheme.typography.labelSmall) }; m.image?.let { DataImage(it, m.source ?: "课件") }; if (ui.busy && m.role == "assistant" && index == chat.messages.lastIndex) Text(m.text.ifBlank { "正在思考…" }) else Markdown(m.text.ifBlank { "正在思考…" }) }
-            } }
+            itemsIndexed(chat.messages, key = { index, _ -> "${chat.id}:$index" }, contentType = { _, m -> m.role }) { index, m -> ChatMessageCard(m, "${chat.id}:$index", ui.data.provider().name, ui.busy && m.role == "assistant" && index == chat.messages.lastIndex) }
         }
         ui.pending?.let { a -> ElevatedCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) { Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.AttachFile, null); Text(a.label, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); IconButton(onClick = vm::clearAttachment, enabled = !ui.locked) { Icon(Icons.Default.Close, "移除课件附件") } } } }
         if (ui.data.provider().chatgptAccountId.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) { Text("使用 ChatGPT 套餐", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary); TextButton(onClick = { vm.openLink(CHATGPT_USAGE) }) { Text("管理用量") } }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-            OutlinedTextField(input, { if (it.length <= 20000) input = it }, Modifier.weight(1f), placeholder = { Text("问问这页课件…") }, shape = RoundedCornerShape(16.dp), maxLines = 4, enabled = !ui.locked)
+            OutlinedTextField(input, { if (it.length <= 20000) input = it }, Modifier.weight(1f).onFocusChanged { chrome?.locked = it.isFocused }, placeholder = { Text("问问这页课件…", style = MaterialTheme.typography.bodyMedium) }, textStyle = MaterialTheme.typography.bodyMedium, shape = RoundedCornerShape(14.dp), maxLines = if (inlineHeader) 2 else 4, enabled = !ui.locked)
             FilledIconButton(onClick = { if (vm.send(input.trim())) input = "" }, enabled = !ui.locked && input.isNotBlank(), unavailableReason = if (input.isBlank()) "先输入你的问题，再发送。" else null) { Icon(Icons.Default.ArrowUpward, "发送给所选模型") }
         }
     }
@@ -317,7 +342,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             item { Row(verticalAlignment = Alignment.CenterVertically) { Text(if (ui.course == null) "我的课程" else ui.course.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f)); if (ui.course != null) TextButton(onClick = vm::allCourses, enabled = !ui.locked) { Text("返回课程") } else TextButton(onClick = vm::loadCourses, enabled = !ui.locked && !ui.loginActive) { Text("刷新") } } }
             if (ui.courses.isEmpty() && ui.course == null) item { StudyEmpty(Icons.Outlined.MenuBook, "还没有读取课程", "点击右上方刷新，读取你已加入的课程。") }
             if (ui.course == null) itemsIndexed(ui.courses, key = { _, it -> it.id }) { index, c ->
-                Card(onClick = { vm.loadActivities(c) }, enabled = !ui.locked, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp), border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()) {
+                Card(onClick = { vm.loadActivities(c) }, enabled = !ui.locked, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(16.dp), border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.padding(horizontal = 18.dp, vertical = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                         Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(12.dp)) { Icon(Icons.Outlined.MenuBook, null, Modifier.padding(10.dp).size(21.dp), tint = MaterialTheme.colorScheme.primary) }
                         Column(Modifier.weight(1f).padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) { Text(c.title, style = MaterialTheme.typography.titleSmall); if (c.detail.isNotBlank()) Text(c.detail, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
@@ -328,7 +353,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             ui.course?.let { c ->
                 if (ui.slides.isEmpty()) {
                     items(ui.presentations, key = { "${it.lessonId}:${it.id}" }) { p ->
-                        Card(onClick = { vm.openPresentation(p) }, enabled = !ui.locked, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp), border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()) {
+                        Card(onClick = { vm.openPresentation(p) }, enabled = !ui.locked, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(16.dp), border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(p.title, style = MaterialTheme.typography.titleSmall)
                                 Text((if (p.isLesson) "课堂记录" else "课件") + " · " + p.recordedAt.ifBlank { "雨课堂未提供时间" }, style = MaterialTheme.typography.bodySmall)
@@ -368,7 +393,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
     val classButtonColors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
     val run = ui.data.classRun
     val resumable = run != null && (!run.ended || run.pending.isNotEmpty())
-    Surface(color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer, shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(Icons.Outlined.AutoStories, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
@@ -396,6 +421,9 @@ private fun preview(bytes: ByteArray): Bitmap? {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable fun NotesScreen(ui: UiState, vm: StudyViewModel) {
     val reader = vm.noteReader
+    val chrome = LocalReadingChrome.current
+    val inlineHeader = LocalInlineReadingHeader.current
+    DisposableEffect(chrome, reader.editing) { chrome?.locked = reader.editing; onDispose { chrome?.locked = false } }
     val note = ui.data.notes.find { it.id == reader.id }
     var leaving by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
@@ -437,12 +465,13 @@ private fun preview(bytes: ByteArray): Bitmap? {
         }, confirmButton = { TextButton(onClick = { details = false }) { Text("关闭") } })
         Column(Modifier.fillMaxSize().testTag("笔记阅读页").padding(horizontal = 20.dp, vertical = 8.dp)) {
             val heading: @Composable () -> Unit = {
-                Text(note.title, style = MaterialTheme.typography.headlineSmall)
+                Text(note.title, style = MaterialTheme.typography.titleLarge)
                 OriginalNotePages(note, ui, vm)
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             }
             if (reader.editing) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    if (inlineHeader) IconButton(onClick = { requestClose() }) { Icon(Icons.Default.ArrowBack, "返回笔记列表") }
                     Text("编辑笔记", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
                     TextButton(onClick = { if (vm.editNote(note.id, reader.draft)) reader.editing = false }, enabled = writable) { Text("保存修改") }
                     actions()
@@ -451,7 +480,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                     heading()
                     OutlinedTextField(reader.draft, { reader.draft = it }, Modifier.fillMaxWidth().heightIn(min = 360.dp), label = { Text("Markdown 笔记") }, enabled = writable)
                 }
-            } else PagedNoteContent(note, Modifier.weight(1f), independentScroll = true, header = heading, trailingActions = actions)
+            } else PagedNoteContent(note, Modifier.weight(1f), independentScroll = true, header = heading, trailingActions = actions, titleAlreadyShown = true, onBack = { requestClose() }, onSettings = { vm.tab(3) })
         }
     } else LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)) {
         item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -461,7 +490,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
         if (ui.classUi.running || ui.data.classRun?.let { !it.ended || it.pending.isNotEmpty() } == true) item { ClassModePanel(ui, vm) }
         if (ui.noteDraft.isNotBlank()) item { StudyPanel { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("正在整理", style = MaterialTheme.typography.titleSmall); Text(ui.noteDraft.takeLast(1600), maxLines = 8, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } } }
         if (ui.data.notes.isEmpty()) item { StudyEmpty(Icons.Outlined.AutoStories, "还没有笔记", "在学习页保存回答，随时回看、编辑或导出。") { Spacer(Modifier.height(4.dp)); OutlinedButton(onClick = { vm.tab(0) }) { Text("去学习") } } }
-        items(ui.data.notes, key = { it.id }) { n -> Card(onClick = { reader.open(n); details = false }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp), border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)) {
+        items(ui.data.notes, key = { it.id }) { n -> Card(onClick = { reader.open(n); details = false }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(n.source, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -475,7 +504,9 @@ private fun preview(bytes: ByteArray): Bitmap? {
 }
 
 @OptIn(ExperimentalLayoutApi::class)
-@Composable fun PagedNoteContent(note: Note, modifier: Modifier = Modifier, independentScroll: Boolean = false, header: @Composable () -> Unit = {}, trailingActions: @Composable () -> Unit = {}) {
+@Composable fun PagedNoteContent(note: Note, modifier: Modifier = Modifier, independentScroll: Boolean = false, header: @Composable () -> Unit = {}, trailingActions: @Composable () -> Unit = {}, titleAlreadyShown: Boolean = false, onBack: () -> Unit = {}, onSettings: () -> Unit = {}) {
+    val chrome = LocalReadingChrome.current
+    val inlineHeader = LocalInlineReadingHeader.current
     var index by rememberSaveable(note.id) { mutableIntStateOf(0) }
     var jump by remember(note.id) { mutableStateOf(false) }
     var navigation by remember(note.id) { mutableStateOf(false) }
@@ -494,6 +525,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
     if (jump) JumpDialog("笔记目录 / 阅读分段", labels, { jump = false }) { index = it; jump = false }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (inlineHeader) IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "返回笔记列表") }
             if (segments.size > 1) IconButton(onClick = { index = selected - 1 }, enabled = selected > 0) { Icon(Icons.Default.ChevronLeft, "上一段") }
             TextButton(onClick = { jump = true }, modifier = Modifier.weight(1f).semantics {
                 contentDescription = "目录跳转"
@@ -508,17 +540,18 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 }
             }
             trailingActions()
+            if (inlineHeader) IconButton(onClick = onSettings) { Icon(Icons.Outlined.Settings, "设置") }
         }
-        Column(if (independentScroll) Modifier.weight(1f).testTag("笔记正文").verticalScroll(scroll) else Modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(if (independentScroll) Modifier.weight(1f).testTag("笔记正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier).verticalScroll(scroll) else Modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             header()
-            key(note.id, selected) { IllustratedMarkdown(segments[selected].display(note.content)) }
+            key(note.id, selected) { IllustratedMarkdown(if (titleAlreadyShown && selected == 0) noteTextForDisplay(segments[selected].display(note.content), note.title) else segments[selected].display(note.content)) }
             Spacer(Modifier.height(24.dp))
         }
     }
 }
 
 @Composable fun ChatGptAccountPanel(ui: UiState, vm: StudyViewModel) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth()) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("使用 ChatGPT 账号", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text("登录并授权后，符合资格的请求使用你的 ChatGPT 套餐，无需填写 API Key。可用模型和额度由账号授权决定。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

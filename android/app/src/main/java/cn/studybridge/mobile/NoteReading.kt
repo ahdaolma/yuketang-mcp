@@ -4,6 +4,15 @@ data class NoteReadingSegment(val start: Int, val end: Int, val prefix: String =
     fun display(markdown: String) = prefix + markdown.substring(start, end) + suffix
 }
 
+// Suppress only the exact redundant document title in the rendered first segment.
+// Original Markdown, code fences, editing and exports keep their original bytes.
+fun noteTextForDisplay(markdown: String, title: String): String {
+    val match = Regex("\\A[\\r\\n]*# +([^\\r\\n]+)\\r?\\n(?:\\r?\\n)*").find(markdown) ?: return markdown
+    val heading = match.groupValues[1].trim()
+    val withoutRange = title.replace(Regex(" · 第 \\d+[–-]\\d+ 页$"), "")
+    return if (heading == title.trim() || heading == withoutRange.trim()) markdown.substring(match.range.last + 1) else markdown
+}
+
 // Store offsets, not copies of an entire long notebook. Synthetic fences affect
 // reading only; the original bytes remain unchanged for saving/editing/export.
 fun noteReadingSegments(markdown: String, limit: Int = 12000): List<NoteReadingSegment> {
