@@ -24,11 +24,10 @@ import kotlinx.coroutines.sync.withLock
 
 data class UiState(val data: Saved = Saved(), val tab: Int = 0, val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val activityPage: Int = 0, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi(), val chatgptLoginActive: Boolean = false, val chatgptStage: String = "", val chatgptPlanWelcome: Boolean = false, val modelNames: Map<String, String> = emptyMap(), val modelListRequest: String = "", val materialsOpen: Boolean = false, val materialPane: String = "home", val localDocument: MaterialDocument? = null, val slideRecordedAt: String = "", val storageError: String = "") { val locked get() = !ready || storageError.isNotBlank() || busy || chatgptLoginActive || (classUi.running && !classUi.paused) }
 
-class StudyViewModel(app: Application) : AndroidViewModel(app) {
+class StudyViewModel @JvmOverloads constructor(app: Application, private val rain: RainApi = RainApi()) : AndroidViewModel(app) {
     val noteReader = NoteReader()
     private val vault = Vault(app)
     private val disk = Mutex()
-    private val rain = RainApi()
     private val materials = MaterialStore(app)
     val sourceImages = SourceImages(app)
     val previews = MaterialPreviews(app)
@@ -227,6 +226,8 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         cancelLogin(); val region = state.value.data.region; val attempt = newId(); loginAttempt = attempt
         state.update { it.copy(qr = null, loginActive = true, loginSteps = emptyList(), notice = "正在获取微信二维码…") }
         loginStep("正在连接微信登录通道")
+        try { getApplication<Application>().startForegroundService(Intent(getApplication(), RainLoginService::class.java)) }
+        catch (_: Exception) { state.update { it.copy(loginActive = false, notice = "系统未允许保持扫码连接，请回到 App 后重新开始。") }; return }
         login = rain.login(region,
             onQr = { bytes -> if (loginAttempt == attempt) state.update { it.copy(qr = bytes, notice = "用微信扫一扫识别二维码并确认，完成后切回本 App。") } },
             onSuccess = { session, name -> viewModelScope.launch {
@@ -239,12 +240,14 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                     state.update { it.copy(loginActive = false, qr = null) }
                     verifyLogin()
                 } catch (_: Exception) { if (loginAttempt == attempt) { loginStep("登录记录保存失败，请检查手机存储空间"); state.update { it.copy(loginActive = false, qr = null, notice = "已收到登录记录，但本机保存失败，请勿关闭 App。") } } }
+                finally { if (loginAttempt == attempt) stopRainLoginService() }
             } },
-            onError = { message -> if (loginAttempt == attempt) { loginStep(message); state.update { it.copy(loginActive = false, qr = null, notice = message) } } },
+            onError = { message -> if (loginAttempt == attempt) { loginStep(message); state.update { it.copy(loginActive = false, qr = null, notice = message) }; stopRainLoginService() } },
             onStep = { message -> if (loginAttempt == attempt) loginStep(message) }
         )
     }
-    fun cancelLogin() { loginAttempt = newId(); login?.close(); state.update { it.copy(loginActive = false, qr = null) } }
+    private fun stopRainLoginService() { getApplication<Application>().stopService(Intent(getApplication(), RainLoginService::class.java)) }
+    fun cancelLogin() { loginAttempt = newId(); login?.close(); login = null; stopRainLoginService(); state.update { it.copy(loginActive = false, qr = null) } }
     fun logout() { pauseClass(); cancelLogin(); data { it.copy(session = "", username = "", sessionVerified = false) }; state.update { it.copy(courses = emptyList(), course = null, presentations = emptyList(), slides = emptyList(), pending = null, loginSteps = emptyList(), loginStage = "") } }
     fun loadCourses() = operation("读取课程") { if (!state.value.data.sessionVerified) verifySession(state.value.data); val list = withContext(Dispatchers.IO) { rain.courses(state.value.data) }; state.update { it.copy(courses = list, course = null, slides = emptyList(), presentations = emptyList(), notice = if (list.isEmpty()) "接口未返回课程。" else "已读取 ${list.size} 门课程；不保证包含全部历史学期。") } }
     fun loadActivities(course: Course, page: Int = 0) = operation("读取课程活动") {
@@ -678,5 +681,5 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         require(u.scheme == "https" && u.host in setOf("auth.openai.com", "chatgpt.com", "developers.openai.com"))
         getApplication<Application>().startActivity(Intent(Intent.ACTION_VIEW, u).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
-    override fun onCleared() { login?.close(); authReceiver?.close(); authJob?.cancel(); getApplication<Application>().stopService(Intent(getApplication(), AuthorizationService::class.java)); classFeed?.cancel(); classWriter?.cancel(); super.onCleared() }
+    override fun onCleared() { login?.close(); stopRainLoginService(); authReceiver?.close(); authJob?.cancel(); getApplication<Application>().stopService(Intent(getApplication(), AuthorizationService::class.java)); classFeed?.cancel(); classWriter?.cancel(); super.onCleared() }
 }

@@ -52,7 +52,7 @@ class ModelCatalogUiTest {
         } finally { bitmap.recycle() }
         compose.onNodeWithText("搜索模型").performTextInput("vision")
         compose.onNodeWithText("文字讲解").assertDoesNotExist()
-        compose.onNodeWithText("视觉讲解").performClick()
+        compose.onNodeWithText("视觉讲解").assertIsDisplayed().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
         compose.onNodeWithText("vision-model").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("保存并使用").performScrollTo().assertIsEnabled().performClick()
         compose.waitUntil(5000) { vm.ui.value.data.provider().model == "vision-model" }

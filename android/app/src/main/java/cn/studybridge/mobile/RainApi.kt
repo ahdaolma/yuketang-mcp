@@ -150,7 +150,8 @@ class RainApi(private val client: OkHttpClient = defaultRainClient()) {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 if (active()) onStep("微信通道已连接，正在获取二维码")
                 qr(webSocket)
-                if (active()) runCatching { timer.schedule(object : TimerTask() { override fun run() { qr(webSocket) } }, 50000, 50000) }
+                // Keep the ticket the user saved. Requesting another QR while
+                // they are in WeChat can invalidate that image without notice.
             }
             override fun onMessage(webSocket: WebSocket, text: String) {
                 if (!active()) return
@@ -180,7 +181,7 @@ class RainApi(private val client: OkHttpClient = defaultRainClient()) {
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { finish { onError("登录通道已关闭，请重新开始。") } }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(1000, "closed") }
         })
-        synchronized(lock) { if (finished) socket?.close(1000, "finished") else timer.schedule(object : TimerTask() { override fun run() { finish { onError("二维码已过期，请重新开始。") } } }, 180000) }
+        synchronized(lock) { if (finished) socket?.close(1000, "finished") else timer.schedule(object : TimerTask() { override fun run() { finish { onError("本次扫码等待已结束，请重新获取二维码。") } } }, 180000) }
         return AutoCloseable { finish() }
     }
 }

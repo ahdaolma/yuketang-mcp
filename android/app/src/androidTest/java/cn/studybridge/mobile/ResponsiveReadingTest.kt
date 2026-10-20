@@ -46,8 +46,8 @@ class ResponsiveReadingTest {
         compose.waitUntil(5000) { compose.onAllNodesWithTag("学习正文").fetchSemanticsNodes().isNotEmpty() }
         compose.waitForIdle()
     }
-    private fun shot(name: String) {
-        val image = compose.onRoot().captureToImage().asAndroidBitmap()
+    private fun shot(name: String, system: Boolean = false) {
+        val image = if (system) requireNotNull(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()) else compose.onRoot().captureToImage().asAndroidBitmap()
         val resolver = compose.activity.contentResolver
         val uri = requireNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "$name.png"); put(MediaStore.Images.Media.MIME_TYPE, "image/png"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/StudyUiReview"); put(MediaStore.Images.Media.IS_PENDING, 1)
@@ -105,6 +105,11 @@ class ResponsiveReadingTest {
             listOf("学习", "课程", "笔记", "学习资料", "新对话", "生成笔记", "消息跳转", "设置").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
             shot("sample-chat-landscape")
             compose.onNode(hasSetTextAction()).performTextInput("解释复制")
+            compose.waitUntil(5000) {
+                androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == true
+            }
+            compose.waitForIdle()
+            shot("sample-chat-landscape-typing", system = true)
             compose.onNodeWithContentDescription("发送给所选模型").assertIsDisplayed().assertIsEnabled()
             val typingBody = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
             assertTrue("Landscape composer must leave a usable scroll viewport", (typingBody.bottom - typingBody.top).value > 24f)

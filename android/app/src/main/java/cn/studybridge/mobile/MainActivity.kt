@@ -69,6 +69,8 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
@@ -333,7 +335,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                         if (connectionHelp) { TextButton(onClick = vm::diagnoseLogin, enabled = !ui.locked && !ui.loginActive) { Text("检查通道") }; Text("登录信息加密保存在本机。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         if (ui.loginActive || connectionHelp) ui.loginSteps.takeLast(3).forEach { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
-                    ui.qr?.let { bytes -> val bitmap by produceState<Bitmap?>(null, bytes) { value = withContext(Dispatchers.Default) { preview(bytes) } }; bitmap?.let { Image(it.asImageBitmap(), "微信登录二维码", Modifier.fillMaxWidth().height(210.dp), contentScale = ContentScale.Fit) }; Button(onClick = ::saveQr, modifier = Modifier.fillMaxWidth()) { Text("保存二维码") }; Text("微信扫一扫 → 相册 → 选择二维码并确认，再返回这里。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    ui.qr?.let { bytes -> val bitmap by produceState<Bitmap?>(null, bytes) { value = withContext(Dispatchers.Default) { preview(bytes) } }; bitmap?.let { Image(it.asImageBitmap(), "微信登录二维码", Modifier.fillMaxWidth().height(210.dp), contentScale = ContentScale.Fit) }; Button(onClick = ::saveQr, modifier = Modifier.fillMaxWidth()) { Text("保存二维码") }; Text("微信扫一扫 → 相册 → 选择二维码并确认，再返回这里。扫码期间会保持当前二维码与连接；超时后可重新获取。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
             }
         }
@@ -578,6 +580,8 @@ private fun preview(bytes: ByteArray): Bitmap? {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable fun ModelScreen(ui: UiState, vm: StudyViewModel) {
+    val focus = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     var adding by remember { mutableStateOf<Provider?>(null) }
     LaunchedEffect(ui.data.selectedProvider) { adding = null }
     val current = adding ?: ui.data.provider()
@@ -675,7 +679,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 OutlinedTextField(modelQuery, { modelQuery = it }, label = { Text("搜索模型") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
                 val candidates = remember(ui.modelList, modelQuery, ui.modelNames) { ui.modelList.filter { it.contains(modelQuery, ignoreCase = true) || ui.modelNames[it]?.contains(modelQuery, ignoreCase = true) == true } }
                 if (candidates.isEmpty()) Text("没有匹配的模型", Modifier.padding(20.dp), style = MaterialTheme.typography.bodyMedium)
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp), contentPadding = PaddingValues(vertical = 12.dp)) { items(candidates, key = { it }) { id -> TextButton(onClick = { model = id; chooseModel = false }, modifier = Modifier.fillMaxWidth()) { Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { Text(ui.modelNames[id] ?: id); if (ui.modelNames[id]?.let { it != id } == true) Text(id, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } } } }
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp), contentPadding = PaddingValues(vertical = 12.dp)) { items(candidates, key = { it }) { id -> TextButton(onClick = { model = id; chooseModel = false; focus.clearFocus(); keyboard?.hide() }, modifier = Modifier.fillMaxWidth()) { Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { Text(ui.modelNames[id] ?: id); if (ui.modelNames[id]?.let { it != id } == true) Text(id, style = MaterialTheme.typography.labelSmall) } } } }
             }
             Row(verticalAlignment = Alignment.CenterVertically) { Text("所选模型支持图片输入", Modifier.weight(1f)); Switch(images, { images = it }, enabled = !ui.locked) }
             Text("课件图片需要支持图片的模型。列表可见不等于已验证图片权限，实际以请求结果为准。", style = MaterialTheme.typography.bodySmall)

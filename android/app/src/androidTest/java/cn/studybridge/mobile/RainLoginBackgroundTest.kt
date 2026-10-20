@@ -1,0 +1,127 @@
+package cn.studybridge.mobile
+
+import android.app.ActivityManager
+import android.app.Application
+import android.content.Context
+import android.content.ContextWrapper
+import android.graphics.Bitmap
+import android.os.SystemClock
+import android.util.Base64
+import androidx.compose.material3.Text
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.test.platform.app.InstrumentationRegistry
+import okhttp3.*
+import okhttp3.mockwebserver.Dispatcher
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
+import okhttp3.tls.HandshakeCertificates
+import okhttp3.tls.HeldCertificate
+import okio.Buffer
+import org.json.JSONObject
+import org.junit.Assert.*
+import org.junit.Rule
+import org.junit.Test
+import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+
+// Real TLS/WebSocket, foreground service and HOME/return lifecycle; all QR images,
+// account responses and files are synthetic and isolated from the app's records.
+class RainLoginBackgroundTest {
+    @get:Rule val compose = createAndroidComposeRule<WebFixtureActivity>()
+    private class IsolatedApplication(base: Context, directory: File) : Application() {
+        init { attachBaseContext(object : ContextWrapper(base) {
+            override fun getNoBackupFilesDir() = File(directory, "private").apply { mkdirs() }
+            override fun getFilesDir() = File(directory, "files").apply { mkdirs() }
+            override fun getCacheDir() = File(directory, "cache").apply { mkdirs() }
+        }) }
+    }
+    @Suppress("DEPRECATION") private fun foreground(context: Context) = context.getSystemService(ActivityManager::class.java).getRunningServices(100).any {
+        it.service.className == RainLoginService::class.java.name && it.foreground
+    }
+    @Test fun savedQrSurvivesBackgroundBeyondOldRefreshIntervalAndConfirmationPersists() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val directory = File(context.cacheDir, "login-fixture-${newId()}").apply { mkdirs() }
+        val app = IsolatedApplication(context, directory)
+        val certificate = HeldCertificate.Builder().commonName("localhost").addSubjectAlternativeName("localhost").build()
+        val serverTls = HandshakeCertificates.Builder().heldCertificate(certificate).build()
+        val clientTls = HandshakeCertificates.Builder().addTrustedCertificate(certificate.certificate).build()
+        val server = MockWebServer()
+        server.useHttps(serverTls.sslSocketFactory(), false)
+        val socket = AtomicReference<WebSocket>()
+        val requests = AtomicInteger()
+        val png = Base64.decode(syntheticSlideImage().substringAfter(','), Base64.DEFAULT)
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse = when (request.requestUrl?.encodedPath) {
+                "/wsapp/" -> MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                    override fun onOpen(webSocket: WebSocket, response: Response) { socket.set(webSocket) }
+                    override fun onMessage(webSocket: WebSocket, text: String) {
+                        if (JSONObject(text).optString("op") == "requestlogin") {
+                            requests.incrementAndGet()
+                            webSocket.send("""{"op":"requestlogin","ticket":"https://www.yuketang.cn/fixture-qr.png"}""")
+                        }
+                    }
+                    override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(code, reason) }
+                })
+                "/fixture-qr.png" -> MockResponse().setHeader("Content-Type", "image/png").setBody(Buffer().write(png))
+                "/pc/web_login" -> MockResponse().setHeader("Set-Cookie", "sessionid=fixture-session-123; Path=/; Secure; HttpOnly").setBody("{}")
+                "/api/v3/user/basic-info" -> MockResponse().setHeader("Content-Type", "application/json").setBody("""{"code":0,"data":{"id":88,"name":"扫码测试"}}""")
+                else -> MockResponse().setResponseCode(404)
+            }
+        }
+        server.start()
+        val client = defaultRainClient().newBuilder().sslSocketFactory(clientTls.sslSocketFactory(), clientTls.trustManager).addInterceptor { chain ->
+            // Redirect every fixture request before any real network connection.
+            chain.proceed(chain.request().newBuilder().url(server.url(chain.request().url.encodedPath)).build())
+        }.build()
+        val store = ViewModelStore()
+        val owner = object : ViewModelStoreOwner { override val viewModelStore = store }
+        lateinit var vm: StudyViewModel
+        try {
+            compose.setContent { StudyTheme(false) { Text("扫码切换测试") } }
+            compose.runOnIdle { vm = ViewModelProvider(owner, object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = StudyViewModel(app, RainApi(client)) as T
+            })[StudyViewModel::class.java] }
+            compose.waitUntil(5000) { vm.ui.value.ready }
+            compose.runOnIdle { vm.startLogin() }
+            compose.waitUntil(10000) { vm.ui.value.qr != null }
+            val firstQr = requireNotNull(vm.ui.value.qr).clone()
+            compose.waitUntil(5000) { foreground(context) }
+            InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("input keyevent KEYCODE_HOME").close()
+            compose.waitUntil(5000) { compose.activityRule.scenario.state == Lifecycle.State.CREATED }
+            val started = SystemClock.elapsedRealtime()
+            // The old implementation silently replaced the saved ticket at 50s.
+            compose.waitUntil(56_000) { SystemClock.elapsedRealtime() - started >= 53_000 }
+            assertTrue("QR login must remain active while another app is foreground", vm.ui.value.loginActive)
+            assertTrue("QR handshake needs its bounded foreground lease", foreground(context))
+            assertArrayEquals(firstQr, vm.ui.value.qr)
+            assertEquals("A saved QR must never be silently replaced", 1, requests.get())
+            assertTrue(socket.get().send("""{"op":"loginsuccess","UserID":88,"Auth":"fixture-only","Name":"扫码测试"}"""))
+            compose.waitUntil(10000) { !vm.ui.value.loginActive && vm.ui.value.data.sessionVerified && !vm.ui.value.busy }
+            assertEquals("fixture-session-123", Vault(app).load().session)
+            compose.waitUntil(5000) { !foreground(context) }
+            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            compose.runOnIdle { vm.logout(); vm.startLogin() }
+            compose.waitUntil(10000) { vm.ui.value.qr != null && requests.get() == 2 }
+            val canceledSocket = socket.get()
+            compose.runOnIdle { vm.cancelLogin() }
+            compose.waitUntil(5000) { !foreground(context) }
+            canceledSocket.send("""{"op":"loginsuccess","UserID":88,"Auth":"stale-fixture"}""")
+            assertFalse(vm.ui.value.loginActive)
+            assertNull(vm.ui.value.qr)
+            assertTrue(vm.ui.value.data.session.isBlank())
+        } finally {
+            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            compose.runOnIdle { store.clear() }
+            client.dispatcher.executorService.shutdown()
+            client.connectionPool.evictAll()
+            server.shutdown()
+        }
+    }
+}
