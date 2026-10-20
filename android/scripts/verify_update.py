@@ -18,8 +18,17 @@ out.mkdir(exist_ok=True)
 
 
 def nodes():
-    adb('shell', 'uiautomator', 'dump', '/sdcard/update-ui.xml')
-    return list(ET.fromstring(adb('shell', 'cat', '/sdcard/update-ui.xml')).iter('node'))
+    for attempt in range(6):
+        try:
+            adb('shell', 'rm', '-f', '/sdcard/update-ui.xml')
+            adb('shell', 'uiautomator', 'dump', '/sdcard/update-ui.xml')
+            result = list(ET.fromstring(adb('shell', 'cat', '/sdcard/update-ui.xml')).iter('node'))
+            if result:
+                return result
+        except (subprocess.CalledProcessError, ET.ParseError):
+            pass
+        time.sleep(1)
+    raise AssertionError('Emulator accessibility tree did not become ready')
 
 
 def tap(label):

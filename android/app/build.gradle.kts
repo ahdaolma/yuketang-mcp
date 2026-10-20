@@ -10,8 +10,8 @@ android {
         applicationId = "cn.studybridge.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "0.5.6-preview"
+        versionCode = 13
+        versionName = "0.6.0-preview"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }

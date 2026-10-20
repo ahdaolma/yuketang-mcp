@@ -149,6 +149,7 @@ class MainActivity : ComponentActivity() {
             else StudyPageContent(ui, vm, web, webRevision)
         }
     }
+    LearningMaterialsHost(ui, vm)
     }
 }
 
@@ -220,6 +221,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             Box { TextButton(onClick = { history = true }) { Text("会话 ▾") }; DropdownMenu(expanded = history, onDismissRequest = { history = false }) {
                 ui.data.conversations.forEach { c -> DropdownMenuItem(text = { Text(c.title) }, onClick = { vm.selectChat(c.id); history = false }, trailingIcon = { IconButton(onClick = { vm.deleteChat(c.id); history = false }, enabled = !ui.locked) { Icon(Icons.Default.DeleteOutline, "删除对话") } }) }
             } }
+            MaterialsButton(ui, vm)
             TextButton(onClick = vm::newChat, enabled = !ui.locked) { Text("新对话") }
             Spacer(Modifier.weight(1f)); TextButton(onClick = vm::notes, enabled = !ui.locked && (chat.messages.isNotEmpty() || ui.pending != null), unavailableReason = if (chat.messages.isEmpty() && ui.pending == null) "先选择一页课件或进行对话，再生成笔记。" else null) { Text("生成笔记") }
         }
@@ -297,7 +299,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 Card(onClick = { vm.loadActivities(c) }, enabled = !ui.locked, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp), border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.padding(horizontal = 18.dp, vertical = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                         Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(12.dp)) { Icon(Icons.Outlined.MenuBook, null, Modifier.padding(10.dp).size(21.dp), tint = MaterialTheme.colorScheme.primary) }
-                        Column(Modifier.weight(1f).padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) { Text(c.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis); if (c.detail.isNotBlank()) Text(c.detail, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        Column(Modifier.weight(1f).padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) { Text(c.title, style = MaterialTheme.typography.titleSmall); if (c.detail.isNotBlank()) Text(c.detail, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.outline)
                     }
                 }
@@ -373,10 +375,10 @@ private fun preview(bytes: ByteArray): Bitmap? {
     fun requestClose() { if (note != null && reader.editing && reader.draft != note.content) leaving = true else reader.close() }
     BackHandler(enabled = note != null) { requestClose() }
     LaunchedEffect(reader.closeRequested) { if (reader.closeRequested) { reader.closeRequested = false; requestClose() } }
+    var exportSnapshot by remember { mutableStateOf<Pair<Note, String>?>(null) }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
-        val n = note
-        val text = if (reader.editing) reader.draft else n?.content.orEmpty()
-        if (uri != null && n != null) scope.launch { runCatching { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { it.write("$text\n\n---\n来源：${n.source}\n模型：${n.model}\n") } ?: error("无法写入文件。") } }.fold({ vm.notice("Markdown 笔记已导出。") }, { vm.notice("笔记导出失败。") }) }
+        val snapshot = exportSnapshot; exportSnapshot = null
+        if (uri != null && snapshot != null) vm.exportNote(snapshot.first, snapshot.second, uri)
     }
     if (note != null) {
         val writable = !ui.locked && ui.data.noteWritable(note.id)
@@ -386,7 +388,8 @@ private fun preview(bytes: ByteArray): Bitmap? {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 FilledTonalButton(onClick = { if (reader.editing) { if (vm.editNote(note.id, reader.draft)) reader.editing = false } else { reader.draft = note.content; reader.editing = true } }, enabled = writable, unavailableReason = "请先结束整理并恢复待保存回答，再编辑笔记。") { Icon(if (reader.editing) Icons.Default.Check else Icons.Outlined.Edit, null, Modifier.size(17.dp)); Spacer(Modifier.width(6.dp)); Text(if (reader.editing) "保存修改" else "编辑笔记") }
-                OutlinedButton(onClick = { export.launch(note.title.replace(Regex("[^\\p{L}\\p{N}._-]"), "_").take(50) + ".md") }) { Icon(Icons.Outlined.FileDownload, null, Modifier.size(17.dp)); Spacer(Modifier.width(6.dp)); Text("导出 Markdown") }
+                OutlinedButton(onClick = { val text = if (reader.editing) reader.draft else note.content; if (ui.data.downloadTreeUri.isNotBlank()) vm.exportNote(note, text) else { exportSnapshot = note to text; export.launch(downloadName(note.title, "md")) } }, enabled = !ui.locked) { Icon(Icons.Outlined.FileDownload, null, Modifier.size(17.dp)); Spacer(Modifier.width(6.dp)); Text("导出 Markdown") }
+                TextButton(onClick = { vm.explainNote(note) }, enabled = !ui.locked && (!reader.editing || reader.draft == note.content), unavailableReason = "请先保存笔记修改，再带入 AI 讲解。") { Text("AI 讲解") }
             }
                 Box { IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreHoriz, "笔记选项", Modifier.size(22.dp)) }; DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) { DropdownMenuItem(text = { Text("删除笔记…") }, enabled = writable, onClick = { menu = false; deleting = true }) } }
             }
@@ -555,6 +558,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             if (adding != null) TextButton(onClick = { adding = null }) { Text("取消新增") } else TextButton(onClick = { vm.removeProvider(current.id) }, enabled = !ui.locked && ui.data.providers.size > 1) { Text("删除此配置") }
         }
         }
+        DownloadDirectorySettings(ui, vm)
         StudySectionLabel("助手设置")
         StudyPanel { Card(onClick = { showLearner = !showLearner }, colors = CardDefaults.cardColors(containerColor = Color.Transparent)) {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {

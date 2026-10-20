@@ -93,7 +93,7 @@ class RainApi(private val client: OkHttpClient = defaultRainClient()) {
         val d = api(s.region, s.session, "/api/v3/classroom-report/student/lesson-info", mapOf("lesson_id" to numericId(lesson.lessonId)))
         val ids = d.optJSONArray("presentationIds") ?: error("这节课未返回课件目录，可能未开放课后回顾。")
         val title = d.optional("lessonName") ?: lesson.title
-        return (0 until ids.length()).map { Presentation(numericId(ids.get(it).toString()), "$title · 课件 ${it + 1}", lesson.lessonId) }
+        return (0 until ids.length()).map { Presentation(numericId(ids.get(it).toString()), "$title · 课件 ${it + 1}", lesson.lessonId, recordedAt = lesson.recordedAt) }
     }
     fun slides(s: Saved, id: String, lessonId: String = "", authorization: String = "", onAuthorization: (String) -> Unit = {}): Pair<String, List<Slide>> {
         val d = if (lessonId.isBlank()) api(s.region, s.session, "/api/v3/lesson/presentation/fetch", mapOf("presentation_id" to numericId(id)), authorization, onAuthorization = onAuthorization)
@@ -189,10 +189,10 @@ internal fun defaultRainClient() = OkHttpClient.Builder().followRedirects(false)
 
 fun activityPresentations(activities: org.json.JSONArray): List<Presentation> = activities.objects().flatMap { a ->
     val title = a.optional("title") ?: a.optional("name") ?: "课堂记录"
-    val refs = presentationRefs(a).map { Presentation(it, title) }
+    val refs = presentationRefs(a).map { Presentation(it, title, recordedAt = sourceRecordTime(a)) }
     // A type-14 courseware_id denotes a lesson, never a presentation.
     val lessonId = a.optional("courseware_id")
-    if (a.optInt("type") == 14 && lessonId?.matches(Regex("[0-9]{1,24}")) == true) listOf(Presentation("lesson:$lessonId", title, lessonId, true)) else refs
+    if (a.optInt("type") == 14 && lessonId?.matches(Regex("[0-9]{1,24}")) == true) listOf(Presentation("lesson:$lessonId", title, lessonId, true, sourceRecordTime(a))) else refs
 }.distinctBy { "${it.lessonId}:${it.id}" }
 
 fun parseSlides(d: JSONObject, report: Boolean): List<Slide> {

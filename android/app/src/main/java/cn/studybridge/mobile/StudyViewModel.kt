@@ -12,6 +12,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -21,13 +22,16 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-data class UiState(val data: Saved = Saved(), val tab: Int = 0, val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val activityPage: Int = 0, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi(), val chatgptLoginActive: Boolean = false, val chatgptStage: String = "", val chatgptPlanWelcome: Boolean = false, val modelNames: Map<String, String> = emptyMap(), val modelListRequest: String = "") { val locked get() = busy || chatgptLoginActive || (classUi.running && !classUi.paused) }
+data class UiState(val data: Saved = Saved(), val tab: Int = 0, val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val activityPage: Int = 0, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi(), val chatgptLoginActive: Boolean = false, val chatgptStage: String = "", val chatgptPlanWelcome: Boolean = false, val modelNames: Map<String, String> = emptyMap(), val modelListRequest: String = "", val materialsOpen: Boolean = false, val materialPane: String = "home", val localDocument: MaterialDocument? = null, val slideRecordedAt: String = "") { val locked get() = busy || chatgptLoginActive || (classUi.running && !classUi.paused) }
 
 class StudyViewModel(app: Application) : AndroidViewModel(app) {
     val noteReader = NoteReader()
     private val vault = Vault(app)
     private val disk = Mutex()
     private val rain = RainApi()
+    private val materials = MaterialStore(app)
+    private val downloads = DownloadStore(app)
+    private var exportDeck: UiState? = null
     private val ai = AiApi()
     private val chatgpt = ChatGptAuth()
     private val accountLock = Mutex()
@@ -52,7 +56,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
     fun notice(value: String) { state.update { it.copy(notice = value) } }
-    fun tab(value: Int) { state.update { it.copy(tab = value) }; if (value == 1) onResume() }
+    fun tab(value: Int) { state.update { if (value == 1 && it.localDocument != null) it.copy(tab = value, localDocument = null, slides = emptyList()) else it.copy(tab = value) }; if (value == 1) onResume() }
     private fun persist() { viewModelScope.launch(Dispatchers.IO) { disk.withLock { if (!storageBlocked) try { vault.save(state.value.data) } catch (_: Exception) { notice("本机记录保存失败，请检查存储空间。") } } } }
     private fun data(change: (Saved) -> Saved) { state.update { it.copy(data = change(it.data)) }; persist() }
     private suspend fun checkpoint(change: (Saved) -> Saved) = withContext(NonCancellable + Dispatchers.Main.immediate) {
@@ -105,7 +109,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     fun fillWebAttachment() = operation("带入当前课件") {
         val a = state.value.pending ?: error("先在课程中选择一页课件。")
         require(state.value.data.usesWeb)
-        webDriver().fill("${withLearnerProfile(state.value.data.tutorPrompt, state.value.data.learnerProfile)}\n\n请讲解这一页课件。资料来源：${a.label}\n${a.text}", a)
+        webDriver().fill("${withLearnerProfile(state.value.data.tutorPrompt, state.value.data.learnerProfile)}\n\n请讲解这份学习资料。资料来源：${a.label}\n${a.text}", a)
         state.update { it.copy(pending = null) }
         notice("课件已带入，请在网页核对附件并发送。")
     }
@@ -245,14 +249,14 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     fun openPresentation(p: Presentation) = if (p.isLesson) operation("读取本节课件目录") {
         val list = withContext(Dispatchers.IO) { rain.lessonPresentations(state.value.data, p) }
         state.update { it.copy(presentations = list, slides = emptyList(), notice = if (list.isEmpty()) "本节课未开放可读取的课件。" else "本节共 ${list.size} 份课件，点击查看页面。") }
-    } else loadSlides(p.id, p.lessonId, p.title)
-    fun loadSlides(id: String, lessonId: String = "", fallbackTitle: String = "") = operation("读取课件目录") {
+    } else loadSlides(p.id, p.lessonId, p.title, p.recordedAt)
+    fun loadSlides(id: String, lessonId: String = "", fallbackTitle: String = "", recordedAt: String = "") = operation("读取课件目录") {
         val (title, slides) = withContext(Dispatchers.IO) { rain.slides(state.value.data, id, lessonId) }
-        state.update { it.copy(slideTitle = if (title == "课件 $id" && fallbackTitle.isNotBlank()) fallbackTitle else title, presentationId = id, slides = slides, notice = if (slides.isEmpty()) "课件尚未开放可读取的页面。" else "已读取 ${slides.size} 页，可以提问或连续整理讲解笔记。") }
+        state.update { it.copy(localDocument = null, slideRecordedAt = recordedAt, slideTitle = if (title == "课件 $id" && fallbackTitle.isNotBlank()) fallbackTitle else title, presentationId = id, slides = slides, notice = if (slides.isEmpty()) "课件尚未开放可读取的页面。" else "已读取 ${slides.size} 页，可以提问或连续整理讲解笔记。") }
     }
     fun attach(slide: Slide) = operation("读取课件页面") {
-        val a = withContext(Dispatchers.IO) { rain.attachment(state.value.slideTitle, slide) }
-        state.update { it.copy(pending = a, tab = 0, notice = "已添加 ${a.label}。可在学习页带入或提问。") }
+        val a = withContext(Dispatchers.IO) { readAttachment(state.value, slide) }
+        state.update { it.copy(pending = a, tab = 0, materialsOpen = false, notice = "已添加 ${a.label}。可在学习页带入或提问。") }
         if (state.value.data.autoNotes && (!state.value.data.usesWeb || state.value.data.webClassConsent)) generateNote(a)
     }
     fun notes() { if (state.value.data.usesWeb) saveWebAnswer() else operation("整理学习笔记") { generateNote(state.value.pending) } }
@@ -274,7 +278,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         }
         state.update { it.copy(tab = 2) }
         buildNotebook(s.slideTitle, pages,
-            read = { page -> withContext(Dispatchers.IO) { rain.attachment(s.slideTitle, page) } },
+            read = { page -> withContext(Dispatchers.IO) { readAttachment(s, page) } },
             generate = { a ->
                 val text = StringBuilder()
                 val input = listOf(Message("user", a.text.ifBlank { "请阅读课件图片并整理笔记。" }, a.image, a.label))
@@ -292,14 +296,14 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         )
         notice("所选 ${pages.size} 页笔记已保存为一份，可编辑和导出。")
     }
-    private suspend fun generateNote(a: Attachment?) {
+    private suspend fun generateNote(a: Attachment?): Note {
         val s = state.value.data; val p = s.provider()
         if (s.usesWeb) {
             require(a != null) { "请在学习页保存已有的网页回答，或先选择课件。" }
             val text = webGenerate(a, s.notesPrompt)
             val n = Note(title = a.label, content = text, source = a.label, model = "ChatGPT 网页")
             checkpoint { it.copy(notes = listOf(n) + it.notes, webPending = null) }; notice("网页讲解已保存为笔记。")
-            return
+            return n
         }
         val input = a?.let { listOf(Message("user", it.text.ifBlank { "请根据课件图片整理笔记。" }, it.image, it.label)) } ?: s.chat().messages.takeLast(24)
         require(input.isNotEmpty()) { "先选择课件页面或进行对话，再整理笔记。" }
@@ -309,8 +313,96 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         ai.stream(authorizedProvider(p), noteMessages(s.notesPrompt, input, source, s.learnerProfile)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
         require(text.isNotBlank()) { "模型未生成笔记。" }
         val note = Note(title = a?.label ?: s.chat().title, content = text.toString(), source = source, model = "${p.name} / ${p.model}")
-        data { it.copy(notes = listOf(note) + it.notes) }
+        checkpoint { it.copy(notes = listOf(note) + it.notes) }
         notice("笔记已保存，可在笔记页编辑和导出。")
+        return note
+    }
+    fun openMaterials() { if (!state.value.locked) state.update { it.copy(materialsOpen = true, materialPane = "home") } }
+    fun closeMaterials() { state.update { it.copy(materialsOpen = false) } }
+    fun materialPane(value: String) { if (!state.value.locked) state.update { it.copy(materialPane = value) } }
+    fun browseRainMaterials() {
+        if (state.value.locked) return
+        state.update { it.copy(materialPane = "rain", localDocument = null, slides = emptyList(), course = null, presentations = emptyList()) }
+        if (state.value.data.session.isBlank()) { closeMaterials(); tab(1); notice("请先连接雨课堂，再选择学习资料。") } else loadCourses()
+    }
+    private fun showMaterial(doc: MaterialDocument) {
+        state.update { it.copy(localDocument = doc, slideTitle = doc.material.title, slideRecordedAt = "导入时间：${readableTime(doc.material.importedAt)}", presentationId = "", slides = doc.pages.map { p -> Slide(p.page, if (doc.material.format in listOf("pdf", "image") || p.images.isNotEmpty()) "local" else "", p.text) }, materialsOpen = true, materialPane = "pages") }
+    }
+    fun openMaterial(m: StudyMaterial) = operation("读取本机资料") { showMaterial(withContext(Dispatchers.IO) { materials.read(m) }) }
+    fun importMaterial(uri: Uri, kind: String) = operation("导入学习资料") {
+        var imported: MaterialDocument? = null
+        try {
+            val doc = withContext(NonCancellable + Dispatchers.IO) { materials.importDocument(uri, kind) }; imported = doc
+            val note = if (kind == "notes") Note(title = doc.material.title, content = doc.noteText.ifBlank { "# ${doc.material.title}\n\n原始笔记共 ${doc.pages.size} 页。点击「AI 讲解」选择原文页面；此处未伪造图片中的文字。" }, source = "外部导入 · ${doc.material.title} · ${readableTime(doc.material.importedAt)}", model = "外部导入", materialId = doc.material.id) else null
+            val savedDoc = doc.copy(material = doc.material.copy(noteId = note?.id.orEmpty()))
+            checkpoint { it.copy(materials = listOf(savedDoc.material) + it.materials, notes = if (note != null) listOf(note) + it.notes else it.notes) }
+            showMaterial(savedDoc); notice("已导入 ${doc.material.title}，请选择页面或分段讲解。")
+        } finally {
+            imported?.let { doc -> if (state.value.data.materials.none { it.id == doc.material.id }) withContext(NonCancellable + Dispatchers.IO) { materials.remove(doc.material.id) } }
+        }
+    }
+    private fun readAttachment(s: UiState, slide: Slide): Attachment = s.localDocument?.let { materials.attachment(it, slide.page) } ?: rain.attachment(s.slideTitle, slide)
+    fun explainPage(slide: Slide) = operation("讲解并保存") {
+        val s = state.value
+        val a = withContext(Dispatchers.IO) { readAttachment(s, slide) }
+        state.update { it.copy(materialsOpen = false, tab = 0, pending = null) }
+        val note = generateNote(a)
+        if (!s.data.usesWeb) checkpoint { d -> d.copy(conversations = d.conversations.map { c -> if (c.id == s.data.chat().id) c.copy(messages = c.messages + Message("user", a.text, a.image, a.label) + Message("assistant", note.content)) else c }) }
+    }
+    fun explainNote(note: Note) {
+        val material = state.value.data.materials.find { it.id == note.materialId }
+        if (material != null) { openMaterial(material); return }
+        if (note.content.length > 100_000) { notice("这份笔记较长，请导出后通过「导入笔记」分段讲解。"); return }
+        operation("准备笔记讲解") {
+            state.update { it.copy(pending = Attachment(null, note.title, "用户选择的笔记原文：\n${note.content}"), materialsOpen = false, tab = 0) }
+            notice("笔记已带入学习，请输入问题或带入网页讲解。")
+        }
+    }
+    fun setDownloadDirectory(uri: Uri?) = operation("设置下载文件夹") {
+        val old = state.value.data.downloadTreeUri
+        try {
+            val name = if (uri == null) "" else withContext(Dispatchers.IO) { downloads.retain(uri) }
+            checkpoint { it.copy(downloadTreeUri = uri?.toString().orEmpty(), downloadDirectoryName = name) }
+            if (old != uri?.toString()) withContext(Dispatchers.IO) { downloads.release(old) }
+            notice(if (uri == null) "下载时将询问保存位置。" else "下载文件夹已保存：$name")
+        } finally { if (uri != null && state.value.data.downloadTreeUri != uri.toString()) withContext(NonCancellable + Dispatchers.IO) { downloads.release(uri.toString()) } }
+    }
+    fun prepareDeckDownload(): String? {
+        if (state.value.locked || state.value.slides.isEmpty() || state.value.localDocument != null) return null
+        exportDeck = state.value
+        return downloadName(state.value.slideTitle, "pdf")
+    }
+    fun cancelDeckDownload() { exportDeck = null }
+    fun downloadDeck(destination: Uri? = null) {
+        val snapshot = exportDeck ?: return
+        exportDeck = null
+        operation("下载课件 PDF") {
+            val temp = withContext(Dispatchers.IO) { java.io.File.createTempFile("slides-", ".pdf", getApplication<Application>().cacheDir) }
+            try {
+                withContext(Dispatchers.IO) {
+                    temp.outputStream().buffered().use { out ->
+                        val writer = ImagePdfWriter(out, snapshot.slideTitle)
+                        snapshot.slides.forEachIndexed { index, slide ->
+                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                            state.update { it.copy(operation = "下载课件 ${index + 1}/${snapshot.slides.size}") }
+                            val a = readAttachment(snapshot, slide)
+                            if (a.image != null) {
+                                val source = boundedBitmap(android.util.Base64.decode(a.image.substringAfter(','), android.util.Base64.DEFAULT))
+                                try { val page = captionedBitmap(source, "第 ${slide.page} 页"); try { writer.add(page) } finally { page.recycle() } } finally { source.recycle() }
+                            } else textPageBitmaps(a.text, "第 ${slide.page} 页").forEach { page -> try { writer.add(page) } finally { page.recycle() } }
+                        }
+                        writer.finish()
+                    }
+                    downloads.write(snapshot.data.downloadTreeUri, destination, downloadName(snapshot.slideTitle, "pdf"), "application/pdf") { temp.inputStream() }
+                }
+                notice("课件 PDF 已保存，共 ${snapshot.slides.size} 个开放页面；由页面重建，并非原始 PPT。")
+            } finally { temp.delete() }
+        }
+    }
+    fun exportNote(note: Note, text: String, destination: Uri? = null) = operation("导出 Markdown") {
+        val tree = state.value.data.downloadTreeUri
+        withContext(Dispatchers.IO) { downloads.write(tree, destination, downloadName(note.title, "md"), "text/markdown") { (text + "\n\n---\n来源：${note.source}\n模型：${note.model}\n").byteInputStream(Charsets.UTF_8) } }
+        notice("Markdown 笔记已保存。")
     }
     fun discoverClasses() = operation("查找正在进行的课堂") {
         val lessons = withContext(Dispatchers.IO) { rain.onLessons(state.value.data) }

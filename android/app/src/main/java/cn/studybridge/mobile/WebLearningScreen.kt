@@ -60,6 +60,7 @@ import androidx.compose.ui.viewinterop.AndroidView
             val labelledSave = maxWidth >= 360.dp && LocalDensity.current.fontScale <= 1.2f
             Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 20.dp, end = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("ChatGPT 网页", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                MaterialsButton(ui, vm)
                 if (ui.busy) TextButton(onClick = vm::stop) { Text("停止") }
                 else if (labelledSave) TextButton(onClick = vm::saveWebAnswer, enabled = !ui.locked) { Icon(Icons.Outlined.BookmarkAdd, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("保存回答") }
                 else IconButton(onClick = vm::saveWebAnswer, enabled = !ui.locked) { Icon(Icons.Outlined.BookmarkAdd, "保存回答", Modifier.size(22.dp)) }

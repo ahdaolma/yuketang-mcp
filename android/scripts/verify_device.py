@@ -18,7 +18,7 @@ finally:
     transfer = subprocess.run(['adb', 'pull', '/sdcard/Pictures/StudyUiReview', str(target)], check=False)
     if passed:
         transfer.check_returncode()
-        required = {'sample-courses-light.png', 'sample-notes-light.png', 'sample-note-reading.png', 'sample-class-large-text.png', 'sample-settings-large-text.png', 'sample-notes-dark.png', 'sample-settings-dark.png', 'sample-note-reading-dark.png', 'sample-note-reading-large-text.png', 'sample-web-restored.png', 'sample-learner-settings.png', 'sample-learner-dark.png', 'sample-model-picker.png'}
+        required = {'sample-courses-light.png', 'sample-notes-light.png', 'sample-note-reading.png', 'sample-class-large-text.png', 'sample-settings-large-text.png', 'sample-notes-dark.png', 'sample-settings-dark.png', 'sample-note-reading-dark.png', 'sample-note-reading-large-text.png', 'sample-web-restored.png', 'sample-learner-settings.png', 'sample-learner-dark.png', 'sample-model-picker.png', 'sample-materials.png'}
         found = {p.name for p in target.rglob('*.png')}
         assert required <= found, f'Missing UI review screenshots: {required - found}'
         screenshots = [p for p in target.rglob('*.png') if p.name in required]
