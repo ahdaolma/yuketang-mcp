@@ -36,7 +36,8 @@ class ResponsiveReadingTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, scale)) { StudyTheme(dark) {
                 Box(if (width == null) Modifier.fillMaxSize() else Modifier.width(width.dp).fillMaxHeight()) {
                     StudyFrame(state.value, { state.value = state.value.copy(tab = it) }, {}, {}, noteOpen = state.value.tab == 2 && vm.noteReader.id != null) { padding ->
-                        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
+                        Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
+                            StudyOperationProgress(state.value)
                             when (state.value.tab) { 0 -> ChatScreen(state.value, vm); 2 -> NotesScreen(state.value, vm); else -> Text("课程导航已到达") }
                         }
                     }
@@ -131,6 +132,8 @@ class ResponsiveReadingTest {
             if (compose.onAllNodesWithContentDescription("收起悬浮工具").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithContentDescription("收起悬浮工具").performClick()
             compose.runOnIdle { state.value = state.value.copy(busy = false, operation = "") }
             val longDraft = "解释复制：" + "模板方向、配对关系和具体步骤。".repeat(50)
+            // Re-enter the composer as a user would after generation unlocked it.
+            compose.onNode(hasSetTextAction()).performClick()
             compose.onNode(hasSetTextAction()).performTextReplacement(longDraft)
             compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("悬浮阅读工具").fetchSemanticsNodes().isNotEmpty() }
             compose.onNode(hasSetTextAction()).assertTextEquals(longDraft)

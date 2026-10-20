@@ -145,6 +145,13 @@ import androidx.compose.ui.unit.dp
     }
 }
 
+@Composable fun StudyOperationProgress(ui: UiState) {
+    if (!ui.busy) return
+    val inline = LocalInlineReadingHeader.current
+    LinearProgressIndicator(Modifier.fillMaxWidth().height(if (inline) 2.dp else 4.dp))
+    if (!inline) Text(ui.operation, Modifier.padding(horizontal = 16.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall)
+}
+
 @Composable fun StudySectionLabel(text: String) {
     Text(text, Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
