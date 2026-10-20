@@ -1,141 +1,75 @@
 package cn.studybridge.mobile
 
 import android.provider.DocumentsContract
+import android.util.Base64
 import androidx.compose.material3.Text
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.lifecycle.ViewModelProvider
-import org.json.JSONObject
+import androidx.lifecycle.ViewModelStore
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
+import java.io.IOException
+import java.util.concurrent.atomic.AtomicBoolean
 
-// Exercise the same import, generation and encrypted save path as the app using
-// a local document provider and synthetic web response, never a real account.
 class MaterialWorkflowTest {
     @get:Rule val compose = createAndroidComposeRule<WebFixtureActivity>()
-
-    @Test fun manuallySendingAttachedPageThenSavingWebAnswerRetainsOriginalImage() {
-        val context = compose.activity; val vault = Vault(context); val previous = vault.load()
+    private fun provider() = Provider("material-fixture", "测试模型", "https://fixture.example/v1", "fixture-key", "fixture-model", true)
+    @Test fun nativeImageExplanationRetainsOriginalImageAndEncryptedNotebook() {
+        val context = compose.activity
+        val app = noteTestApplication(context.applicationContext)
+        val p = provider(); Vault(app).save(Saved(providers = listOf(p), selectedProvider = p.id))
         val root = DocumentsContract.buildDocumentUri("cn.studybridge.mobile.downloadfixture", "root")
-        val uri = requireNotNull(DocumentsContract.createDocument(context.contentResolver, root, "image/png", "原页图片.png"))
-        val image = syntheticSlideImage()
-        requireNotNull(context.contentResolver.openOutputStream(uri)).use { it.write(android.util.Base64.decode(image.substringAfter(','), android.util.Base64.DEFAULT)) }
-        lateinit var vm: StudyViewModel
-        var initialized = false; var sent = 0; var filled = ""
+        val uri = requireNotNull(DocumentsContract.createDocument(context.contentResolver, root, "image/png", "原页-${newId()}.png"))
+        requireNotNull(context.contentResolver.openOutputStream(uri)).use { it.write(Base64.decode(syntheticSlideImage().substringAfter(','), Base64.DEFAULT)) }
+        val store = ViewModelStore(); lateinit var vm: StudyViewModel
         try {
-            vault.save(Saved())
-            compose.activityRule.scenario.onActivity { vm = ViewModelProvider(it)[StudyViewModel::class.java]; initialized = true }
-            compose.setContent { Text("图文笔记流程回归") }
+            compose.runOnUiThread { vm = noteTestViewModel(app, store, ai = fixtureAiApi("完整的图片讲解")) }
+            compose.setContent { Text("原页流程回归") }
             compose.waitUntil(5000) { vm.ui.value.ready }
             compose.runOnIdle { vm.importMaterial(uri, "courseware") }
-            compose.waitUntil(5000) { !vm.ui.value.busy && vm.ui.value.slides.size == 1 }
-            compose.runOnIdle { vm.attach(vm.ui.value.slides.single()) }
-            compose.waitUntil(5000) { !vm.ui.value.busy && vm.ui.value.pending != null }
-            val source = requireNotNull(vm.ui.value.pending)
-            assertTrue(source.imageRef.isNotBlank())
-            compose.runOnIdle {
-                vm.bindWeb(object : WebPagePort {
-                    override suspend fun call(action: String, payload: JSONObject): JSONObject = when (action) {
-                        "prepare" -> { filled = payload.getString("text"); assertEquals(source.image, payload.getString("image")); JSONObject().put("ok", true) }
-                        "send" -> { sent++; error("Manual fill must never send") }
-                        "answer" -> {
-                            val pending = requireNotNull(vault.load().webPending)
-                            assertTrue(filled.contains(pending.marker)); assertEquals(pending.marker, payload.getString("marker"))
-                            JSONObject().put("finished", true).put("markdown", "图片中的 DNA 与 RNA 对照讲解")
-                        }
-                        else -> error("Unexpected action: $action")
-                    }
-                })
-                vm.fillWebAttachment()
-            }
-            compose.waitUntil(5000) { !vm.ui.value.busy && vm.ui.value.data.webPending != null }
-            assertEquals(0, sent); assertNull(vm.ui.value.pending)
-            assertEquals(source.imageRef, vault.load().webPending!!.imageRef)
-            compose.runOnIdle { vm.saveWebAnswer() }
-            compose.waitUntil(6000) { !vm.ui.value.busy && vm.ui.value.data.notes.size == 1 }
-            val note = vault.load().notes.single()
-            assertNull(vault.load().webPending)
-            assertEquals(source.imageRef, sourceImagePattern.find(note.content)!!.groupValues[2])
-            assertEquals(source.image, SourceImages(context).data(source.imageRef))
-            assertTrue(note.content.contains("DNA 与 RNA")); assertEquals(0, sent)
-        } finally {
-            if (initialized) compose.runOnIdle { vm.stop(); vm.bindWeb(null) }
-            runCatching { vault.load().materials.filter { m -> previous.materials.none { it.id == m.id } }.forEach { MaterialStore(context).remove(it.id) } }
-            vault.save(previous); DocumentsContract.deleteDocument(context.contentResolver, uri)
-        }
+            compose.waitUntil(10000) { !vm.ui.value.busy && vm.ui.value.data.materials.size == 1 }
+            val slide = vm.ui.value.slides.single()
+            compose.runOnIdle { vm.explainPage(slide) }
+            compose.waitUntil(10000) { !vm.ui.value.busy && vm.ui.value.data.notes.size == 1 }
+            val note = Vault(app).load().notes.single()
+            assertTrue(note.content.contains("完整的图片讲解"))
+            val image = sourceImagePattern.find(note.content)!!.groupValues[2]
+            assertTrue(vm.sourceImages.bytes(image).isNotEmpty())
+            assertTrue(vm.sourceImages.export(note.content).contains("data:image/"))
+        } finally { compose.runOnIdle { store.clear() }; DocumentsContract.deleteDocument(context.contentResolver, uri) }
     }
-
-    @Test fun importedNotesSurviveRejectedDraftThenExplainAndReloadWithoutOverwritingOriginal() {
-        val context = compose.activity
-        val title = "酶与催化 Enzymes 完整外部笔记.md"
+    @Test fun importedOriginalSurvivesFailedGenerationAndSuccessfulExplanationKeepsProfileAndFocusMode() {
+        val context = compose.activity; val app = noteTestApplication(context.applicationContext)
         val original = "# 酶的活性中心\n\n结合基团与催化基团 **不能混淆**。\n"
-        val vault = Vault(context)
-        val previous = vault.load()
+        val p = provider(); Vault(app).save(Saved(providers = listOf(p), selectedProvider = p.id, learnerProfile = "基础薄弱，先讲术语", superFocusNotes = true))
         val root = DocumentsContract.buildDocumentUri("cn.studybridge.mobile.downloadfixture", "root")
-        val uri = requireNotNull(DocumentsContract.createDocument(context.contentResolver, root, "text/markdown", title))
+        val uri = requireNotNull(DocumentsContract.createDocument(context.contentResolver, root, "text/markdown", "外部笔记-${newId()}.md"))
         requireNotNull(context.contentResolver.openOutputStream(uri)).use { it.write(original.toByteArray()) }
-        lateinit var vm: StudyViewModel
-        var initialized = false
+        val accept = AtomicBoolean(false)
+        val ai = fixtureAiApi("正确的酶机制讲解", inspect = { request ->
+            val buffer = okio.Buffer(); request.body!!.writeTo(buffer); val sent = buffer.readUtf8()
+            assertTrue(sent.contains("基础薄弱")); assertTrue(sent.contains("超重点模式")); assertTrue(sent.contains("结合基团")); assertNull(request.header("Cookie"))
+            if (!accept.get()) throw IOException("模拟网络中断")
+        })
+        val store = ViewModelStore(); lateinit var vm: StudyViewModel
         try {
-            vault.save(Saved(webClassConsent = true, learnerProfile = "基础薄弱，先讲术语"))
-            compose.activityRule.scenario.onActivity { vm = ViewModelProvider(it)[StudyViewModel::class.java]; initialized = true }
-            compose.setContent { Text("资料流程回归") }
+            compose.runOnUiThread { vm = noteTestViewModel(app, store, ai = ai) }
+            compose.setContent { Text("导入资料回归") }
             compose.waitUntil(5000) { vm.ui.value.ready }
             compose.runOnIdle { vm.importMaterial(uri, "notes") }
-            compose.waitUntil(5000) { !vm.ui.value.busy && vm.ui.value.data.materials.size == 1 }
+            compose.waitUntil(10000) { !vm.ui.value.busy && vm.ui.value.data.notes.size == 1 }
             val imported = vm.ui.value.data.notes.single()
-            val material = vm.ui.value.data.materials.single()
             assertEquals(original, imported.content)
-            assertEquals(title, imported.title)
-            assertEquals(material.id, imported.materialId)
-            assertEquals(imported.id, material.noteId)
-            assertEquals(original, MaterialStore(context).read(material).noteText)
-
-            var acceptDraft = false
-            var sends = 0
-            val prompts = mutableListOf<String>()
-            compose.runOnIdle {
-                vm.bindWeb(object : WebPagePort {
-                    override suspend fun call(action: String, payload: JSONObject): JSONObject = when (action) {
-                        "prepare" -> { prompts.add(payload.getString("text")); JSONObject().put("ok", acceptDraft) }
-                        "ready" -> JSONObject().put("ready", true)
-                        "send" -> {
-                            // The pending marker must be durable before sending once.
-                            assertEquals(payload.getString("marker"), vault.load().webPending!!.marker)
-                            sends++
-                            JSONObject().put("sent", true)
-                        }
-                        "answer" -> JSONObject().put("matchedUser", true).put("finished", true).put("markdown", "### 概念与原理讲解\n\nAI 讲解：结合基团参与底物结合，催化基团参与反应。")
-                        else -> error("Unexpected action: $action")
-                    }
-                })
-                vm.explainPage(vm.ui.value.slides.single())
-            }
-            compose.waitUntil(5000) { !vm.ui.value.busy }
-            assertEquals(0, sends)
-            assertNull(vm.ui.value.data.webPending)
+            val slide = vm.ui.value.slides.first()
+            compose.runOnIdle { vm.explainPage(slide) }
+            compose.waitUntil(10000) { !vm.ui.value.busy }
             assertEquals(listOf(imported), vm.ui.value.data.notes)
-            assertEquals(original, vault.load().notes.single().content)
-
-            compose.runOnIdle { acceptDraft = true; vm.explainPage(vm.ui.value.slides.single()) }
-            compose.waitUntil(12000) { !vm.ui.value.busy && vm.ui.value.data.notes.size == 2 }
-            assertEquals(1, sends)
-            assertNull(vm.ui.value.data.webPending)
-            assertTrue(prompts.all { it.contains(NOTE_FORMAT) && it.contains(APP_CONTEXT) && it.contains("基础薄弱，先讲术语") && it.contains(original.trim()) && it.contains(title) })
-            val loaded = vault.load()
-            assertNull(loaded.webPending)
-            assertEquals(original, loaded.notes.single { it.id == imported.id }.content)
-            assertTrue(loaded.notes.single { it.id != imported.id }.content.contains("AI 讲解"))
-            assertEquals(listOf(material), loaded.materials)
-            compose.runOnIdle { vm.explainNote(imported) }
-            compose.waitUntil(5000) { !vm.ui.value.busy && vm.ui.value.materialsOpen }
-            assertEquals(title, vm.ui.value.slideTitle)
-            assertEquals(material.id, vm.ui.value.localDocument!!.material.id)
-        } finally {
-            if (initialized) compose.runOnIdle { vm.stop(); vm.bindWeb(null) }
-            runCatching { vault.load().materials.filter { m -> previous.materials.none { it.id == m.id } }.forEach { MaterialStore(context).remove(it.id) } }
-            vault.save(previous)
-            DocumentsContract.deleteDocument(context.contentResolver, uri)
-        }
+            accept.set(true)
+            compose.runOnIdle { vm.explainPage(slide) }
+            compose.waitUntil(10000) { !vm.ui.value.busy && vm.ui.value.data.notes.size == 2 }
+            val loaded = Vault(app).load()
+            assertEquals(original, loaded.notes.first { it.id == imported.id }.content)
+            assertTrue(loaded.notes.any { it.content.contains("正确的酶机制讲解") }); assertTrue(loaded.superFocusNotes)
+        } finally { compose.runOnIdle { store.clear() }; DocumentsContract.deleteDocument(context.contentResolver, uri) }
     }
 }

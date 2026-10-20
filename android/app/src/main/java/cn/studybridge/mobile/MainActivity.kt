@@ -126,25 +126,7 @@ class MainActivity : ComponentActivity() {
     }
     var previousTab by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(ui.tab) { if (ui.tab != 3) previousTab = ui.tab }
-    var webRevision by remember { mutableIntStateOf(0) }
-    var initialWebLoaded by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    val web = remember(context) { ChatGptWebSession(context, { webRevision++ }, { url ->
-        runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
-    }) }
-    DisposableEffect(web) {
-        vm.bindWeb(web)
-        onDispose { vm.bindWeb(null); web.destroy() }
-    }
-    LaunchedEffect(ui.ready, ui.data.usesWeb) {
-        if (ui.ready && ui.data.usesWeb && !initialWebLoaded) { initialWebLoaded = true; web.load(ui.data.webPending?.url ?: CHATGPT_WEB) }
-        if (ui.data.usesWeb) web.view.onResume() else web.view.onPause()
-    }
-    LaunchedEffect(webRevision) { vm.webLocation(web.pageUrl) }
-    BackHandler(enabled = ui.tab == 3) { vm.tab(previousTab) }
-    BackHandler(enabled = ui.tab == 0 && ui.data.usesWeb && web.view.canGoBack()) {
-        if (ui.locked) vm.notice("请先暂停上课模式或停止整理，再返回上一页。") else web.view.goBack()
-    }
+    BackHandler(enabled = ui.tab == 3) { if (ui.settingsPage.isNotEmpty()) vm.settingsPage("") else vm.tab(previousTab) }
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(ui.notice) {
         if (ui.notice.isNotBlank()) {
@@ -164,22 +146,21 @@ class MainActivity : ComponentActivity() {
     }
     val controlFeedback = remember(vm, unavailable) { ControlFeedback(vm::notice, unavailable) }
     CompositionLocalProvider(LocalControlFeedback provides controlFeedback) {
-    StudyFrame(ui, onTab = { target -> if (target == 3) previousTab = ui.tab; vm.tab(target) }, onBack = { if (ui.tab == 2) vm.noteReader.closeRequested = true else vm.tab(previousTab) }, onStop = vm::stop, snackbar = snackbar, noteOpen = ui.tab == 2 && ui.data.notes.any { it.id == vm.noteReader.id }, onClassToggle = { if (ui.classUi.paused) vm.resumeClass() else vm.pauseClass() }) { padding ->
+    StudyFrame(ui, onTab = { target -> if (target == 3) previousTab = ui.tab; vm.tab(target) }, onBack = { if (ui.tab == 2) vm.noteReader.closeRequested = true else if (ui.tab == 3 && ui.settingsPage.isNotEmpty()) vm.settingsPage("") else vm.tab(previousTab) }, onStop = vm::stop, snackbar = snackbar, noteOpen = ui.tab == 2 && ui.data.notes.any { it.id == vm.noteReader.id }, onClassToggle = { if (ui.classUi.paused) vm.resumeClass() else vm.pauseClass() }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             if (ui.storageError.isNotBlank()) Text(ui.storageError, Modifier.fillMaxWidth().padding(16.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
             StudyOperationProgress(ui)
             if (!ui.ready) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            else StudyPageContent(ui, vm, web, webRevision)
+            else StudyPageContent(ui, vm)
         }
     }
     LearningMaterialsHost(ui, vm)
     }
 }
 
-@Composable fun StudyPageContent(ui: UiState, vm: StudyViewModel, web: ChatGptWebSession, webRevision: Int) {
+@Composable fun StudyPageContent(ui: UiState, vm: StudyViewModel) {
     Box(Modifier.fillMaxSize()) {
-        if (ui.data.usesWeb) WebLearningScreen(ui, vm, web, ui.tab == 0, webRevision)
-        AnimatedContent(targetState = if (ui.tab == 0 && ui.data.usesWeb) -1 else ui.tab, modifier = Modifier.fillMaxSize(), transitionSpec = {
+        AnimatedContent(targetState = ui.tab, modifier = Modifier.fillMaxSize(), transitionSpec = {
             val direction = if (targetState > initialState) 1 else -1
             (slideInHorizontally(tween(240, easing = FastOutSlowInEasing)) { direction * it / 18 } + fadeIn(tween(180))) togetherWith
                 (slideOutHorizontally(tween(220, easing = FastOutSlowInEasing)) { -direction * it / 24 } + fadeOut(tween(130)))
@@ -192,7 +173,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable fun Markdown(text: String) {
+@Composable fun Markdown(text: String, sourceOffset: Int? = null) {
     val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
     val color = colors.onSurface.toArgb()
@@ -213,11 +194,17 @@ class MainActivity : ComponentActivity() {
             }).build()
     }
     val dark = colors.background.luminance() < 0.5f
-    val formatted by produceState<android.text.Spanned?>(null, text, renderer, density, dark) { value = withContext(Dispatchers.Default) { renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(text)), density, dark) } }
-    AndroidView(factory = { TextView(it).apply { textSize = 16f; setTextIsSelectable(true); setLineSpacing(0f, 1.3f) } }, modifier = Modifier.fillMaxWidth(), update = {
+    val formatted by produceState<Pair<String, android.text.Spanned>?>(null, text, renderer, density, dark) { value = withContext(Dispatchers.Default) { text to renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(text)), density, dark) } }
+    val selectionController = LocalNoteSelection.current
+    val personalMarks = LocalNoteAnnotations.current
+    val decorated = remember(formatted, text, sourceOffset, personalMarks) { formatted?.takeIf { it.first == text }?.second?.let { renderPersonalAnnotations(it, text, sourceOffset, personalMarks) } }
+    AndroidView(factory = { NoteSelectableTextView(it).apply { textSize = 16f; setTextIsSelectable(true); setLineSpacing(0f, 1.3f) } }, modifier = Modifier.fillMaxWidth(), update = {
         if (it.currentTextColor != color) it.setTextColor(color)
         if (kotlin.math.abs(it.textSize - bodySize) > 0.1f) it.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, bodySize)
-        val parsed = formatted
+        it.controller = if (decorated != null) selectionController else null
+        it.block = if (sourceOffset != null && decorated != null) NoteSelectionBlock(text, sourceOffset) else null
+        if (selectionController != null) it.useApplicationMenu() else it.customSelectionActionModeCallback = null
+        val parsed = decorated
         if (parsed != null && it.tag !== parsed) { renderer.setParsedMarkdown(it, parsed); it.tag = parsed }
     })
 }
@@ -438,7 +425,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 FilledTonalButton(colors = classButtonColors, onClick = vm::discoverClasses, enabled = !ui.locked && ui.data.session.isNotBlank()) { Icon(Icons.Outlined.PlayCircleOutline, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (ui.data.session.isBlank()) "登录后开启上课模式" else "查找正在上的课") }
                 ui.liveLessons.forEach { lesson -> FilledTonalButton(colors = classButtonColors, onClick = { vm.startClass(lesson) }, enabled = !ui.locked, modifier = Modifier.fillMaxWidth()) { Text("进入：${lesson.title}") } }
             }
-            Text(if (ui.data.usesWeb) "网页跟课为实验功能 · 保持 App 前台" else "进入会登记入课 · 保持 App 前台", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("进入会登记入课 · 保持 App 前台", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -456,6 +443,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
     var menu by remember { mutableStateOf(false) }
     var details by remember { mutableStateOf(false) }
     var markLegend by remember { mutableStateOf(false) }
+    var remarks by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     var titleDraft by remember { mutableStateOf("") }
     var query by rememberSaveable { mutableStateOf("") }
@@ -485,10 +473,11 @@ private fun preview(bytes: ByteArray): Bitmap? {
         if (uri != null && snapshot != null) vm.exportNote(snapshot.first, snapshot.second, uri)
     }
     if (note != null) {
-        val writable = !ui.locked && ui.data.noteWritable(note.id)
+        val writable = ui.noteEditable(note.id)
+        val removable = !ui.locked && ui.data.noteWritable(note.id)
         if (leaving) AlertDialog(onDismissRequest = { leaving = false }, title = { Text("保存这次修改？") }, text = { Text("切换底部标签会保留草稿。返回笔记列表前，可以保存或放弃这次修改。") }, confirmButton = { TextButton(onClick = { if (vm.editNote(note.id, reader.draft)) { reader.close(); leaving = false } }, enabled = writable) { Text("保存并返回") } }, dismissButton = { FlowRow { TextButton(onClick = { vm.discardNoteDraft(note.id); reader.close(); leaving = false }) { Text("放弃修改") }; TextButton(onClick = { leaving = false }) { Text("继续编辑") } } })
-        if (deletingPages) NotePageDeletion(note, vm, writable && !reader.editing) { deletingPages = false }
-        if (deleting) AlertDialog(onDismissRequest = { deleting = false }, title = { Text("删除这份笔记？") }, text = { Text("“${note.title}”将从本机删除，此操作无法撤销。") }, confirmButton = { TextButton(onClick = { if (vm.deleteNote(note.id)) { reader.close(); deleting = false } }, enabled = writable, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("删除笔记") } }, dismissButton = { TextButton(onClick = { deleting = false }) { Text("保留笔记") } })
+        if (deletingPages) NotePageDeletion(note, vm, removable && !reader.editing) { deletingPages = false }
+        if (deleting) AlertDialog(onDismissRequest = { deleting = false }, title = { Text("删除这份笔记？") }, text = { Text("“${note.title}”将从本机删除，此操作无法撤销。") }, confirmButton = { TextButton(onClick = { if (vm.deleteNote(note.id)) { reader.close(); deleting = false } }, enabled = removable, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("删除笔记") } }, dismissButton = { TextButton(onClick = { deleting = false }) { Text("保留笔记") } })
         if (renaming) AlertDialog(onDismissRequest = { renaming = false }, title = { Text("重命名笔记") }, text = {
             OutlinedTextField(titleDraft, { titleDraft = it.take(120) }, label = { Text("笔记标题") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         }, confirmButton = { TextButton(onClick = { if (vm.renameNote(note.id, titleDraft)) renaming = false }, enabled = writable && titleDraft.isNotBlank()) { Text("保存标题") } }, dismissButton = { TextButton(onClick = { renaming = false }) { Text("取消") } })
@@ -499,21 +488,23 @@ private fun preview(bytes: ByteArray): Bitmap? {
                     DropdownMenuItem(text = { Text(if (note.pinned) "取消置顶" else "置顶笔记") }, enabled = !ui.locked, onClick = { menu = false; vm.toggleNotePin(note.id) })
                     DropdownMenuItem(text = { Text("重命名笔记") }, enabled = writable, onClick = { menu = false; titleDraft = note.title; renaming = true })
                     DropdownMenuItem(text = { Text("移动到分类") }, enabled = !ui.locked, onClick = { menu = false; initialListAction = "move"; actionNoteId = note.id })
-                    if (!reader.editing) DropdownMenuItem(text = { Text("编辑笔记") }, enabled = writable, onClick = { menu = false; reader.draft = note.content; reader.editing = true })
+                    if (!reader.editing) DropdownMenuItem(text = { Text("编辑笔记") }, enabled = writable, onClick = { menu = false; reader.beginEditing(note) })
                     DropdownMenuItem(text = { Text("导出 Markdown") }, enabled = !ui.locked, onClick = {
                         menu = false
                         val text = if (reader.editing) reader.draft else note.content
                         if (ui.data.downloadTreeUri.isNotBlank()) vm.exportNote(note, text) else { exportSnapshot = note to text; export.launch(downloadName(note.title, "md")) }
                     })
                     DropdownMenuItem(text = { Text("AI 讲解") }, enabled = !ui.locked && (!reader.editing || reader.draft == note.content), onClick = { menu = false; vm.explainNote(note) })
+                    DropdownMenuItem(text = { Text("我的标记与备注") }, onClick = { menu = false; remarks = true })
                     DropdownMenuItem(text = { Text("标记说明") }, onClick = { menu = false; markLegend = true })
                     DropdownMenuItem(text = { Text("来源与模型") }, onClick = { menu = false; details = true })
                     HorizontalDivider()
-                    DropdownMenuItem(text = { Text("按页删除内容…") }, enabled = writable && !reader.editing, onClick = { menu = false; deletingPages = true })
-                    DropdownMenuItem(text = { Text("删除整份笔记…") }, enabled = writable, onClick = { menu = false; deleting = true })
+                    DropdownMenuItem(text = { Text("按页删除内容…") }, enabled = removable && !reader.editing, onClick = { menu = false; deletingPages = true })
+                    DropdownMenuItem(text = { Text("删除整份笔记…") }, enabled = removable, onClick = { menu = false; deleting = true })
                 }
             }
         }
+        if (remarks) NoteRemarksDialog(note, vm) { remarks = false }
         if (markLegend) StudyMarkLegend { markLegend = false }
         if (details) AlertDialog(onDismissRequest = { details = false }, title = { Text("来源与模型") }, text = {
             Text("来源：${note.source}\n\n模型：${note.model}", Modifier.verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodyMedium)
@@ -537,13 +528,13 @@ private fun preview(bytes: ByteArray): Bitmap? {
                     NoteImageEditor(reader.draft, { reader.draft = it }, vm.sourceImages, writable, vm::notice)
                     NoteEditor(reader.draft, { reader.draft = it }, writable)
                 }
-            } else PagedNoteContent(note, Modifier.weight(1f), independentScroll = true, header = heading, trailingActions = actions, titleAlreadyShown = true, onBack = { requestClose() }, onSettings = { vm.tab(3) }, bookmark = vm.readingMemory.position(note.id), onReadingPosition = vm.readingMemory::remember, sourceImages = vm.sourceImages)
+            } else NoteReadingSelection(note, vm, Modifier.weight(1f)) { readingModifier -> PagedNoteContent(note, readingModifier, independentScroll = true, header = heading, trailingActions = actions, titleAlreadyShown = true, onBack = { requestClose() }, onSettings = { vm.tab(3) }, bookmark = vm.readingMemory.position(note.id), onReadingPosition = vm.readingMemory::remember, sourceImages = vm.sourceImages) }
         }
     } else LazyColumn(Modifier.fillMaxSize().testTag("笔记列表").padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)) {
         item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(if (query.isBlank()) "${visibleNotes.size} 份笔记" else "找到 ${visibleNotes.size} 份", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             IconButton(onClick = { vm.createManualNote(selectedFolder ?: "") }, enabled = !ui.locked) { Icon(Icons.Outlined.Add, "新建笔记") }
-            TextButton(onClick = vm::notes, enabled = !ui.locked) { Text(if (ui.data.usesWeb) "保存网页回答" else "生成笔记") }
+            TextButton(onClick = vm::notes, enabled = !ui.locked) { Text("生成笔记") }
         } }
         item { OutlinedTextField(query, { query = it.take(200) }, Modifier.fillMaxWidth(), label = { Text("搜索笔记") }, placeholder = { Text("标题、正文或来源") }, singleLine = true, leadingIcon = { Icon(Icons.Outlined.Search, null) }, trailingIcon = if (query.isNotBlank()) ({ IconButton(onClick = { query = "" }) { Icon(Icons.Outlined.Close, "清除笔记搜索") } }) else null) }
         item { NoteFolderBar(ui, vm, selectedFolder) { selectedFolder = it } }
@@ -571,6 +562,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
     val compactFraction = LocalReadingCompactFraction.current
     var index by rememberSaveable(note.id) { mutableIntStateOf(0) }
     var jump by remember(note.id) { mutableStateOf(false) }
+    var searching by remember(note.id) { mutableStateOf(false) }
     var navigation by remember(note.id) { mutableStateOf(false) }
     val scroll = rememberScrollState(); val scope = rememberCoroutineScope()
     val prepared by produceState<Pair<String, List<NoteReadingSegment>>?>(null, note.id, note.content) {
@@ -619,6 +611,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
         readingLifecycle.addObserver(observer)
         onDispose { readingLifecycle.removeObserver(observer) }
     }
+    if (searching) NoteSearchDialog(note, { searching = false }) { index = it; searching = false; scope.launch { scroll.scrollTo(0) } }
     if (jump) JumpDialog("笔记目录 / 阅读分段", labels, { jump = false }) { index = it; jump = false }
     ReadingChatLayout(false, modifier, toolbar = {
         val floatingTools = LocalFloatingReadingTools.current
@@ -635,6 +628,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             if (independentScroll) Box {
                 IconButton(onClick = { navigation = true }) { Icon(Icons.Default.SwapVert, "阅读跳转") }
                 DropdownMenu(expanded = navigation, onDismissRequest = { navigation = false }) {
+                    DropdownMenuItem(text = { Text("笔记内查找") }, onClick = { navigation = false; searching = true })
                     if (initialBookmark != null) DropdownMenuItem(text = { Text("回到上次阅读") }, onClick = {
                         navigation = false; index = restoredNoteIndex(initialBookmark, hash, labels)
                         scope.launch { kotlinx.coroutines.delay(40); scroll.scrollTo(if (initialBookmark.contentHash == hash) initialBookmark.scroll.coerceAtMost(scroll.maxValue) else 0) }
@@ -654,7 +648,11 @@ private fun preview(bytes: ByteArray): Bitmap? {
     }, body = {
         Column(if (independentScroll) Modifier.fillMaxSize().testTag("笔记正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier).verticalScroll(scroll) else Modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             header()
-            key(note.id, selected) { IllustratedMarkdown(if (titleAlreadyShown && selected == 0) noteTextForDisplay(segments[selected].display(note.content), note.title) else segments[selected].display(note.content), sourceImages) }
+            key(note.id, selected) {
+                val raw = segments[selected].display(note.content)
+                val shown = if (titleAlreadyShown && selected == 0) noteTextForDisplay(raw, note.title) else raw
+                IllustratedMarkdown(shown, sourceImages, segments[selected].start - segments[selected].prefix.length + raw.length - shown.length)
+            }
             Spacer(Modifier.height(if (compactFraction > 0.5f) 72.dp else 24.dp))
         }
     }, composer = {})
@@ -701,9 +699,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
     var protocol by remember(current.id) { mutableStateOf(current.protocol) }
     var images by remember(current.id) { mutableStateOf(current.images) }
     var showConfig by remember(current.id) { mutableStateOf(adding != null) }
-    var advancedModels by remember { mutableStateOf(ui.chatgptLoginActive) }
-    LaunchedEffect(ui.chatgptLoginActive) { if (ui.chatgptLoginActive) advancedModels = true }
-    var webConsent by remember { mutableStateOf(false) }
+    var accountOptions by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
     var chooseModel by remember(current.id) { mutableStateOf(false) }
     var manualModel by remember(current.id) { mutableStateOf(false) }
@@ -726,36 +722,13 @@ private fun preview(bytes: ByteArray): Bitmap? {
         }
     }
     if (ui.chatgptPlanWelcome) AlertDialog(onDismissRequest = vm::acknowledgeChatGptPlan, title = { Text("正在使用你的 ChatGPT 套餐") }, text = { Text("符合资格的聊天和笔记请求会使用你的 ChatGPT 套餐。你可以在 ChatGPT 设置中管理本应用的用量和访问权限。账号授权并不代表某个模型请求已经验证成功。") }, confirmButton = { TextButton(onClick = vm::acknowledgeChatGptPlan) { Text("知道了") } }, dismissButton = { TextButton(onClick = { vm.openLink(CHATGPT_USAGE) }) { Text("管理用量") } })
+    if (ui.settingsPage.isEmpty()) { SettingsOverview(ui, vm); return }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        StudySectionLabel("学习方式")
-        StudyPanel {
-            SettingOption("ChatGPT 网页", "在官网页面登录，使用网页中的对话。", Icons.Outlined.Language, ui.data.usesWeb, !ui.locked) { vm.learningMode("web") }
-            HorizontalDivider(Modifier.padding(start = 52.dp), color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
-            SettingOption("模型接口", "连接自己的模型服务或账号授权。", Icons.Outlined.Tune, !ui.data.usesWeb, !ui.locked) { vm.learningMode("native") }
-            if (ui.data.usesWeb) {
-                HorizontalDivider(Modifier.padding(start = 52.dp), color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
-                TextButton(onClick = { vm.tab(0) }, modifier = Modifier.align(Alignment.End).padding(end = 8.dp)) { Text("进入 ChatGPT 网页"); Icon(Icons.Default.ArrowForward, null, Modifier.padding(start = 6.dp).size(16.dp)) }
-            }
-        }
-        if (ui.data.usesWeb) {
-            StudySectionLabel("上课模式 · 实验功能")
-            StudyPanel {
-                SettingsToggle("网页跟课适配", if (ui.data.webClassConsent) "逐页讲解 · 请保持前台" else "新页讲解自动存入笔记", ui.data.webClassConsent, !ui.locked, { if (it) webConsent = true else vm.consentWebClass(false) })
-            }
-            if (webConsent) AlertDialog(onDismissRequest = { webConsent = false }, title = { Text("启用网页跟课适配") }, text = { Text("App 会在当前 ChatGPT 网页中带入课件、发送问题，并把对应回答保存为笔记，使用网页所选模式及额度。\n\n请先在学习页登录，并保持 App 前台。网页改版、登录验证或额度提示可能中断跟课；中断后先恢复待完成回答，避免重复发送。此适配仍需手机实测，不会自动改走模型接口。") }, confirmButton = { TextButton(onClick = { vm.consentWebClass(); webConsent = false }) { Text("启用适配") } }, dismissButton = { TextButton(onClick = { webConsent = false }) { Text("暂不开启") } })
-        } else Text("接口模式的授权与用量规则由所选服务决定。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        StudySectionLabel("笔记")
-        StudyPanel {
-            SettingsToggle("添加课件时自动整理", if (ui.data.usesWeb && !ui.data.webClassConsent) if (ui.data.autoNotes) "开启跟课适配后生效，可随时关闭" else "需先开启网页跟课适配" else "选择课件后自动生成讲解笔记", ui.data.autoNotes, !ui.locked && (!ui.data.usesWeb || ui.data.webClassConsent || ui.data.autoNotes), vm::autoNotes, if (!ui.locked && ui.data.usesWeb && !ui.data.webClassConsent) "请先开启网页跟课适配，再使用自动整理。" else null)
-        }
-        if (!ui.data.usesWeb) {
-            StudySectionLabel("模型与账号")
-            StudyPanel { Card(onClick = { advancedModels = !advancedModels }, colors = CardDefaults.cardColors(containerColor = Color.Transparent)) {
-                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text("配置模型与账号", style = MaterialTheme.typography.titleSmall); Text(if (current.model.isBlank()) "连接账号，或添加自己的服务" else "${current.name} · ${current.model}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Icon(if (advancedModels) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, Modifier.size(20.dp)) }
-            } }
-        }
-        if (!ui.data.usesWeb && advancedModels) {
-        ChatGptAccountPanel(ui, vm)
+        when (ui.settingsPage) {
+            "models" -> {
+                Text("先连接服务，再读取并选择模型。课件图片需要支持图片的模型。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = { accountOptions = !accountOptions }) { Text("ChatGPT 账号授权（可选）") }
+                if (accountOptions || ui.chatgptLoginActive || usingChatGpt) ChatGptAccountPanel(ui, vm)
         Text("模型配置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(ui.data.providers, key = { it.id }) { p -> FilterChip(selected = adding == null && current.id == p.id, onClick = { adding = null; vm.selectProvider(p.id) }, label = { Text(p.name) }, enabled = !ui.locked) } }
         TextButton(onClick = { adding = Provider(name = "自定义模型"); showConfig = true }, enabled = !ui.locked) { Text("添加模型配置（API 接入）") }
@@ -796,10 +769,16 @@ private fun preview(bytes: ByteArray): Bitmap? {
             }
             if (adding != null) TextButton(onClick = { adding = null }) { Text("取消新增") } else TextButton(onClick = { vm.removeProvider(current.id) }, enabled = !ui.locked && ui.data.providers.size > 1) { Text("删除此配置") }
         }
-        }
-        DownloadDirectorySettings(ui, vm)
-        StudySectionLabel("助手设置")
-        StudyPanel { Card(onClick = { showLearner = !showLearner }, colors = CardDefaults.cardColors(containerColor = Color.Transparent)) {
+
+            }
+            "notes" -> {
+                StudyPanel { SettingsToggle("超重点模式", "只保留核心结论、必要公式、条件和易错点；下一页生成起生效。", ui.data.superFocusNotes, ui.ready && ui.storageError.isBlank(), vm::superFocusNotes) }
+                StudyPanel { SettingsToggle("添加课件时自动整理", "选择课件后自动生成讲解并保存笔记。", ui.data.autoNotes, !ui.locked, vm::autoNotes) }
+                Text("原有笔记保留原样；以上设置只影响后续生成。", style = MaterialTheme.typography.bodySmall)
+            }
+            "files" -> DownloadDirectorySettings(ui, vm)
+            "learning" -> {
+                        StudyPanel { Card(onClick = { showLearner = !showLearner }, colors = CardDefaults.cardColors(containerColor = Color.Transparent)) {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Icon(Icons.Outlined.School, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -811,11 +790,10 @@ private fun preview(bytes: ByteArray): Bitmap? {
         } }
         if (showLearner) {
             OutlinedTextField(learner, { learner = it.take(LEARNER_PROFILE_LIMIT) }, label = { Text("当前水平与学习需求") }, placeholder = { Text("例如：大一，生物基础较弱。遗传学术语容易混淆，希望先讲基础，再拆解机制，最后用例题检验理解。") }, supportingText = { Text("${learner.length} / $LEARNER_PROFILE_LIMIT · 可随学习进展调整") }, modifier = Modifier.fillMaxWidth(), minLines = 4, maxLines = 8, enabled = !ui.locked)
-            Text("加密保存在本机。应用内讲解和笔记会自动参考，生成时随学习请求发送给所选模型。网页自由提问前，请带入并发送一次；新网页对话需重新带入。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("加密保存在本机。应用内讲解和笔记会自动参考，生成时随学习请求发送给所选模型。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { vm.saveLearnerProfile(learner) }, enabled = !ui.locked && learner.trim() != ui.data.learnerProfile, unavailableReason = "修改学习情况后即可保存。") { Text("保存学习情况") }
                 TextButton(onClick = { learner = ""; vm.saveLearnerProfile("") }, enabled = !ui.locked && (learner.isNotBlank() || ui.data.learnerProfile.isNotBlank())) { Text("清除") }
-                if (ui.data.usesWeb) OutlinedButton(onClick = vm::fillWebLearnerProfile, enabled = !ui.locked && ui.data.learnerProfile.isNotBlank() && learner.trim() == ui.data.learnerProfile, unavailableReason = "请先填写并保存学习情况，再带入网页。") { Text("带入网页对话") }
             }
         }
         StudyPanel { Card(onClick = { showPrompts = !showPrompts }, colors = CardDefaults.cardColors(containerColor = Color.Transparent)) {
@@ -825,6 +803,9 @@ private fun preview(bytes: ByteArray): Bitmap? {
             OutlinedTextField(tutor, { tutor = it }, label = { Text("学习助教提示词") }, modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp), maxLines = 12, enabled = !ui.locked)
             OutlinedTextField(notes, { notes = it }, label = { Text("笔记助手提示词") }, modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp), maxLines = 12, enabled = !ui.locked)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { vm.savePrompts(tutor, notes) }, enabled = !ui.locked) { Text("保存提示词") }; TextButton(onClick = { tutor = TUTOR_PROMPT; notes = NOTES_PROMPT; vm.savePrompts(tutor, notes) }, enabled = !ui.locked) { Text("恢复默认") } }
+        }
+
+            }
         }
     }
 }

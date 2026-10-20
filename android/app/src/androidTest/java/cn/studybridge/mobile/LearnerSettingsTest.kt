@@ -16,6 +16,7 @@ class LearnerSettingsTest {
         compose.waitUntil(5000) { vm.ui.value.ready }
         val original = vm.ui.value.data
         compose.setContent { val ui by vm.ui.collectAsState(); StudyTheme(false) { ModelScreen(ui, vm) } }
+        compose.onNodeWithText("学习偏好").performClick()
         compose.onNodeWithText("我的学习情况").performScrollTo().performClick()
         val field = compose.onNodeWithText("当前水平与学习需求")
         field.performScrollTo().performTextReplacement("基础较弱，希望先讲术语，再分步骤解释。")

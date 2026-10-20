@@ -28,7 +28,7 @@ class MaterialsUiTest {
         compose.waitUntil(5000) { focusedAppStatusBarsHidden() }
         val bitmap = dialogScreenshot(compose, beforeDialog)
         try { val resolver = compose.activity.contentResolver; val uri = requireNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply { put(MediaStore.Images.Media.DISPLAY_NAME, "sample-materials.png"); put(MediaStore.Images.Media.MIME_TYPE, "image/png"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/StudyUiReview"); put(MediaStore.Images.Media.IS_PENDING, 1) })); requireNotNull(resolver.openOutputStream(uri)).use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }; resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null) } finally { bitmap.recycle() }
-        compose.runOnIdle { state.value = state.value.copy(materialsOpen = false, tab = 3, data = state.value.data.copy(downloadDirectoryName = "学习资料文件夹", downloadTreeUri = "content://fixture/tree/notes")) }
+        compose.runOnIdle { state.value = state.value.copy(materialsOpen = false, tab = 3, settingsPage = "files", data = state.value.data.copy(downloadDirectoryName = "学习资料文件夹", downloadTreeUri = "content://fixture/tree/notes")) }
         compose.onNodeWithText("文件与下载").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("学习资料文件夹").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("选择文件夹").performScrollTo().assertIsDisplayed()

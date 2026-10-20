@@ -35,7 +35,6 @@ class SourceImages(context: Context) {
     }
     fun prune(saved: Saved) {
         val active = (saved.notes.map { it.content } + saved.noteDrafts.map { it.content }).flatMap { text -> sourceImagePattern.findAll(text).map { it.groupValues[2] }.toList() }.toMutableSet()
-        saved.webPending?.imageRef?.takeIf { imageIdPattern.matches(it) }?.let(active::add)
         root.listFiles()?.filter { it.extension == "image" && it.nameWithoutExtension !in active }?.forEach { it.delete() }
     }
     fun bytes(id: String): ByteArray = file(id).let { require(it.isFile) { "本机原页图片不可用。" }; it.readBytes() }

@@ -142,7 +142,7 @@ class MaterialPreviews(context: Context) {
     }
 }
 
-@Composable fun IllustratedMarkdown(text: String, sourceImages: SourceImages? = null) {
+@Composable fun IllustratedMarkdown(text: String, sourceImages: SourceImages? = null, sourceOffset: Int = 0) {
     val context = LocalContext.current
     val images = sourceImages ?: remember(context) { SourceImages(context) }
     val repository = remember(context) { MaterialPreviews(context) }
@@ -151,10 +151,10 @@ class MaterialPreviews(context: Context) {
     val matches = remember(text) { sourceImagePattern.findAll(text).toList() }
     var start = 0
     matches.forEach { match ->
-        if (match.range.first > start) Markdown(text.substring(start, match.range.first))
+        if (match.range.first > start) Markdown(text.substring(start, match.range.first), sourceOffset + start)
         val id = match.groupValues[2]; val label = match.groupValues[1].ifBlank { "课件原页" }
         key(id, match.range.first) { PagePreview("note:$id", label, repository) { withContext(Dispatchers.IO) { Attachment(images.data(id), label, "") } } }
         start = match.range.last + 1
     }
-    if (start < text.length || matches.isEmpty()) Markdown(text.substring(start))
+    if (start < text.length || matches.isEmpty()) Markdown(text.substring(start), sourceOffset + start)
 }
