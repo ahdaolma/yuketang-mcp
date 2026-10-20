@@ -64,8 +64,11 @@ class ResponsiveReadingTest {
         compose.onNodeWithTag("学习正文").performTouchInput { swipeUp(durationMillis = 500) }
         compose.waitForIdle()
         val compact = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
-        assertTrue("Reading gestures must reclaim height", (compact.bottom - compact.top).value > (before.bottom - before.top).value + 20f)
-        compose.onNodeWithTag("应用顶部栏").assertIsDisplayed()
+        assertTrue("Reading gestures must reclaim height", (compact.bottom - compact.top).value > (before.bottom - before.top).value + 60f)
+        compose.onNodeWithTag("应用顶部栏").assertDoesNotExist()
+        compose.onNodeWithTag("应用时间栏").assertIsDisplayed()
+        compose.waitUntil(5000) { androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars()) == false }
+        compose.onNodeWithContentDescription("悬浮阅读工具").assertIsDisplayed().performClick()
         compose.onNodeWithTag("应用底部导航").assertIsDisplayed()
         listOf("学习资料", "新对话", "生成笔记", "消息跳转", "设置", "课程").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
         shot("sample-chat-reading-narrow-bars")
@@ -73,13 +76,27 @@ class ResponsiveReadingTest {
         compose.onNodeWithText("跳转消息").performClick()
         compose.onNodeWithText("跳转到消息").assertIsDisplayed()
         compose.onNodeWithText("取消跳转").performClick()
+        compose.onNodeWithContentDescription("收起悬浮工具").performClick()
         compose.onNodeWithTag("学习正文").performTouchInput { swipeDown(durationMillis = 500) }
         compose.waitForIdle()
         val restored = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
-        assertTrue((restored.bottom - restored.top).value < (compact.bottom - compact.top).value - 20f)
+        assertTrue((restored.bottom - restored.top).value < (compact.bottom - compact.top).value - 60f)
         compose.onNodeWithTag("学习正文").performTouchInput { swipeUp(durationMillis = 500) }
         compose.onNodeWithContentDescription("课程").performTouchInput { click() }
         compose.onNodeWithText("课程导航已到达").assertIsDisplayed()
+        compose.runOnIdle { vm.noteReader.open(note.copy(content = note.content.repeat(8))); state.value = state.value.copy(tab = 2, data = state.value.data.copy(notes = listOf(note.copy(content = note.content.repeat(8))))) }
+        compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记正文").fetchSemanticsNodes().isNotEmpty() }
+        val noteBefore = compose.onNodeWithTag("笔记正文").getUnclippedBoundsInRoot()
+        compose.onNodeWithTag("笔记正文").performTouchInput { swipeUp(durationMillis = 500) }
+        compose.waitForIdle()
+        val noteCompact = compose.onNodeWithTag("笔记正文").getUnclippedBoundsInRoot()
+        assertTrue("Notes must reclaim height too", (noteCompact.bottom - noteCompact.top).value > (noteBefore.bottom - noteBefore.top).value + 60f)
+        compose.onNodeWithContentDescription("悬浮阅读工具").performClick()
+        listOf("返回笔记列表", "目录跳转", "阅读跳转", "笔记选项", "设置").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
+        shot("sample-note-floating-controls")
+        compose.onNodeWithContentDescription("阅读跳转").performClick()
+        compose.onNodeWithText("下一段").assertIsDisplayed().performClick()
+        compose.onNodeWithContentDescription("目录跳转").assertIsDisplayed()
     }
     @Test fun narrowLargeTextKeepsToolsReachableAndReferenceCanExpandWithoutChangingStoredText() {
         val state = mutableStateOf(sample()); render(state, width = 320, scale = 1.5f, dark = true)

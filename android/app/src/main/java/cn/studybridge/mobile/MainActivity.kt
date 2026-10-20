@@ -111,8 +111,7 @@ class MainActivity : ComponentActivity() {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, vm) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) vm.onResume()
-            if (event == Lifecycle.Event.ON_STOP) vm.background() }
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) vm.background() }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
@@ -256,8 +255,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
     val keyboardBeside = inlineHeader && WindowInsets.ime.getBottom(LocalDensity.current) > 0
     ReadingChatLayout(keyboardBeside, Modifier.fillMaxSize().padding(horizontal = 14.dp), toolbar = {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("学习工具栏"), verticalAlignment = Alignment.CenterVertically) {
-            if (inlineHeader && !keyboardBeside) Text("学习", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(end = 12.dp))
-            Box { TextButton(onClick = { history = true }) { Text("会话 ▾") }; DropdownMenu(expanded = history, onDismissRequest = { history = false }) {
+            Box { IconButton(onClick = { history = true }) { Icon(Icons.Outlined.Forum, "会话") }; DropdownMenu(expanded = history, onDismissRequest = { history = false }) {
                 ui.data.conversations.forEach { c -> DropdownMenuItem(text = { Text(c.title) }, onClick = { vm.selectChat(c.id); history = false }, trailingIcon = { IconButton(onClick = { vm.deleteChat(c.id); history = false }, enabled = !ui.locked) { Icon(Icons.Default.DeleteOutline, "删除对话") } }) }
             } }
             MaterialsButton(ui, vm)
@@ -453,9 +451,13 @@ private fun preview(bytes: ByteArray): Bitmap? {
     var renaming by remember { mutableStateOf(false) }
     var titleDraft by remember { mutableStateOf("") }
     var query by rememberSaveable { mutableStateOf("") }
-    val visibleNotes by produceState(ui.data.notes, ui.data.notes, query) {
+    var selectedFolder by rememberSaveable { mutableStateOf<String?>(null) }
+    var actionNoteId by rememberSaveable { mutableStateOf<String?>(null) }
+    var initialListAction by rememberSaveable { mutableStateOf("options") }
+    NoteListActions(ui, vm, actionNoteId, initialListAction) { actionNoteId = null }
+    val visibleNotes by produceState(ui.data.notes, ui.data.notes, query, selectedFolder, ui.data.noteFolders) {
         kotlinx.coroutines.delay(140)
-        value = withContext(Dispatchers.Default) { findNotes(ui.data.notes, query) }
+        value = withContext(Dispatchers.Default) { findNotes(ui.data.notes.filter { selectedFolder == null || ui.data.effectiveFolder(it) == selectedFolder }, query) }
     }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -480,6 +482,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(text = { Text(if (note.pinned) "取消置顶" else "置顶笔记") }, enabled = !ui.locked, onClick = { menu = false; vm.toggleNotePin(note.id) })
                     DropdownMenuItem(text = { Text("重命名笔记") }, enabled = writable, onClick = { menu = false; titleDraft = note.title; renaming = true })
+                    DropdownMenuItem(text = { Text("移动到分类") }, enabled = !ui.locked, onClick = { menu = false; initialListAction = "move"; actionNoteId = note.id })
                     if (!reader.editing) DropdownMenuItem(text = { Text("编辑笔记") }, enabled = writable, onClick = { menu = false; reader.draft = note.content; reader.editing = true })
                     DropdownMenuItem(text = { Text("导出 Markdown") }, enabled = !ui.locked, onClick = {
                         menu = false
@@ -517,17 +520,19 @@ private fun preview(bytes: ByteArray): Bitmap? {
         }
     } else LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)) {
         item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(if (query.isBlank()) "${ui.data.notes.size} 份笔记" else "找到 ${visibleNotes.size} 份", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            IconButton(onClick = vm::createManualNote, enabled = !ui.locked) { Icon(Icons.Outlined.Add, "新建笔记") }
+            Text(if (query.isBlank()) "${visibleNotes.size} 份笔记" else "找到 ${visibleNotes.size} 份", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            IconButton(onClick = { vm.createManualNote(selectedFolder ?: "") }, enabled = !ui.locked) { Icon(Icons.Outlined.Add, "新建笔记") }
             TextButton(onClick = vm::notes, enabled = !ui.locked) { Text(if (ui.data.usesWeb) "保存网页回答" else "生成笔记") }
         } }
         item { OutlinedTextField(query, { query = it.take(200) }, Modifier.fillMaxWidth(), label = { Text("搜索笔记") }, placeholder = { Text("标题、正文或来源") }, singleLine = true, leadingIcon = { Icon(Icons.Outlined.Search, null) }, trailingIcon = if (query.isNotBlank()) ({ IconButton(onClick = { query = "" }) { Icon(Icons.Outlined.Close, "清除笔记搜索") } }) else null) }
+        item { NoteFolderBar(ui, vm, selectedFolder) { selectedFolder = it } }
+        if (selectedFolder != null && query.isBlank() && visibleNotes.isEmpty() && ui.data.notes.isNotEmpty()) item { StudyEmpty(Icons.Outlined.FolderOpen, "这个分类还没有笔记", "长按笔记选择移动分类，或在当前分类中新建笔记。") }
         if (query.isNotBlank() && visibleNotes.isEmpty()) item { StudyEmpty(Icons.Outlined.Search, "没有找到相关笔记", "试试正文中的关键词或课件名称。") }
         if (ui.classUi.running || ui.data.classRun?.let { !it.ended || it.pending.isNotEmpty() } == true) item { ClassModePanel(ui, vm) }
         if (ui.noteDraft.isNotBlank()) item { StudyPanel { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("正在整理", style = MaterialTheme.typography.titleSmall); Text(ui.noteDraft.takeLast(1600), maxLines = 8, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } } }
         if (ui.data.notes.isEmpty() && query.isBlank()) item { StudyEmpty(Icons.Outlined.AutoStories, "还没有笔记", "新建自己的笔记，或从学习页保存回答，随时回看、编辑或导出。") { Spacer(Modifier.height(4.dp)); OutlinedButton(onClick = { vm.tab(0) }) { Text("去学习") } } }
-        items(visibleNotes, key = { it.id }) { n -> Card(onClick = { reader.open(n); details = false }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        items(visibleNotes, key = { it.id }) { n -> NoteListCard(n, ui.data.folderName(n), onOpen = { reader.open(n); details = false }, onActions = { initialListAction = "options"; actionNoteId = n.id }) {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (n.pinned) Icon(Icons.Outlined.PushPin, "已置顶", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                     Text(n.source, Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -560,18 +565,23 @@ private fun preview(bytes: ByteArray): Bitmap? {
         (readingHeadings(text).firstOrNull { it.second.contains(Regex("第\\s*\\d+\\s*页")) } ?: readingHeadings(text).firstOrNull())?.second ?: "第 ${i + 1} 段 · ${notePreview(text).take(50)}"
     } }
     if (jump) JumpDialog("笔记目录 / 阅读分段", labels, { jump = false }) { index = it; jump = false }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    ReadingChatLayout(false, modifier, toolbar = {
+        val floatingTools = LocalFloatingReadingTools.current
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (inlineHeader) IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "返回笔记列表") }
-            if (segments.size > 1) IconButton(onClick = { index = selected - 1 }, enabled = selected > 0) { Icon(Icons.Default.ChevronLeft, "上一段") }
+            if (segments.size > 1 && !floatingTools) IconButton(onClick = { index = selected - 1 }, enabled = selected > 0) { Icon(Icons.Default.ChevronLeft, "上一段") }
             TextButton(onClick = { jump = true }, modifier = Modifier.weight(1f).semantics {
                 contentDescription = "目录跳转"
                 stateDescription = "阅读分段 ${selected + 1} / ${segments.size} · 完整笔记已保留"
             }) { Text(if (segments.size > 1) "${selected + 1} / ${segments.size} ▾" else "目录 ▾", maxLines = 1) }
-            if (segments.size > 1) IconButton(onClick = { index = selected + 1 }, enabled = selected < segments.lastIndex) { Icon(Icons.Default.ChevronRight, "下一段") }
+            if (segments.size > 1 && !floatingTools) IconButton(onClick = { index = selected + 1 }, enabled = selected < segments.lastIndex) { Icon(Icons.Default.ChevronRight, "下一段") }
             if (independentScroll) Box {
                 IconButton(onClick = { navigation = true }) { Icon(Icons.Default.SwapVert, "阅读跳转") }
                 DropdownMenu(expanded = navigation, onDismissRequest = { navigation = false }) {
+                    if (segments.size > 1) {
+                        DropdownMenuItem(text = { Text("上一段") }, enabled = selected > 0, onClick = { navigation = false; index = selected - 1 })
+                        DropdownMenuItem(text = { Text("下一段") }, enabled = selected < segments.lastIndex, onClick = { navigation = false; index = selected + 1 })
+                    }
                     DropdownMenuItem(text = { Text("本段顶部") }, onClick = { navigation = false; scope.launch { scroll.scrollTo(0) } })
                     DropdownMenuItem(text = { Text("本段底部") }, onClick = { navigation = false; scope.launch { scroll.scrollTo(scroll.maxValue) } })
                 }
@@ -579,12 +589,13 @@ private fun preview(bytes: ByteArray): Bitmap? {
             trailingActions()
             if (inlineHeader) IconButton(onClick = onSettings) { Icon(Icons.Outlined.Settings, "设置") }
         }
-        Column(if (independentScroll) Modifier.weight(1f).testTag("笔记正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier).verticalScroll(scroll) else Modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    }, body = {
+        Column(if (independentScroll) Modifier.fillMaxSize().testTag("笔记正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier).verticalScroll(scroll) else Modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
             header()
             key(note.id, selected) { IllustratedMarkdown(if (titleAlreadyShown && selected == 0) noteTextForDisplay(segments[selected].display(note.content), note.title) else segments[selected].display(note.content)) }
             Spacer(Modifier.height(24.dp))
         }
-    }
+    }, composer = {})
 }
 
 @Composable fun ChatGptAccountPanel(ui: UiState, vm: StudyViewModel) {

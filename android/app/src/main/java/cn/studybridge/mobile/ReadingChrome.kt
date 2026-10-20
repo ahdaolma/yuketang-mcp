@@ -39,3 +39,7 @@ val LocalReadingChrome = staticCompositionLocalOf<ReadingChromeState?> { null }
 // Short, wide windows use a side rail and one inline toolbar, rather than
 // spending their scarce height on the portrait app header and bottom tabs.
 val LocalInlineReadingHeader = staticCompositionLocalOf { false }
+
+val LocalReadingCompactFraction = staticCompositionLocalOf { 0f }
+
+val LocalFloatingReadingTools = staticCompositionLocalOf { false }

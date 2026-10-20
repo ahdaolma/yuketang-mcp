@@ -25,6 +25,14 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.animateColorAsState
@@ -56,6 +64,19 @@ import androidx.compose.ui.unit.dp
     )
     val regular = TextStyle(letterSpacing = 0.sp)
     val activity = LocalContext.current as? Activity
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(activity, lifecycle) {
+        fun hideStatusBar() { activity?.window?.let { window ->
+            WindowCompat.getInsetsController(window, window.decorView).apply {
+                systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                hide(WindowInsetsCompat.Type.statusBars())
+            }
+        } }
+        hideStatusBar()
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) hideStatusBar() }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     SideEffect {
         activity?.window?.let { window ->
             WindowCompat.getInsetsController(window, window.decorView).apply { isAppearanceLightStatusBars = !dark; isAppearanceLightNavigationBars = !dark }
@@ -79,27 +100,28 @@ import androidx.compose.ui.unit.dp
     val wide = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && maxWidth > maxHeight && maxHeight < 500.dp
     val landscapeKeyboard = wide && WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val reading = (ui.tab == 0 && !ui.data.usesWeb) || noteOpen
-    val inlineHeader = wide && reading && (!ui.busy || ui.tab == 0)
+    val inlineHeader = reading
     val density = LocalDensity.current
     val chrome = remember(ui.tab, noteOpen, ui.data.currentChat) { ReadingChromeState(with(density) { 24.dp.toPx() }) }
     LaunchedEffect(ui.busy) { if (ui.busy) chrome.restore() }
     val slide by animateFloatAsState(if (reading && !ui.busy) { if (wide) 1f else chrome.fraction } else 0f, spring(dampingRatio = 1f, stiffness = 500f), label = "reading-toolbar-slide")
-    val topHeight = (64f - 16f * slide).dp
-    val titleSize = 22f - 4f * slide
     val labels = listOf("学习", "课程", "笔记")
     val icons = listOf(Icons.Outlined.ChatBubbleOutline, Icons.Outlined.School, Icons.Outlined.AutoStories)
     val selectedIcons = listOf(Icons.Filled.ChatBubble, Icons.Filled.School, Icons.Filled.AutoStories)
     val expandedNavigation = 68f + (density.fontScale - 1f).coerceAtLeast(0f) * 24f
-    val navigationHeight = (expandedNavigation + (52f - expandedNavigation) * slide).dp
-    CompositionLocalProvider(LocalReadingChrome provides if (reading) chrome else null, LocalInlineReadingHeader provides inlineHeader) {
+    val navigationHeight = (expandedNavigation + (48f - expandedNavigation) * slide).dp
+    CompositionLocalProvider(LocalReadingChrome provides if (reading) chrome else null, LocalInlineReadingHeader provides inlineHeader, LocalReadingCompactFraction provides if (wide) 0f else slide) {
     Scaffold(
-        topBar = { if (!(ui.data.usesWeb && ui.tab == 0) && !inlineHeader) TopAppBar(
-            modifier = Modifier.testTag("应用顶部栏"), expandedHeight = topHeight,
-            title = { Text(if (ui.tab == 3) "设置" else labels.getOrElse(ui.tab) { "学习" }, style = MaterialTheme.typography.titleLarge.copy(fontSize = titleSize.sp), maxLines = 1) },
+        contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+        topBar = { Column(Modifier.windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
+            StudyTimeBar()
+            if (!(ui.data.usesWeb && ui.tab == 0) && !inlineHeader) TopAppBar(
+            modifier = Modifier.testTag("应用顶部栏"), expandedHeight = 56.dp, windowInsets = WindowInsets(0, 0, 0, 0),
+            title = { Text(if (ui.tab == 3) "设置" else labels.getOrElse(ui.tab) { "学习" }, style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp), maxLines = 1) },
             navigationIcon = { if (ui.tab == 3 || noteOpen) FeedbackIconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, if (noteOpen) "返回笔记列表" else "返回学习", Modifier.size(22.dp)) } },
             actions = { if (ui.busy) FeedbackTextButton(onClick = onStop) { Text("停止") }; if (ui.tab != 3) FeedbackIconButton(onClick = { onTab(3) }) { Icon(Icons.Outlined.Settings, "设置", Modifier.size(22.dp)) } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-        ) },
+        ) } },
         bottomBar = { if (ui.tab != 3 && !wide) Column {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             if (reading) Row(Modifier.fillMaxWidth().height(navigationHeight).clipToBounds().testTag("应用底部导航")) {
@@ -142,6 +164,28 @@ import androidx.compose.ui.unit.dp
         } else content(padding)
     }
     }
+    }
+}
+
+// Recompute at minute boundaries and on every foreground entry. Formatting uses
+// the device timezone, including a timezone change while the app was paused.
+fun studyClockText(now: Long = System.currentTimeMillis()): String =
+    java.text.SimpleDateFormat("HH:mm", java.util.Locale.ROOT).format(java.util.Date(now))
+
+@Composable fun StudyTimeBar() {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val clock by produceState(studyClockText(), lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (isActive) {
+                val now = System.currentTimeMillis()
+                value = studyClockText(now)
+                delay(60000L - now % 60000L)
+            }
+        }
+    }
+    Box(Modifier.fillMaxWidth().testTag("应用时间栏").padding(horizontal = 20.dp, vertical = 2.dp)) {
+        Text(clock, style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, lineHeight = 16.sp), maxLines = 1,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { contentDescription = "当前时间 $clock" })
     }
 }
 

@@ -49,7 +49,6 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
     private var login: AutoCloseable? = null
     private var storageBlocked = false
     private var loginAttempt = newId()
-    private var lastResumeCheck = 0L
     init {
         viewModelScope.launch {
             try { val saved = withContext(Dispatchers.IO) { vault.load().also { loaded -> runCatching { sourceImages.prune(loaded) } } }; state.update { it.copy(data = saved, ready = true) } }
@@ -57,7 +56,7 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         }
     }
     fun notice(value: String) { state.update { it.copy(notice = value) } }
-    fun tab(value: Int) { state.update { if (value == 1 && it.localDocument != null) it.copy(tab = value, localDocument = null, slides = emptyList()) else it.copy(tab = value) }; if (value == 1) onResume() }
+    fun tab(value: Int) { state.update { if (value == 1 && it.localDocument != null) it.copy(tab = value, localDocument = null, slides = emptyList()) else it.copy(tab = value) } }
     private fun persist() { viewModelScope.launch(Dispatchers.IO) { disk.withLock { if (!storageBlocked) try { vault.save(state.value.data) } catch (_: Exception) { notice("本机记录保存失败，请检查存储空间。") } } } }
     private fun data(change: (Saved) -> Saved) { if (storageBlocked || !state.value.ready) { notice("本机记录尚不可写，设置未保存。"); return }; state.update { it.copy(data = change(it.data)) }; persist() }
     private suspend fun checkpoint(change: (Saved) -> Saved) = withContext(NonCancellable + Dispatchers.Main.immediate) {
@@ -146,9 +145,9 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
     }
     fun savePrompts(tutor: String, notes: String) { data { it.copy(tutorPrompt = tutor.ifBlank { TUTOR_PROMPT }, notesPrompt = notes.ifBlank { NOTES_PROMPT }) }; notice("角色提示词已保存，每次请求都会发送给所选模型。") }
     fun editNote(id: String, text: String): Boolean { if (state.value.locked || !state.value.data.noteWritable(id) || classWriter?.isActive == true && state.value.data.classRun?.noteId == id) { notice("请先结束整理并恢复待保存回答，再编辑笔记。"); return false }; if (state.value.data.notes.none { it.id == id }) return false; data { it.copy(notes = it.notes.map { n -> if (n.id == id) n.copy(content = text) else n }) }; return true }
-    fun createManualNote() {
+    fun createManualNote(folderId: String = "") {
         if (state.value.locked) return
-        val note = Note(title = "新笔记", content = "", source = "手写笔记", model = "手写")
+        val note = Note(title = "新笔记", content = "", source = "手写笔记", model = "手写", folderId = folderId.takeIf { id -> state.value.data.noteFolders.any { it.id == id } } ?: "")
         data { it.copy(notes = listOf(note) + it.notes) }
         if (state.value.data.notes.any { it.id == note.id }) { noteReader.open(note); noteReader.editing = true; tab(2) }
     }
@@ -164,6 +163,25 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         data { it.copy(notes = it.notes.map { n -> if (n.id == id) n.copy(pinned = !n.pinned) else n }) }
     }
     fun deleteNote(id: String): Boolean { if (state.value.locked || !state.value.data.noteWritable(id) || classWriter?.isActive == true && state.value.data.classRun?.noteId == id) { notice("请先结束整理并恢复待保存回答，再删除笔记。"); return false }; if (state.value.data.notes.none { it.id == id }) return false; data { it.copy(notes = it.notes.filterNot { n -> n.id == id }) }; return true }
+    fun saveNoteFolder(id: String?, name: String): Boolean {
+        if (state.value.locked) return false
+        return try {
+            val next = state.value.data.withNoteFolder(id, name)
+            data { it.copy(noteFolders = next.noteFolders) }
+            true
+        } catch (e: IllegalArgumentException) { notice(e.message ?: "分类保存失败。"); false }
+    }
+    fun moveNote(id: String, folderId: String): Boolean {
+        if (state.value.locked || state.value.data.notes.none { it.id == id }) return false
+        if (folderId.isNotEmpty() && state.value.data.noteFolders.none { it.id == folderId }) return false
+        data { it.copy(notes = it.notes.map { n -> if (n.id == id) n.copy(folderId = folderId) else n }) }
+        return true
+    }
+    fun deleteNoteFolder(id: String): Boolean {
+        if (state.value.locked || state.value.data.noteFolders.none { it.id == id }) return false
+        data { it.withoutNoteFolder(id) }
+        return true
+    }
     fun newChat() { if (state.value.busy) return; val c = Conversation(); data { it.copy(conversations = listOf(c) + it.conversations, currentChat = c.id) }; state.update { it.copy(pending = null) } }
     fun selectChat(id: String) { if (!state.value.busy) { data { it.copy(currentChat = id) }; state.update { it.copy(pending = null) } } }
     fun deleteChat(id: String) { if (state.value.busy) return; data { val list = it.conversations.filterNot { c -> c.id == id }.ifEmpty { listOf(Conversation()) }; it.copy(conversations = list, currentChat = if (it.currentChat == id) list.first().id else it.currentChat) } }
@@ -189,11 +207,6 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
     private fun loginStep(value: String) {
         val clock = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
         state.update { it.copy(loginStage = value, loginSteps = (it.loginSteps + "$clock  $value").takeLast(8), qr = if (value.startsWith("微信已确认")) null else it.qr) }
-    }
-    fun onResume() {
-        val s = state.value
-        val now = System.currentTimeMillis()
-        if (s.ready && s.tab == 1 && !s.busy && !s.loginActive && s.data.session.isNotBlank() && now - lastResumeCheck > 15000) { lastResumeCheck = now; verifyLogin() }
     }
     private suspend fun verifySession(s: Saved) {
         val user = withContext(Dispatchers.IO) { rain.api(s.region, s.session, "/api/v3/user/basic-info") }
