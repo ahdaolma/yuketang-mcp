@@ -39,7 +39,7 @@ class NoteOrganizationWorkflowTest {
         val first = Note("organize", "遗传学第一讲", "保留正文与图片 ![原页](study-image://fixture)", "课程课件", "fixture", pinned = true)
         val other = Note("untouched", "英语词汇", "另一份独立原文。", "手写笔记", "手写")
         val vault = Vault(app)
-        vault.save(Saved(notes = listOf(first, other), learningMode = "native"))
+        vault.save(Saved(notes = listOf(first, other), ))
         val store = ViewModelStore()
         val owner = object : ViewModelStoreOwner { override val viewModelStore = store }
         lateinit var vm: StudyViewModel

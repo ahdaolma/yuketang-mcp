@@ -16,7 +16,7 @@ class ReadingNavigationTest {
         assertEquals(text, segments.joinToString("") { text.substring(it.start, it.end) })
         assertFalse(readingHeadings(text).any { it.second.contains("999") })
     }
-    @Test fun notebookCheckpointAndInterruptedWebRecoveryKeepMatchingImages() = runBlocking {
+    @Test fun notebookCheckpointAndClassPageAppendKeepMatchingImages() = runBlocking {
         var saved = Saved()
         val original = Note("batch", "课件", "", "课件", "测试")
         buildNotebook("课件", listOf(Slide(1, "", "文字")),
@@ -24,16 +24,15 @@ class ReadingNavigationTest {
             generate = { "讲解正文" },
             checkpoint = { saved = saved.copy(notes = listOf(original.copy(content = it.markdown))) })
         assertEquals(1, sourceImagePattern.findAll(saved.notes.single().content).count())
-        val pending = WebPending("marker", "课件 · 第 2 页", noteId = original.id, imageRef = "b".repeat(64))
-        saved = savedFromJson(saved.copy(webPending = pending).toJson())
-        assertEquals(pending, saved.webPending)
-        val recovered = recoverWebAnswer(saved, "第二页讲解")
+        val page = LivePage("12", 2)
+        val run = ClassRun(LiveLesson("42", "课件", "7"), noteId = original.id, providerId = "fixture", pending = listOf(page), ended = true)
+        saved = savedFromJson(saved.copy(classRun = run).toJson())
+        val recovered = appendClassNotebookPage(saved, original.id, page, "第二页讲解", "课件 · 第 2 页", "b".repeat(64))
         val images = sourceImagePattern.findAll(recovered.notes.single().content).map { it.groupValues[2] }.toList()
         assertEquals(listOf(id, "b".repeat(64)), images)
-        assertNull(recovered.webPending)
         assertTrue(recovered.notes.single().content.contains("第二页讲解"))
-        val single = recoverWebAnswer(Saved(webPending = pending.copy(noteId = "")), "单页恢复")
-        assertTrue(single.notes.single().content.contains("study-image:" + "b".repeat(64)))
+        assertEquals(listOf(page.key), recovered.classRun!!.completed)
+
     }
     @Test fun sourceLabelsCannotBreakImageMarkupOrReferenceArbitraryPaths() {
         assertEquals("", sourceImageMarkdown("../../secret", "label"))

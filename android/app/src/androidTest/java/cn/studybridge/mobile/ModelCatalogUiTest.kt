@@ -19,7 +19,7 @@ class ModelCatalogUiTest {
     @get:Rule val compose = createAndroidComposeRule<WebFixtureActivity>()
     @Test fun choosesFromActualCatalogAndCannotReuseItAfterEditingTheDestination() {
         val p = Provider(id = "catalog-fixture", name = "测试服务", baseUrl = "https://provider.example/v1", key = "fixture-key")
-        val state = mutableStateOf(UiState(ready = true, tab = 3, data = Saved(learningMode = "native", providers = listOf(p), selectedProvider = p.id),
+        val state = mutableStateOf(UiState(ready = true, tab = 3, settingsPage = "models", data = Saved(providers = listOf(p), selectedProvider = p.id),
             modelListFor = p.id, modelListRequest = modelCatalogKey(p), modelList = listOf("text-model", "vision-model"), modelNames = mapOf("text-model" to "文字讲解", "vision-model" to "视觉讲解")))
         lateinit var vm: StudyViewModel
         // The displayed fixture and the real ViewModel must use the same saved
@@ -34,7 +34,6 @@ class ModelCatalogUiTest {
                 }
             }
         }
-        compose.onNodeWithText("配置模型与账号").performScrollTo().performClick()
         compose.onNodeWithText("配置连接").performScrollTo().performClick()
         compose.onNodeWithText("模型 ID").assertDoesNotExist()
         compose.onNodeWithText("选择模型").performScrollTo()

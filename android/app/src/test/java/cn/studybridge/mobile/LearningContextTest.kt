@@ -20,7 +20,6 @@ class LearningContextTest {
         val input = noteMessages("", listOf(Message("user", previous), attachment), attachment.source!!, "")
         assertTrue(input.any { it.text == previous })
         assertTrue(input.contains(attachment)); assertEquals("生化 · 第 2 页", input[input.lastIndex - 1].source)
-        val web = noteWebPrompt("", "") + "\n\n$previous"
-        assertTrue(web.contains(NOTE_FORMAT)); assertTrue(web.contains("酶降低活化能。"))
+        assertTrue(input.any { it.text.contains(NOTE_FORMAT) })
     }
 }

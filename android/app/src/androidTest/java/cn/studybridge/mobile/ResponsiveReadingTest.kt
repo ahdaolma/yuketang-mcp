@@ -25,7 +25,7 @@ class ResponsiveReadingTest {
     private lateinit var vm: StudyViewModel
     private val note = Note("responsive-note", "DNA 的结构与复制", "# DNA 的结构与复制\n\n" + "复制以原有 DNA 链为模板，遵循碱基互补配对。\n\n".repeat(100), "合成课件 · 第 1 页", "fixture")
     private val original = "用户选择的笔记原文：\n# DNA 的结构与复制\n\n" + "原文必须完整保存，展开后仍可阅读。\n\n".repeat(120)
-    private fun sample() = UiState(ready = true, data = Saved(notes = listOf(note), learningMode = "native", currentChat = "responsive", conversations = listOf(Conversation(id = "responsive", title = "合成阅读测试", messages = listOf(
+    private fun sample() = UiState(ready = true, data = Saved(notes = listOf(note), currentChat = "responsive", conversations = listOf(Conversation(id = "responsive", title = "合成阅读测试", messages = listOf(
         Message("user", original, source = "测试课件 · 第 1–10 页"),
         Message("assistant", "# DNA 的结构与复制\n\n### 理解主线\n\n" + "双链互补配对是理解复制的起点。先理解模板、碱基配对和方向，再串联各步骤。\n\n".repeat(100))
     )))))

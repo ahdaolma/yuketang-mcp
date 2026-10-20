@@ -94,20 +94,21 @@ fun Saved.folderName(note: Note) = noteFolders.find { it.id == note.folderId }?.
     var title by rememberSaveable(id) { mutableStateOf(note?.title ?: "") }
     LaunchedEffect(id, note) { if (id != null && note == null) onDismiss() }
     if (note == null) return
-    val writable = !ui.locked && ui.data.noteWritable(note.id)
+    val writable = ui.noteEditable(note.id)
+    val removable = !ui.locked && ui.data.noteWritable(note.id)
     when (action) {
         "options" -> AlertDialog(onDismissRequest = onDismiss, title = { Text(note.title, maxLines = 2, overflow = TextOverflow.Ellipsis) }, text = {
             Column(Modifier.fillMaxWidth().heightIn(max = 340.dp).verticalScroll(rememberScrollState())) {
-                FeedbackDropdownMenuItem(text = { Text("编辑笔记") }, enabled = writable, onClick = { vm.noteReader.open(note); vm.noteReader.editing = true; onDismiss() })
+                FeedbackDropdownMenuItem(text = { Text("编辑笔记") }, enabled = writable, onClick = { vm.noteReader.open(note); vm.noteReader.beginEditing(note); onDismiss() })
                 FeedbackDropdownMenuItem(text = { Text("重命名笔记") }, enabled = writable, onClick = { action = "rename" })
                 FeedbackDropdownMenuItem(text = { Text(if (note.pinned) "取消置顶" else "置顶笔记") }, enabled = !ui.locked, onClick = { vm.toggleNotePin(note.id); onDismiss() })
                 FeedbackDropdownMenuItem(text = { Text("移动到分类") }, enabled = !ui.locked, onClick = { action = "move" })
                 HorizontalDivider()
-                FeedbackDropdownMenuItem(text = { Text("按页删除内容…") }, enabled = writable, onClick = { action = "pages" })
-                FeedbackDropdownMenuItem(text = { Text("删除笔记…", color = MaterialTheme.colorScheme.error) }, enabled = writable, onClick = { action = "delete" })
+                FeedbackDropdownMenuItem(text = { Text("按页删除内容…") }, enabled = removable, onClick = { action = "pages" })
+                FeedbackDropdownMenuItem(text = { Text("删除笔记…", color = MaterialTheme.colorScheme.error) }, enabled = removable, onClick = { action = "delete" })
             }
         }, confirmButton = { FeedbackTextButton(onClick = onDismiss) { Text("关闭") } })
-        "pages" -> NotePageDeletion(note, vm, writable, onDismiss)
+        "pages" -> NotePageDeletion(note, vm, removable, onDismiss)
         "rename" -> AlertDialog(onDismissRequest = onDismiss, title = { Text("重命名笔记") }, text = {
             OutlinedTextField(title, { title = it.take(120) }, label = { Text("笔记标题") }, singleLine = true)
         }, confirmButton = { FeedbackTextButton(onClick = { if (vm.renameNote(note.id, title)) onDismiss() }, enabled = writable && title.isNotBlank()) { Text("保存标题") } }, dismissButton = { FeedbackTextButton(onClick = onDismiss) { Text("取消") } })
@@ -120,7 +121,7 @@ fun Saved.folderName(note: Note) = noteFolders.find { it.id == note.folderId }?.
             }
         }, confirmButton = { FeedbackTextButton(onClick = onDismiss) { Text("取消") } })
         "delete" -> AlertDialog(onDismissRequest = onDismiss, title = { Text("删除这份笔记？") }, text = { Text("“${note.title}”将从本机删除，此操作无法撤销。") },
-            confirmButton = { FeedbackTextButton(onClick = { if (vm.deleteNote(note.id)) onDismiss() }, enabled = writable, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("删除笔记") } },
+            confirmButton = { FeedbackTextButton(onClick = { if (vm.deleteNote(note.id)) onDismiss() }, enabled = removable, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("删除笔记") } },
             dismissButton = { FeedbackTextButton(onClick = onDismiss) { Text("保留笔记") } })
     }
 }

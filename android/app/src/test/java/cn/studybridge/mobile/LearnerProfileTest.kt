@@ -4,17 +4,6 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LearnerProfileTest {
-    @Test fun webNotesCarryTheSameExplanationRequirementsAndSourceRulesAsNativeNotes() {
-        for (role in listOf("", "用户自定义笔记角色")) {
-            val web = noteWebPrompt(role, "先解释术语，再讲机制")
-            val native = noteMessages(role, emptyList(), "外部笔记 · 第 2 段", "先解释术语，再讲机制")
-            assertTrue(web.contains(APP_CONTEXT)); assertTrue(web.contains(NOTE_FORMAT))
-            assertTrue(web.contains("先解释术语，再讲机制"))
-            assertTrue(web.contains(role.ifBlank { NOTES_PROMPT }))
-            assertTrue(native.any { it.text.contains(NOTE_FORMAT) })
-            assertTrue(web.contains("不虚构引文")); assertTrue(web.contains("不得默认要求用户手动发送截图"))
-        }
-    }
     private val profile = "大一，生物基础薄弱；希望先讲术语，再用例题理解机制。"
     @Test fun oldRecordsLoadWithoutChangingOtherData() {
         val old = Saved(session = "fixture-session", username = "fixture", notes = listOf(Note(title = "原笔记", content = "原内容", source = "第 1 页", model = "fixture")))
@@ -47,9 +36,17 @@ class LearnerProfileTest {
         assertFalse(text.contains("EXCESS"))
         assertEquals(LEARNER_PROFILE_LIMIT, savedFromJson(Saved().toJson().put("learnerProfile", "a".repeat(3000))).learnerProfile.length)
     }
-    @Test fun webTransferIncludesRoleProfileAndAccurateApplicationLimits() {
-        val prompt = learnerWebPrompt("", profile)
-        assertTrue(prompt.contains(profile)); assertTrue(prompt.contains(TUTOR_PROMPT)); assertTrue(prompt.contains(APP_CONTEXT))
-        assertTrue(prompt.contains("本次对话")); assertTrue(prompt.contains("不是课件事实"))
+    @Test fun legacyWebMigrationKeepsOriginalImageAndEndsObsoleteRun() {
+        val image = "a".repeat(64)
+        val note = Note("old-note", "旧笔记", "原有正文", "旧来源", "旧模型")
+        val run = ClassRun(LiveLesson("42", "旧课堂", "7"), note.id, "chatgpt-web", pending = listOf(LivePage("12", 1)))
+        val record = Saved(notes = listOf(note), classRun = run).toJson().put("learningMode", "web").put("webPending", org.json.JSONObject().put("noteId", note.id).put("imageRef", image).put("label", "未完成资料"))
+        val migrated = savedFromJson(record)
+        assertEquals(note.id, migrated.notes.single().id)
+        assertTrue(migrated.notes.single().content.startsWith(note.content))
+        assertTrue(migrated.notes.single().content.contains("study-image:"+image))
+        assertTrue(migrated.classRun!!.ended); assertTrue(migrated.classRun!!.pending.isEmpty())
+        assertFalse(migrated.toJson().has("learningMode")); assertFalse(migrated.toJson().has("webPending"))
+        assertEquals(migrated, savedFromJson(migrated.toJson()))
     }
 }

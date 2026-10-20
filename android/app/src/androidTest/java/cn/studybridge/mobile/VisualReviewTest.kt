@@ -143,7 +143,7 @@ class VisualReviewTest {
     }
     @Test fun largeTextClassActionsAndSettingsRemainReachable() {
         val base = sample()
-        val run = ClassRun(LiveLesson("7", courseTitle, "1"), providerId = WEB_PROVIDER_ID, completed = listOf("1:1", "1:2"), pending = listOf(LivePage("1", 3)))
+        val run = ClassRun(LiveLesson("7", courseTitle, "1"), providerId = "fixture", completed = listOf("1:1", "1:2"), pending = listOf(LivePage("1", 3)))
         val state = mutableStateOf(base.copy(tab = 2, data = base.data.copy(classRun = run), classUi = ClassUi(running = true, paused = true, status = "已暂停，完成的讲解已保存，回到学习页后可继续。")))
         render(state, scale = 1.5f)
         compose.onNodeWithText("继续").assertIsDisplayed()
@@ -151,7 +151,8 @@ class VisualReviewTest {
         compose.runOnIdle { state.value = state.value.copy(classUi = ClassUi(running = true, paused = false, status = "正在重新连接课堂…")) }
         compose.onNodeWithText("连接中").assertIsDisplayed()
         compose.runOnIdle { state.value = base.copy(tab = 3) }
-        compose.onNodeWithText("学习方式").assertIsDisplayed(); shot("sample-settings-large-text")
+        compose.onNodeWithText("模型与账号").assertIsDisplayed(); shot("sample-settings-large-text")
+        compose.runOnIdle { state.value = state.value.copy(settingsPage = "learning") }
         compose.onNodeWithText("我的学习情况").performScrollTo().performClick()
         compose.onNodeWithText("当前水平与学习需求").performScrollTo().assertIsDisplayed()
         shot("sample-learner-settings")
@@ -168,7 +169,8 @@ class VisualReviewTest {
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).assertIsDisplayed(); shot("sample-notes-dark")
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).performClick(); verifyTableRows(); shot("sample-note-reading-dark")
         compose.runOnIdle { state.value = state.value.copy(tab = 3) }
-        compose.onNodeWithText("学习方式").assertIsDisplayed(); compose.onNodeWithText("ChatGPT 网页").assertIsSelected(); shot("sample-settings-dark")
+        compose.onNodeWithText("模型与账号").assertIsDisplayed(); compose.onNodeWithText("笔记生成").assertIsDisplayed(); shot("sample-settings-dark")
+        compose.runOnIdle { state.value = state.value.copy(settingsPage = "learning") }
         compose.onNodeWithText("我的学习情况").performScrollTo().performClick()
         compose.onNodeWithText("当前水平与学习需求").performScrollTo().assertIsDisplayed(); shot("sample-learner-dark")
         compose.onNodeWithText("学习助手提示词").performScrollTo().assertIsDisplayed()

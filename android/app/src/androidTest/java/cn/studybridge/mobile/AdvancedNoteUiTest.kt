@@ -27,8 +27,8 @@ fun noteTestApplication(context: Context): Application {
         override fun getCacheDir() = File(root, "cache").apply { mkdirs() }
     }) } }
 }
-fun noteTestViewModel(app: Application, store: ViewModelStore): StudyViewModel = ViewModelProvider(object : ViewModelStoreOwner { override val viewModelStore = store }, object : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>) = StudyViewModel(app) as T
+fun noteTestViewModel(app: Application, store: ViewModelStore, rain: RainApi = RainApi(), ai: AiApi = AiApi()): StudyViewModel = ViewModelProvider(object : ViewModelStoreOwner { override val viewModelStore = store }, object : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>) = StudyViewModel(app, rain, ai) as T
 })[StudyViewModel::class.java]
 fun advancedUiShot(context: Context, name: String) {
     val bitmap = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
@@ -61,7 +61,7 @@ class AdvancedNoteUiTest {
         val images = SourceImages(app)
         val originalImage = images.save(syntheticSlideImage())
         val note = Note("draft", "自动保存测试", "原文不能被草稿覆盖。\n\n" + sourceImageMarkdown(originalImage, "原图"), "fixture", "手写")
-        val vault = Vault(app); vault.save(Saved(notes = listOf(note), learningMode = "native"))
+        val vault = Vault(app); vault.save(Saved(notes = listOf(note), ))
         val stores = mutableListOf(ViewModelStore())
         lateinit var first: StudyViewModel
         compose.runOnIdle { first = noteTestViewModel(app, stores.last()) }
@@ -106,7 +106,7 @@ class AdvancedNoteUiTest {
         val firstPage = "# 图文笔记\n\n## 第 1 页\n\n" + sourceImageMarkdown(image, "第一张原图") + "第一页的解释。\n\n"
         val note = Note("pages", "图文笔记", firstPage + "## 第 2 页\n\n删除这一页。\n\n" + sourceImageMarkdown(image, "第二张原图"), "fixture", "手写")
         val other = Note("shared", "另一份笔记", sourceImageMarkdown(image, "共享原图"), "fixture", "手写")
-        val vault = Vault(app); vault.save(Saved(notes = listOf(note, other), learningMode = "native"))
+        val vault = Vault(app); vault.save(Saved(notes = listOf(note, other), ))
         val store = ViewModelStore(); lateinit var vm: StudyViewModel
         compose.runOnIdle { vm = noteTestViewModel(app, store) }; render(mutableStateOf(vm))
         try {
@@ -148,7 +148,7 @@ class AdvancedNoteUiTest {
         val app = noteTestApplication(compose.activity.applicationContext)
         val content = (1..3).joinToString("\n") { "## 第 $it 页\n\n" + "这一页的机制和关键结论需要结合图示理解。\n\n".repeat(100) }
         val note = Note("memory", "记忆阅读测试", content, "fixture", "手写")
-        Vault(app).save(Saved(notes = listOf(note), learningMode = "native"))
+        Vault(app).save(Saved(notes = listOf(note), ))
         val stores = mutableListOf(ViewModelStore()); lateinit var first: StudyViewModel
         compose.runOnIdle { first = noteTestViewModel(app, stores.last()) }; val current = mutableStateOf(first); render(current)
         try {

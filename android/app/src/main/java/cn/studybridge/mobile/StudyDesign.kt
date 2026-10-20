@@ -104,7 +104,7 @@ import androidx.compose.ui.unit.dp
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(ui.tab) { focus.clearFocus(); keyboard?.hide() }
-    val reading = (ui.tab == 0 && !ui.data.usesWeb) || noteOpen
+    val reading = ui.tab == 0 || noteOpen
     val inlineHeader = reading
     val density = LocalDensity.current
     val chrome = remember(ui.tab, noteOpen, ui.data.currentChat) { ReadingChromeState(with(density) { 24.dp.toPx() }) }
@@ -120,10 +120,10 @@ import androidx.compose.ui.unit.dp
         contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
         topBar = { Column(Modifier.windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
             StudyTimeBar()
-            if (!(ui.data.usesWeb && ui.tab == 0) && !inlineHeader) TopAppBar(
+            if (!inlineHeader) TopAppBar(
             modifier = Modifier.testTag("应用顶部栏"), expandedHeight = 56.dp, windowInsets = WindowInsets(0, 0, 0, 0),
-            title = { Text(if (ui.tab == 3) "设置" else labels.getOrElse(ui.tab) { "学习" }, style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp), maxLines = 1) },
-            navigationIcon = { if (ui.tab == 3 || noteOpen) FeedbackIconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, if (noteOpen) "返回笔记列表" else "返回学习", Modifier.size(22.dp)) } },
+            title = { Text(if (ui.tab == 3) settingsPageTitle(ui.settingsPage) else labels.getOrElse(ui.tab) { "学习" }, style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp), maxLines = 1) },
+            navigationIcon = { if (ui.tab == 3 || noteOpen) FeedbackIconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, if (noteOpen) "返回笔记列表" else if (ui.tab == 3 && ui.settingsPage.isNotEmpty()) "返回设置" else "返回学习", Modifier.size(22.dp)) } },
             actions = { if (ui.busy) FeedbackTextButton(onClick = onStop) { Text("停止") }; if (ui.tab != 3) FeedbackIconButton(onClick = { onTab(3) }) { Icon(Icons.Outlined.Settings, "设置", Modifier.size(22.dp)) } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
         ) } },
@@ -239,11 +239,13 @@ fun studyClockText(now: Long = System.currentTimeMillis()): String =
 }
 
 // ViewModel-owned: switching tabs or rotating does not silently discard an unsaved draft.
-data class NoteDraft(val noteId: String, val content: String, val updatedAt: Long = System.currentTimeMillis())
+data class NoteDraft(val noteId: String, val content: String, val updatedAt: Long = System.currentTimeMillis(), val baseContent: String? = null)
 
-class NoteReader(private val storedDraft: (String) -> String? = { null }, private val onDraft: (String, String) -> Unit = { _, _ -> }) {
+class NoteReader(private val storedDraft: (String) -> NoteDraft? = { null }, private val onDraft: (String, String) -> Unit = { _, _ -> }) {
     var id by mutableStateOf<String?>(null)
     var editing by mutableStateOf(false)
+    var baseContent: String = ""
+        private set
     private var draftText by mutableStateOf("")
     var draft: String
         get() = draftText
@@ -252,9 +254,12 @@ class NoteReader(private val storedDraft: (String) -> String? = { null }, privat
     fun open(note: Note) {
         editing = false; id = note.id
         val recovered = storedDraft(note.id)
-        draftText = recovered ?: note.content
+        baseContent = recovered?.baseContent ?: note.content
+        draftText = recovered?.content ?: note.content
         editing = recovered != null; closeRequested = false
     }
+    fun beginEditing(note: Note) { if (id != note.id) open(note); if (!editing) { baseContent = note.content; draftText = note.content; editing = true } }
+    fun acceptSaved(content: String) { baseContent = content; draftText = content }
     fun close() { editing = false; id = null; draftText = ""; closeRequested = false }
 }
 

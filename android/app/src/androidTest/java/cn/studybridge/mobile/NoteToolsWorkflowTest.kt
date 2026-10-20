@@ -33,7 +33,7 @@ class NoteToolsWorkflowTest {
         val app = IsolatedApplication(compose.activity.applicationContext, File(compose.activity.cacheDir, "note-tools-${newId()}"))
         val vault = Vault(app)
         val old = Note("existing", "旧的课程笔记", "保留的原文和图片 ![原页](study-image://fixture)", "第一周", "fixture")
-        vault.save(Saved(notes = listOf(old), learningMode = "native"))
+        vault.save(Saved(notes = listOf(old), ))
         val store = ViewModelStore()
         val owner = object : ViewModelStoreOwner { override val viewModelStore = store }
         lateinit var vm: StudyViewModel
