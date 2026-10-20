@@ -60,6 +60,12 @@ class ClassNoteEditingTest {
             val content = vm.ui.value.data.notes.single().content
             assertTrue(content.contains("我修正后的定义")); assertTrue(content.contains("新生成的第二页讲解")); assertFalse(content.contains("原来的定义"))
         }
+        compose.waitUntil(5000) {
+            android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap(::descendants)
+                .filterIsInstance<NoteSelectableTextView>().any { it.text.contains("我修正后的定义") }
+        }
+        compose.waitForIdle()
+        compose.onRoot().captureToImage()
         advancedUiShot(compose.activity, "sample-class-edit-saved")
         compose.runOnIdle { store.clear() }
     }
@@ -128,3 +134,4 @@ class ClassNoteEditingTest {
         compose.runOnIdle { store.clear() }
     }
 }
+
