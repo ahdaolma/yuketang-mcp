@@ -17,6 +17,44 @@ enum class StudyMark(val marker: String, val label: String) {
 }
 val studyMarkPattern = Regex("(==|\\+\\+|%%|!!)([^\\r\\n]{1,240}?)\\1")
 
+// Table cells cache their own Spanned strings before Android draws the parent.
+// Normalize their markers before parsing, so no delimiter or stale cell width
+// leaks into the table. The original Markdown and code remain unchanged.
+fun markdownForStudyMarks(raw: String): String {
+    if (!raw.contains('|') || !studyMarkPattern.containsMatchIn(raw)) return raw
+    val lines = raw.split('\n').toMutableList()
+    val code = BooleanArray(lines.size)
+    var fence = ""
+    val fencePattern = Regex("^ {0,3}(`{3,}|~{3,})")
+    lines.forEachIndexed { index, line ->
+        val marker = fencePattern.find(line)?.groupValues?.get(1)
+        code[index] = fence.isNotEmpty() || marker != null
+        if (marker != null) {
+            if (fence.isEmpty()) fence = marker
+            else if (marker.first() == fence.first() && marker.length >= fence.length) fence = ""
+        }
+    }
+    fun clean(line: String): String {
+        val inlineCode = Regex("`+[^`]*`+").findAll(line).map { it.range }.toList()
+        return studyMarkPattern.replace(line) { match ->
+            if (inlineCode.any { match.range.first in it }) match.value
+            else when (match.groupValues[1]) { "==", "!!" -> "**${match.groupValues[2]}**"; "++" -> "*${match.groupValues[2]}*"; else -> match.groupValues[2] }
+        }
+    }
+    var table = false
+    lines.indices.forEach { index ->
+        val line = lines[index]
+        if (code[index]) { table = false; return@forEach }
+        val separator = line.contains('|') && line.trim().removePrefix("|").removeSuffix("|").split('|').all { it.trim().matches(Regex(":?-{3,}:?")) }
+        if (separator && index > 0 && !code[index - 1] && lines[index - 1].contains('|')) {
+            table = true; lines[index - 1] = clean(lines[index - 1])
+        } else if (table) {
+            if (line.contains('|')) lines[index] = clean(line) else table = false
+        }
+    }
+    return lines.joinToString("\n")
+}
+
 // Work on the parsed Spanned so existing bold, formula, link and table spans
 // move together with delimiter removal. Markers inside code remain literal.
 fun renderStudyMarks(parsed: Spanned, density: Float, dark: Boolean): Spanned {
@@ -24,7 +62,7 @@ fun renderStudyMarks(parsed: Spanned, density: Float, dark: Boolean): Spanned {
     studyMarkPattern.findAll(parsed).toList().asReversed().forEach { match ->
         val start = match.range.first
         val end = match.range.last + 1
-        val inCode = parsed.getSpans(start, end, Any::class.java).any { it.javaClass.simpleName.contains("Code", ignoreCase = true) }
+        val inCode = parsed.getSpans(start, end, Any::class.java).any { it.javaClass.simpleName.contains("Code", ignoreCase = true) || it.javaClass.simpleName.contains("Table", ignoreCase = true) }
         if (!inCode) {
             val kind = StudyMark.entries.first { it.marker == match.groupValues[1] }
             output.delete(end - 2, end); output.delete(start, start + 2)

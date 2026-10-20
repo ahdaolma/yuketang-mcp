@@ -83,6 +83,14 @@ class AdvancedNoteUiTest {
             compose.waitUntil(5000) { third.ui.value.ready }
             assertNull(third.noteReader.id)
             assertEquals(note, third.ui.value.data.notes.single())
+            compose.runOnIdle { third.createManualNote(); third.noteReader.draft = "刚新建就输入并自动保存的内容。" }
+            val newId = requireNotNull(third.noteReader.id)
+            compose.waitUntil(5000) { !third.ui.value.noteDraftSaving && vault.load().notes.any { it.id == newId } && Vault(app, "note-drafts-v1.enc").load().noteDrafts.any { it.noteId == newId } }
+            lateinit var fourth: StudyViewModel
+            compose.runOnIdle { stores[2].clear(); stores += ViewModelStore(); fourth = noteTestViewModel(app, stores.last()); current.value = fourth }
+            compose.waitUntil(5000) { fourth.ui.value.ready && fourth.noteReader.id == newId }
+            assertEquals("刚新建就输入并自动保存的内容。", fourth.noteReader.draft)
+            assertEquals(note, fourth.ui.value.data.notes.single { it.id == note.id })
         } finally { compose.runOnIdle { stores.forEach { it.clear() } } }
     }
     @Test fun pageDeletionAndImageRotationRemovalUndoKeepOtherPagesAndSharedOriginals() {
@@ -136,6 +144,7 @@ class AdvancedNoteUiTest {
             compose.runOnIdle { first.tab(2); first.noteReader.open(note) }
             compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("目录跳转").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithContentDescription("目录跳转").performClick(); compose.onNodeWithText("2. 第 2 页").performClick()
+            compose.waitUntil(5000) { compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue() > 100f }
             compose.onNodeWithTag("笔记正文").performTouchInput { swipeUp(durationMillis = 500) }
             compose.waitUntil(5000) { first.readingMemory.position(note.id)?.let { it.index == 1 && it.scroll > 100 } == true }
             compose.runOnIdle { first.noteReader.close() }

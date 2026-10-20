@@ -51,7 +51,7 @@ fun SourceImages.rotated(id: String): String {
     val previews = remember(context) { MaterialPreviews(context) }
     fun apply(snapshot: String, match: MatchResult?, replacement: String) {
         if (latest != snapshot) { onError("草稿已变化，请重新选择图片再操作。"); return }
-        val next = if (match == null) snapshot + (if (snapshot.endsWith("\n") || snapshot.isEmpty()) "" else "\n\n") + replacement + "\n\n"
+        val next = if (match == null) snapshot + (when { snapshot.isEmpty() || snapshot.endsWith("\n\n") -> ""; snapshot.endsWith("\n") -> "\n"; else -> "\n\n" }) + replacement + "\n\n"
             else replaceNoteImage(snapshot, match.range.first, match.value, replacement)
         undo = snapshot to next; onChange(next)
     }

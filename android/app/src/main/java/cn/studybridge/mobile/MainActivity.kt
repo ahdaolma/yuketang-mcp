@@ -212,7 +212,7 @@ class MainActivity : ComponentActivity() {
             }).build()
     }
     val dark = colors.background.luminance() < 0.5f
-    val formatted by produceState<android.text.Spanned?>(null, text, renderer, density, dark) { value = withContext(Dispatchers.Default) { renderStudyMarks(renderer.toMarkdown(text), density, dark) } }
+    val formatted by produceState<android.text.Spanned?>(null, text, renderer, density, dark) { value = withContext(Dispatchers.Default) { renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(text)), density, dark) } }
     AndroidView(factory = { TextView(it).apply { textSize = 16f; setTextIsSelectable(true); setLineSpacing(0f, 1.3f) } }, modifier = Modifier.fillMaxWidth(), update = {
         if (it.currentTextColor != color) it.setTextColor(color)
         if (kotlin.math.abs(it.textSize - bodySize) > 0.1f) it.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, bodySize)
@@ -610,6 +610,14 @@ private fun preview(bytes: ByteArray): Bitmap? {
     DisposableEffect(note.id, hash, scroll, restored) {
         onDispose { if (independentScroll && restored) latestPositionCallback(NoteReadingPosition(note.id, latestSelection, scroll.value, latestLabels[latestSelection], hash)) }
     }
+    val readingLifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(readingLifecycle, note.id, hash, restored) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && independentScroll && restored) latestPositionCallback(NoteReadingPosition(note.id, latestSelection, scroll.value, latestLabels[latestSelection], hash))
+        }
+        readingLifecycle.addObserver(observer)
+        onDispose { readingLifecycle.removeObserver(observer) }
+    }
     if (jump) JumpDialog("笔记目录 / 阅读分段", labels, { jump = false }) { index = it; jump = false }
     ReadingChatLayout(false, modifier, toolbar = {
         val floatingTools = LocalFloatingReadingTools.current
@@ -621,7 +629,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             TextButton(onClick = { jump = true }, modifier = Modifier.weight(1f).semantics {
                 contentDescription = "目录跳转"
                 stateDescription = "阅读分段 ${selected + 1} / ${segments.size} · 完整笔记已保留"
-            }) { Text(if (segments.size > 1) "${selected + 1} / ${segments.size} ▾" else "目录 ▾", maxLines = 1) }
+            }) { Text(if (segments.size > 1) "${selected + 1}/${segments.size} ▾" else "目录 ▾", maxLines = 1) }
             if (segments.size > 1 && showArrows) IconButton(onClick = { index = selected + 1 }, enabled = selected < segments.lastIndex) { Icon(Icons.Default.ChevronRight, "下一段") }
             if (independentScroll) Box {
                 IconButton(onClick = { navigation = true }) { Icon(Icons.Default.SwapVert, "阅读跳转") }

@@ -18,7 +18,7 @@ import org.junit.Test
 class ReadingMarksAndClassControlTest {
     @get:Rule val compose = createAndroidComposeRule<WebFixtureActivity>()
     @Test fun highlighterUnderlineSlashesAndWavesRenderWithoutVisibleDelimitersInBothThemes() {
-        val content = "### 复制的主线\n\n==DNA 的复制是半保留复制==，原有两条链分别作为模板。\n\n++理解方向与互补配对如何共同决定复制过程++，再串联关键酶的作用。\n\n%%复制研究的发现史作为背景了解%%。\n\n!!不要把两条亲代链同时保留在同一个子代分子中!!。\n\n`==代码中的等号保持原样==`"
+        val content = "### 复制的主线\n\n==DNA 的复制是半保留复制==，原有两条链分别作为模板。\n\n++理解方向与互补配对如何共同决定复制过程++，再串联关键酶的作用。\n\n%%复制研究的发现史作为背景了解%%。\n\n!!不要把两条亲代链同时保留在同一个子代分子中!!。\n\n`==代码中的等号保持原样==`\n\n| 对照 | 提示 |\n| --- | --- |\n| ==模板== | ++方向++ |"
         val dark = mutableStateOf(false)
         compose.setContent { StudyTheme(dark.value) { androidx.compose.material3.Surface(Modifier.fillMaxSize()) { Column(Modifier.fillMaxSize().padding(24.dp)) { StudyTimeBar(); Markdown(content) } } } }
         fun textViews(view: View): List<TextView> = when (view) {
@@ -34,7 +34,7 @@ class ReadingMarksAndClassControlTest {
         compose.runOnIdle {
             val text = textViews(compose.activity.window.decorView).map { it.text }.first { it.contains("复制的主线") }
             assertTrue(text.contains("==代码中的等号保持原样=="))
-            assertFalse(text.contains("==DNA")); assertFalse(text.contains("++理解")); assertFalse(text.contains("%%复制")); assertFalse(text.contains("!!不要"))
+            assertFalse(text.contains("==模板==")); assertFalse(text.contains("++方向++")); assertFalse(text.contains("==DNA")); assertFalse(text.contains("++理解")); assertFalse(text.contains("%%复制")); assertFalse(text.contains("!!不要"))
         }
         advancedUiShot(compose.activity, "sample-note-marks-light")
         var previousText: CharSequence? = null

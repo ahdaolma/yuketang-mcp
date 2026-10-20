@@ -18,7 +18,7 @@ fun restoredNoteIndex(position: NoteReadingPosition?, hash: String, labels: List
 
 class NoteReadingMemory(context: Context, scope: CoroutineScope, private val onError: (String) -> Unit) {
     private val vault = Vault(context, "note-reading-v1.enc")
-    private var entries = emptyList<NoteReadingPosition>()
+    @Volatile private var entries = emptyList<NoteReadingPosition>()
     private var blocked = false
     private val writes = Channel<Unit>(Channel.CONFLATED)
     init { scope.launch { for (signal in writes) {

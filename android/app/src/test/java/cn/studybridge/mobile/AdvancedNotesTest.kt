@@ -56,5 +56,10 @@ class AdvancedNotesTest {
         assertTrue(NOTE_FORMAT.contains("每段至多一处"))
         assertTrue(NOTE_FORMAT.contains("不代表") || NOTE_FORMAT.contains("不承诺") || NOTE_FORMAT.contains("不得承诺"))
         assertEquals("自定义角色", upgradedNotesPrompt("自定义角色"))
+        val table = "| 内容 | 方向 |\n| --- | --- |\n| ==模板== | ++互补++ |\n\n==正文高亮==\n\n```md\n| ==代码== |\n```"
+        val normalized = markdownForStudyMarks(table)
+        assertTrue(normalized.contains("| **模板** | *互补* |"))
+        assertTrue(normalized.contains("==正文高亮=="))
+        assertTrue(normalized.contains("| ==代码== |"))
     }
 }

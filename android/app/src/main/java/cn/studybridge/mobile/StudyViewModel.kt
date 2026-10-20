@@ -32,6 +32,7 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
     val readingMemory = NoteReadingMemory(app, viewModelScope, ::notice)
     private val draftVault = Vault(app, "note-drafts-v1.enc")
     private val draftDisk = Mutex()
+    private val durableNoteIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private var savedDrafts = emptyList<NoteDraft>()
     private var draftRevision = 0L
     private var draftStorageBlocked = false
@@ -69,6 +70,7 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
                     runCatching { sourceImages.prune(saved.copy(noteDrafts = drafts)) }
                     saved to drafts
                 }
+                durableNoteIds.addAll(loaded.first.notes.map { it.id })
                 savedDrafts = loaded.second
                 readingMemory.load(loaded.first.notes.map { it.id }.toSet())
                 state.update { it.copy(data = loaded.first, ready = true) }
@@ -94,7 +96,17 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
             val revision = draftRevision
             val snapshot = savedDrafts
             try {
-                withContext(Dispatchers.IO) { if (!draftStorageBlocked) draftVault.save(Saved(noteDrafts = snapshot)) }
+                withContext(Dispatchers.IO) {
+                    if (!draftStorageBlocked) {
+                        // A new note's original record must be durable before
+                        // its draft can be acknowledged as recoverable.
+                        if (snapshot.any { it.noteId !in durableNoteIds }) disk.withLock {
+                            val originals = state.value.data
+                            vault.save(originals); durableNoteIds.addAll(originals.notes.map { it.id })
+                        }
+                        draftVault.save(Saved(noteDrafts = snapshot))
+                    }
+                }
                 if (revision == draftRevision) state.update { it.copy(noteDraftSaving = false, noteDraftSavedAt = System.currentTimeMillis()) }
             } catch (_: Exception) { state.update { it.copy(noteDraftSaveError = "草稿保存失败，请手动保存并检查存储空间") }; notice("草稿自动保存失败，请检查存储空间；当前草稿仍在编辑器中。") }
         }
@@ -109,6 +121,7 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
     private fun persist() { viewModelScope.launch(Dispatchers.IO) { disk.withLock { if (!storageBlocked) try {
         val snapshot = state.value.data
         vault.save(snapshot)
+        durableNoteIds.addAll(snapshot.notes.map { it.id })
         withContext(Dispatchers.Main.immediate) {
             val remaining = savedDrafts.filter { draft ->
                 val current = state.value.data.notes.find { it.id == draft.noteId }
