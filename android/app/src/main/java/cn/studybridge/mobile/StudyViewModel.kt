@@ -102,7 +102,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         check(state.value.data.webPending == null) { "上一份网页回答尚未保存，请先在学习页恢复回答；不会重复发送。" }
         state.update { it.copy(tab = 0) }
         val pending = WebPending("RS-${newId()}", a.label, webReturnUrl(webPage?.pageUrl ?: CHATGPT_WEB), pageKey, noteId, noteSource)
-        return webDriver().generate(withLearnerProfile(prompt, state.value.data.learnerProfile), a, pending.marker, onMatched = { webLocation(webPage?.pageUrl ?: CHATGPT_WEB) }) {
+        return webDriver().generate(noteWebPrompt(prompt, state.value.data.learnerProfile), a, pending.marker, onMatched = { webLocation(webPage?.pageUrl ?: CHATGPT_WEB) }) {
             checkpoint { it.copy(webPending = pending) }
         }
     }
@@ -332,7 +332,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     fun importMaterial(uri: Uri, kind: String) = operation("导入学习资料") {
         var imported: MaterialDocument? = null
         try {
-            val doc = withContext(NonCancellable + Dispatchers.IO) { materials.importDocument(uri, kind) }; imported = doc
+            val doc = withContext(NonCancellable + Dispatchers.IO) { materials.importDocument(uri, kind).also { imported = it } }
             val note = if (kind == "notes") Note(title = doc.material.title, content = doc.noteText.ifBlank { "# ${doc.material.title}\n\n原始笔记共 ${doc.pages.size} 页。点击「AI 讲解」选择原文页面；此处未伪造图片中的文字。" }, source = "外部导入 · ${doc.material.title} · ${readableTime(doc.material.importedAt)}", model = "外部导入", materialId = doc.material.id) else null
             val savedDoc = doc.copy(material = doc.material.copy(noteId = note?.id.orEmpty()))
             checkpoint { it.copy(materials = listOf(savedDoc.material) + it.materials, notes = if (note != null) listOf(note) + it.notes else it.notes) }
