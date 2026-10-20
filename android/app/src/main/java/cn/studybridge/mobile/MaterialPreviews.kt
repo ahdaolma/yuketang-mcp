@@ -100,36 +100,44 @@ class MaterialPreviews(context: Context) {
 }
 
 @Composable fun ImageViewer(label: String, onClose: () -> Unit, source: suspend () -> Attachment) {
-    val loader by rememberUpdatedState(source)
-    var retry by remember { mutableIntStateOf(0) }
-    val visual by produceState<VisualLoad?>(null, label, retry) {
-        value = null
-        value = try { withContext(Dispatchers.IO) {
-            val a = loader(); VisualLoad(label, retry, PageVisual(a.image?.let { boundedBitmap(Base64.decode(it.substringAfter(','), Base64.DEFAULT)) }, a.text))
-        } } catch (e: CancellationException) { throw e } catch (_: Exception) { VisualLoad(label, retry, null, "原页读取失败，请检查网络或重新导入资料。") }
-    }
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Column(Modifier.fillMaxSize().padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) { Text(label, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 3, overflow = TextOverflow.Ellipsis); TextButton(onClick = onClose) { Text("关闭预览") } }
-                var scale by remember(label) { mutableFloatStateOf(1f) }
-                var offset by remember(label) { mutableStateOf(Offset.Zero) }
-                Row(verticalAlignment = Alignment.CenterVertically) { Text("双指缩放、拖动查看", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall); TextButton(onClick = { scale = 1f; offset = Offset.Zero }) { Text("重置缩放") } }
-                val current = visual?.takeIf { it.key == label && it.attempt == retry }
-                if (current == null) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                else if (current.visual == null) { Text(current.error); OutlinedButton(onClick = { retry++ }) { Text("重新读取") } }
-                else current.visual?.bitmap?.let { bitmap ->
-                    Box(Modifier.weight(1f).fillMaxWidth().clipToBounds().background(MaterialTheme.colorScheme.surfaceContainerLow).pointerInput(bitmap) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            scale = (scale * zoom).coerceIn(1f, 5f)
-                            val boundX = size.width * (scale - 1) / 2; val boundY = size.height * (scale - 1) / 2
-                            offset = Offset((offset.x + pan.x).coerceIn(-boundX, boundX), (offset.y + pan.y).coerceIn(-boundY, boundY))
-                        }
-                    }, contentAlignment = Alignment.Center) {
-                        Image(bitmap.asImageBitmap(), label, Modifier.fillMaxSize().graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y), contentScale = ContentScale.Fit)
+        ImageViewerContent(label, onClose, source)
+    }
+}
+
+// Keep the asynchronous load and its observed state in the dialog's composition.
+// The host may stop drawing while this full-screen window owns the foreground.
+@Composable private fun ImageViewerContent(label: String, onClose: () -> Unit, source: suspend () -> Attachment) {
+    val loader by rememberUpdatedState(source)
+    var retry by remember(label) { mutableIntStateOf(0) }
+    val attempt = retry
+    val visual by produceState<VisualLoad?>(null, label, attempt) {
+        value = null
+        val loadSource = loader
+        value = try { withContext(Dispatchers.IO) {
+            val a = loadSource(); VisualLoad(label, attempt, PageVisual(a.image?.let { boundedBitmap(Base64.decode(it.substringAfter(','), Base64.DEFAULT)) }, a.text))
+        } } catch (e: CancellationException) { throw e } catch (_: Exception) { VisualLoad(label, attempt, null, "原页读取失败，请检查网络或重新导入资料。") }
+    }
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(Modifier.fillMaxSize().padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) { Text(label, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 3, overflow = TextOverflow.Ellipsis); TextButton(onClick = onClose) { Text("关闭预览") } }
+            var scale by remember(label) { mutableFloatStateOf(1f) }
+            var offset by remember(label) { mutableStateOf(Offset.Zero) }
+            Row(verticalAlignment = Alignment.CenterVertically) { Text("双指缩放、拖动查看", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall); TextButton(onClick = { scale = 1f; offset = Offset.Zero }) { Text("重置缩放") } }
+            val current = visual?.takeIf { it.key == label && it.attempt == attempt }
+            if (current == null) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            else if (current.visual == null) { Text(current.error); OutlinedButton(onClick = { retry++ }) { Text("重新读取") } }
+            else current.visual?.bitmap?.let { bitmap ->
+                Box(Modifier.weight(1f).fillMaxWidth().clipToBounds().background(MaterialTheme.colorScheme.surfaceContainerLow).pointerInput(bitmap) {
+                    detectTransformGestures { _, pan, zoom, _ ->
+                        scale = (scale * zoom).coerceIn(1f, 5f)
+                        val boundX = size.width * (scale - 1) / 2; val boundY = size.height * (scale - 1) / 2
+                        offset = Offset((offset.x + pan.x).coerceIn(-boundX, boundX), (offset.y + pan.y).coerceIn(-boundY, boundY))
                     }
-                } ?: Text(current.visual?.text.orEmpty(), Modifier.weight(1f).verticalScroll(rememberScrollState()))
-            }
+                }, contentAlignment = Alignment.Center) {
+                    Image(bitmap.asImageBitmap(), label, Modifier.fillMaxSize().graphicsLayer(scaleX = scale, scaleY = scale, translationX = offset.x, translationY = offset.y), contentScale = ContentScale.Fit)
+                }
+            } ?: Text(current.visual?.text.orEmpty(), Modifier.weight(1f).verticalScroll(rememberScrollState()))
         }
     }
 }

@@ -34,8 +34,8 @@ fun syntheticSlideImage(): String {
 
 class PreviewNavigationTest {
     @get:Rule val compose = createAndroidComposeRule<WebFixtureActivity>()
-    private fun shot(name: String) {
-        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+    private fun shot(name: String, dialog: Boolean = false) {
+        val bitmap = (if (dialog) compose.onNode(isDialog()) else compose.onRoot()).captureToImage().asAndroidBitmap()
         val resolver = compose.activity.contentResolver
         val uri = requireNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "$name.png"); put(MediaStore.Images.Media.MIME_TYPE, "image/png"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/StudyUiReview"); put(MediaStore.Images.Media.IS_PENDING, 1)
@@ -72,7 +72,7 @@ class PreviewNavigationTest {
             compose.waitUntil(5000) { compose.onAllNodesWithText("关闭预览").fetchSemanticsNodes().isNotEmpty() }
             compose.waitUntil(10000) { compose.onAllNodesWithContentDescription("测试课件第 3 页").fetchSemanticsNodes().isNotEmpty() }
         } catch (error: Throwable) {
-            val trees = compose.onAllNodes(isRoot()).printToString()
+            val trees = compose.onAllNodes(isRoot()).printToString(maxDepth = 12)
             val bitmap = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
             bitmap?.let {
                 val resolver = compose.activity.contentResolver
@@ -89,6 +89,22 @@ class PreviewNavigationTest {
         compose.onNodeWithText("关闭预览").performClick()
         runBlocking { assertNotNull(repository.load(cacheKey) { error("must use cached thumbnail") }.bitmap) }
         assertEquals(3, calls.get())
+    }
+    @Test fun fullPreviewCanRetryAfterSourceFailure() {
+        val calls = AtomicInteger(); val image = syntheticSlideImage()
+        var open by mutableStateOf(true)
+        compose.setContent { StudyTheme(false) { if (open) ImageViewer("原页重试测试", { open = false }) {
+            if (calls.incrementAndGet() == 1) error("synthetic unavailable")
+            Attachment(image, "原页重试测试", "")
+        } } }
+        compose.waitUntil(5000) { compose.onAllNodesWithText("重新读取").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("重新读取").performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("原页重试测试").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription("原页重试测试").assertIsDisplayed()
+        shot("sample-slide-full-preview", dialog = true)
+        compose.onNodeWithText("关闭预览").performClick()
+        compose.onNodeWithContentDescription("原页重试测试").assertDoesNotExist()
+        assertEquals(2, calls.get())
     }
     @Test fun noteDirectoryJumpsToPageWithInlineImageAndPersistentControls() {
         val images = SourceImages(compose.activity); val id = images.save(syntheticSlideImage())
