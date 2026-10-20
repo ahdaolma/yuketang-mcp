@@ -27,7 +27,7 @@ import androidx.compose.ui.unit.dp
             val choices = remember(labels, query) { labels.withIndex().filter { query.isBlank() || "${it.index + 1}" == query.trim() || it.value.contains(query.trim(), true) } }
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
                 if (choices.isEmpty()) item { Text("没有匹配的内容") }
-                itemsIndexed(choices, key = { _, item -> item.index }) { _, item -> TextButton(onClick = { onSelect(item.index) }, modifier = Modifier.fillMaxWidth()) { Text("${item.index + 1}. ${item.value}", Modifier.fillMaxWidth()) } }
+                itemsIndexed(choices, key = { _, item -> item.index }) { _, item -> TextButton(onClick = { onSelect(item.index) }, modifier = Modifier.fillMaxWidth()) { Text("${item.index + 1}. ${item.value}", Modifier.fillMaxWidth(), maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) } }
             }
         }
     }, confirmButton = { TextButton(onClick = onDismiss) { Text("取消跳转") } })

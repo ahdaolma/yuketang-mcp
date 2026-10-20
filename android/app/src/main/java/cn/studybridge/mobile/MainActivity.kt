@@ -207,6 +207,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
     bitmap?.let { Image(it.asImageBitmap(), label, Modifier.fillMaxWidth().heightIn(max = 220.dp), contentScale = ContentScale.Fit) }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable fun ChatScreen(ui: UiState, vm: StudyViewModel) {
     var input by rememberSaveable { mutableStateOf("") }
     var history by remember { mutableStateOf(false) }
@@ -232,7 +233,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             TextButton(onClick = vm::newChat, enabled = !ui.locked) { Text("新对话") }
             Spacer(Modifier.weight(1f)); TextButton(onClick = vm::notes, enabled = !ui.locked && (chat.messages.isNotEmpty() || ui.pending != null), unavailableReason = if (chat.messages.isEmpty() && ui.pending == null) "先选择一页课件或进行对话，再生成笔记。" else null) { Text("生成笔记") }
         }
-        if (chat.messages.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (chat.messages.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             TextButton(onClick = { scope.launch { listState.scrollToItem(0) } }) { Text("顶部") }
             TextButton(onClick = { scope.launch { listState.scrollToItem(chat.messages.lastIndex); listState.scrollBy(1_000_000f) } }) { Text("底部") }
             TextButton(onClick = { jump = true }) { Text("跳转消息") }

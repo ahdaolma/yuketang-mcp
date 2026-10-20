@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Base64
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -17,6 +18,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -36,7 +39,7 @@ private data class VisualLoad(val key: String, val attempt: Int, val visual: Pag
 data class PageVisual(val bitmap: Bitmap? = null, val text: String = "")
 class MaterialPreviews(context: Context) {
     private val root = File(context.cacheDir, "page-previews").apply { mkdirs() }
-    private val gate = Semaphore(2)
+    private companion object { val gate = Semaphore(2) }
     suspend fun load(key: String, source: suspend () -> Attachment): PageVisual = gate.withPermit {
         withContext(Dispatchers.IO) {
             val file = File(root, imageDigest(key.toByteArray()) + ".jpg")
@@ -87,7 +90,7 @@ class MaterialPreviews(context: Context) {
             if (current == null) Box(Modifier.fillMaxWidth().height(110.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)); }
             else if (current.visual == null) Row(verticalAlignment = Alignment.CenterVertically) { Text(current.error, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); TextButton(onClick = { retry++ }) { Text("重试预览") } }
             else {
-                current.visual?.bitmap?.let { Image(it.asImageBitmap(), "$label 缩略图", Modifier.fillMaxWidth().heightIn(min = 80.dp, max = 160.dp), contentScale = ContentScale.Fit) }
+                current.visual?.bitmap?.let { Image(it.asImageBitmap(), "$label 缩略图", Modifier.fillMaxWidth().heightIn(min = 80.dp, max = 160.dp).clickable { enlarged = true }, contentScale = ContentScale.Fit) }
                     ?: Text(current.visual?.text.orEmpty().ifBlank { "此页没有可预览内容" }, maxLines = 5, style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = { enlarged = true }) { Text("放大预览") }
             }
@@ -108,7 +111,7 @@ class MaterialPreviews(context: Context) {
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) { Text(label, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall); TextButton(onClick = onClose) { Text("关闭预览") } }
+                Row(verticalAlignment = Alignment.CenterVertically) { Text(label, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 3, overflow = TextOverflow.Ellipsis); TextButton(onClick = onClose) { Text("关闭预览") } }
                 var scale by remember(label) { mutableFloatStateOf(1f) }
                 var offset by remember(label) { mutableStateOf(Offset.Zero) }
                 Row(verticalAlignment = Alignment.CenterVertically) { Text("双指缩放、拖动查看", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall); TextButton(onClick = { scale = 1f; offset = Offset.Zero }) { Text("重置缩放") } }
@@ -116,7 +119,7 @@ class MaterialPreviews(context: Context) {
                 if (current == null) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 else if (current.visual == null) { Text(current.error); OutlinedButton(onClick = { retry++ }) { Text("重新读取") } }
                 else current.visual?.bitmap?.let { bitmap ->
-                    Box(Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerLow).pointerInput(bitmap) {
+                    Box(Modifier.weight(1f).fillMaxWidth().clipToBounds().background(MaterialTheme.colorScheme.surfaceContainerLow).pointerInput(bitmap) {
                         detectTransformGestures { _, pan, zoom, _ ->
                             scale = (scale * zoom).coerceIn(1f, 5f)
                             val boundX = size.width * (scale - 1) / 2; val boundY = size.height * (scale - 1) / 2

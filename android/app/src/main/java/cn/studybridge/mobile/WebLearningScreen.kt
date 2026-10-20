@@ -106,7 +106,7 @@ import androidx.compose.ui.viewinterop.AndroidView
             if ((web.progress < 100 || !web.visualReady) && web.error.isBlank() && !ui.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (ui.data.webPending != null && !ui.locked) Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Row(Modifier.fillMaxWidth().padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("有一份待保存的网页回答", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                    Text("有一份课件待发送或待保存", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = vm::saveWebAnswer) { Text("恢复回答") }
                 }
             }

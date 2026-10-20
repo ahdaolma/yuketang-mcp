@@ -14,6 +14,57 @@ import org.junit.Test
 class MaterialWorkflowTest {
     @get:Rule val compose = createAndroidComposeRule<WebFixtureActivity>()
 
+    @Test fun manuallySendingAttachedPageThenSavingWebAnswerRetainsOriginalImage() {
+        val context = compose.activity; val vault = Vault(context); val previous = vault.load()
+        val root = DocumentsContract.buildDocumentUri("cn.studybridge.mobile.downloadfixture", "root")
+        val uri = requireNotNull(DocumentsContract.createDocument(context.contentResolver, root, "image/png", "原页图片.png"))
+        val image = syntheticSlideImage()
+        requireNotNull(context.contentResolver.openOutputStream(uri)).use { it.write(android.util.Base64.decode(image.substringAfter(','), android.util.Base64.DEFAULT)) }
+        lateinit var vm: StudyViewModel
+        var initialized = false; var sent = 0; var filled = ""
+        try {
+            vault.save(Saved())
+            compose.activityRule.scenario.onActivity { vm = ViewModelProvider(it)[StudyViewModel::class.java]; initialized = true }
+            compose.setContent { Text("图文笔记流程回归") }
+            compose.waitUntil(5000) { vm.ui.value.ready }
+            compose.runOnIdle { vm.importMaterial(uri, "courseware") }
+            compose.waitUntil(5000) { !vm.ui.value.busy && vm.ui.value.slides.size == 1 }
+            compose.runOnIdle { vm.attach(vm.ui.value.slides.single()) }
+            compose.waitUntil(5000) { !vm.ui.value.busy && vm.ui.value.pending != null }
+            val source = requireNotNull(vm.ui.value.pending)
+            assertTrue(source.imageRef.isNotBlank())
+            compose.runOnIdle {
+                vm.bindWeb(object : WebPagePort {
+                    override suspend fun call(action: String, payload: JSONObject): JSONObject = when (action) {
+                        "prepare" -> { filled = payload.getString("text"); assertEquals(source.image, payload.getString("image")); JSONObject().put("ok", true) }
+                        "send" -> { sent++; error("Manual fill must never send") }
+                        "answer" -> {
+                            val pending = requireNotNull(vault.load().webPending)
+                            assertTrue(filled.contains(pending.marker)); assertEquals(pending.marker, payload.getString("marker"))
+                            JSONObject().put("finished", true).put("markdown", "图片中的 DNA 与 RNA 对照讲解")
+                        }
+                        else -> error("Unexpected action: $action")
+                    }
+                })
+                vm.fillWebAttachment()
+            }
+            compose.waitUntil(5000) { !vm.ui.value.busy && vm.ui.value.data.webPending != null }
+            assertEquals(0, sent); assertNull(vm.ui.value.pending)
+            assertEquals(source.imageRef, vault.load().webPending!!.imageRef)
+            compose.runOnIdle { vm.saveWebAnswer() }
+            compose.waitUntil(6000) { !vm.ui.value.busy && vm.ui.value.data.notes.size == 1 }
+            val note = vault.load().notes.single()
+            assertNull(vault.load().webPending)
+            assertEquals(source.imageRef, sourceImagePattern.find(note.content)!!.groupValues[2])
+            assertEquals(source.image, SourceImages(context).data(source.imageRef))
+            assertTrue(note.content.contains("DNA 与 RNA")); assertEquals(0, sent)
+        } finally {
+            if (initialized) compose.runOnIdle { vm.stop(); vm.bindWeb(null) }
+            runCatching { vault.load().materials.filter { m -> previous.materials.none { it.id == m.id } }.forEach { MaterialStore(context).remove(it.id) } }
+            vault.save(previous); DocumentsContract.deleteDocument(context.contentResolver, uri)
+        }
+    }
+
     @Test fun importedNotesSurviveRejectedDraftThenExplainAndReloadWithoutOverwritingOriginal() {
         val context = compose.activity
         val title = "酶与催化 Enzymes 完整外部笔记.md"

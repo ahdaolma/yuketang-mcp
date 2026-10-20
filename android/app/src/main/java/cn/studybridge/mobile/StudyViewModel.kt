@@ -112,9 +112,12 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     fun fillWebAttachment() = operation("带入当前课件") {
         val a = state.value.pending ?: error("先在课程中选择一页课件。")
         require(state.value.data.usesWeb)
-        webDriver().fill("${withLearnerProfile(state.value.data.tutorPrompt, state.value.data.learnerProfile)}\n\n请讲解这份学习资料。资料来源：${a.label}\n${a.text}", a)
+        require(state.value.data.webPending == null) { "上一份课件尚未保存，请先恢复回答或在网页选项中核对待处理记录。" }
+        val marker = "RS-${newId()}"
+        webDriver().fill("${withLearnerProfile(state.value.data.tutorPrompt, state.value.data.learnerProfile)}\n\n请讲解这份学习资料。资料来源：${a.label}\n${a.text}\n\n本页资料标记：$marker", a)
+        checkpoint { it.copy(webPending = WebPending(marker, a.label, webReturnUrl(webPage?.pageUrl ?: CHATGPT_WEB), imageRef = a.imageRef)) }
         state.update { it.copy(pending = null) }
-        notice("课件已带入，请在网页核对附件并发送。")
+        notice("课件已带入，请核对附件并发送。回答完成后点击保存，将一并保存原页图片。")
     }
     fun saveWebAnswer() = operation("保存网页回答") {
         val pending = state.value.data.webPending
