@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-data class UiState(val data: Saved = Saved(), val tab: Int = 0, val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val activityPage: Int = 0, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi(), val chatgptLoginActive: Boolean = false, val chatgptStage: String = "", val chatgptPlanWelcome: Boolean = false, val modelNames: Map<String, String> = emptyMap()) { val locked get() = busy || chatgptLoginActive || (classUi.running && !classUi.paused) }
+data class UiState(val data: Saved = Saved(), val tab: Int = 0, val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val activityPage: Int = 0, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi(), val chatgptLoginActive: Boolean = false, val chatgptStage: String = "", val chatgptPlanWelcome: Boolean = false, val modelNames: Map<String, String> = emptyMap(), val modelListRequest: String = "") { val locked get() = busy || chatgptLoginActive || (classUi.running && !classUi.paused) }
 
 class StudyViewModel(app: Application) : AndroidViewModel(app) {
     val noteReader = NoteReader()
@@ -152,11 +152,11 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun stop() { job?.cancel(); if (state.value.classUi.running) pauseClass() }
     fun testProvider(p: Provider) = operation("读取模型列表") {
-        state.update { it.copy(modelListFor = "", modelList = emptyList()) }
+        state.update { it.copy(modelListFor = "", modelList = emptyList(), modelNames = emptyMap(), modelListRequest = "") }
         val requestProvider = authorizedProvider(p)
         val choices = withContext(Dispatchers.IO) { ai.modelChoices(requestProvider) }
         val list = choices.map { it.id }
-        state.update { it.copy(modelListFor = p.id, modelList = list, modelNames = choices.associate { m -> m.id to m.name }) }
+        state.update { it.copy(modelListFor = p.id, modelListRequest = modelCatalogKey(p), modelList = list, modelNames = choices.associate { m -> m.id to m.name }) }
         notice(if (list.isEmpty()) "连接成功，但未返回可选模型；可以手动填写。" else "已读取 ${list.size} 个模型，可以从列表选择。实际生成仍需核对所选模型权限。")
     }
     fun diagnoseLogin() = operation("检查雨课堂登录通道") { notice(rain.probe(state.value.data.region)) }
@@ -469,7 +469,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         val account = state.value.data.chatgptAccounts.find { it.id == id } ?: return
         val p = chatGptProvider(account)
         data { it.copy(providers = it.providers.filterNot { existing -> existing.id == p.id } + p, selectedProvider = p.id) }
-        state.update { it.copy(modelListFor = "", modelList = emptyList(), modelNames = emptyMap()) }
+        state.update { it.copy(modelListFor = "", modelList = emptyList(), modelNames = emptyMap(), modelListRequest = "") }
         if (account.connected && account.planGranted) testProvider(p)
     }
     fun startChatGptLogin(accountId: String = "", draftClientId: String = "", forceConsent: Boolean = false) {
@@ -504,12 +504,12 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                 val p = chatGptProvider(account)
                 data { it.copy(providers = it.providers.filterNot { existing -> existing.id == p.id } + p, selectedProvider = p.id) }
                 saveNow()
-                state.update { it.copy(modelListFor = "", modelList = emptyList(), modelNames = emptyMap(), chatgptPlanWelcome = account.planGranted && !it.data.chatgptWelcomeShown) }
+                state.update { it.copy(modelListFor = "", modelList = emptyList(), modelNames = emptyMap(), modelListRequest = "", chatgptPlanWelcome = account.planGranted && !it.data.chatgptWelcomeShown) }
                 if (account.planGranted && account.connected) {
                     state.update { it.copy(chatgptStage = "账号已验证，正在读取可用模型…") }
                     try {
                         val choices = withContext(Dispatchers.IO) { ai.modelChoices(p.copy(key = account.accessToken)) }
-                        state.update { it.copy(modelListFor = p.id, modelList = choices.map { m -> m.id }, modelNames = choices.associate { m -> m.id to m.name }) }
+                        state.update { it.copy(modelListFor = p.id, modelListRequest = modelCatalogKey(p), modelList = choices.map { m -> m.id }, modelNames = choices.associate { m -> m.id to m.name }) }
                         notice("ChatGPT 登录已保存。请选择账号提供的模型并保存，再开始聊天或上课模式。")
                     } catch (e: CancellationException) { throw e }
                     catch (_: Exception) { notice("ChatGPT 登录已保存，但模型列表读取失败。可点击“读取模型”重试，无需 API Key。") }

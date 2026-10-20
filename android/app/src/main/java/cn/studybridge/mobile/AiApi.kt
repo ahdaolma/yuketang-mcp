@@ -126,6 +126,12 @@ fun responseBody(p: Provider, messages: List<Message>): JSONObject {
     return JSONObject().put("model", p.model).put("stream", true).put("store", false).put("instructions", messages.filter { it.role == "system" }.joinToString("\n\n") { it.text }).put("input", JSONArray(input))
 }
 
+// A catalog belongs to one connection, not just a provider row. Never reuse it
+// after editing its destination, credentials or account. The digest stays in RAM.
+fun modelCatalogKey(p: Provider): String = java.security.MessageDigest.getInstance("SHA-256")
+    .digest(listOf(p.id, p.baseUrl.trim().trimEnd('/'), p.key.trim(), p.protocol, p.chatgptAccountId).joinToString("\u0000").toByteArray(Charsets.UTF_8))
+    .joinToString("") { "%02x".format(it) }
+
 data class ModelChoice(val id: String, val name: String)
 fun parseModelChoices(o: JSONObject, chatgpt: Boolean): List<ModelChoice> {
     val array = o.optJSONArray(if (chatgpt) "models" else "data") ?: error("模型列表结构无法识别，请重新授权或核对服务商。")
@@ -133,7 +139,9 @@ fun parseModelChoices(o: JSONObject, chatgpt: Boolean): List<ModelChoice> {
         val m = array.optJSONObject(index) ?: return@mapNotNull null
         if (chatgpt && m.optString("visibility") != "list") return@mapNotNull null
         val id = m.optional(if (chatgpt) "slug" else "id")?.takeIf { it.length <= 200 && it.none(Char::isISOControl) } ?: return@mapNotNull null
-        ModelChoice(id, if (chatgpt) m.optional("display_name") ?: id else id)
+        val label = (m.optional("display_name") ?: if (!chatgpt) m.optional("name") else null)
+            ?.takeIf { it.isNotBlank() && it.length <= 200 && it.none(Char::isISOControl) }
+        ModelChoice(id, label ?: id)
     }.distinctBy { it.id }
     return if (chatgpt) list else list.sortedBy { it.id }
 }
