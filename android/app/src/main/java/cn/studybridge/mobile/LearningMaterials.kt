@@ -31,10 +31,13 @@ import androidx.compose.ui.unit.dp
     var from by rememberSaveable(ui.slideTitle) { mutableStateOf("1") }
     var to by rememberSaveable(ui.slideTitle) { mutableStateOf("") }
     fun launchImport(kind: String) { importKind = kind; importer.launch(arrayOf("application/pdf", "application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "image/*", "text/*", "application/octet-stream")) }
+    var focusedPage by rememberSaveable(ui.presentationId, ui.localDocument?.material?.id, ui.slideTitle) { mutableIntStateOf(0) }
     if (!ui.materialsOpen) return
     BackHandler { vm.closeMaterials() }
     ModalBottomSheet(onDismissRequest = vm::closeMaterials, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 680.dp), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.heightIn(max = 720.dp)) {
+        if (ui.materialPane in listOf("pages", "rain")) SlidePageControls(ui.slides, focusedPage) { focusedPage = it }
+        LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth().heightIn(max = 680.dp), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("学习资料", style = MaterialTheme.typography.titleLarge); if (ui.materialPane != "home") TextButton(onClick = { vm.materialPane("home") }, enabled = !ui.locked) { Text("返回资料") } } }
             if (ui.busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()); Row { Text(ui.operation, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); TextButton(onClick = vm::stop) { Text("停止") } } }
             if (ui.notice.isNotBlank()) item { Text(ui.notice, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
@@ -49,7 +52,7 @@ import androidx.compose.ui.unit.dp
             }
             if (ui.materialPane == "files") {
                 if (ui.data.materials.isEmpty()) item { Text("还没有导入资料。") }
-                items(ui.data.materials, key = { it.id }) { m -> MaterialRow(m.title, "${m.format.uppercase()} · ${if (m.kind == "notes") "笔记" else "课件"} · ${m.pages} 页/段\n导入：${readableTime(m.importedAt)}" + if (m.modifiedAt > 0) "\n文件修改：${readableTime(m.modifiedAt)}" else "", !ui.locked, { vm.openMaterial(m) }) }
+                items(ui.data.materials, key = { it.id }) { m -> MaterialRow(m.title, "${m.format.uppercase()} · ${if (m.kind == "notes") "笔记" else "课件"} · ${m.pages} 页/段\n导入：${readableTime(m.importedAt)}" + if (m.modifiedAt > 0) "\n文件修改：${readableTime(m.modifiedAt)}" else "", !ui.locked, { vm.openMaterial(m) }) { PagePreview("local:${m.id}", m.title, vm.previews) { vm.previewLocal(m) }; if (m.format in listOf("pptx", "docx")) Text("文字与嵌入图片提取预览", style = MaterialTheme.typography.labelSmall) } }
             }
             if (ui.materialPane == "notes") {
                 if (ui.data.notes.isEmpty()) item { Text("还没有笔记，可先导入笔记或保存 AI 讲解。") }
@@ -61,7 +64,7 @@ import androidx.compose.ui.unit.dp
                     if (ui.course == null) items(ui.courses, key = { it.id }) { c -> MaterialRow(c.title, c.detail, !ui.locked, { vm.loadActivities(c) }) }
                     else {
                         item { Text(ui.course.title, style = MaterialTheme.typography.titleMedium) }
-                        items(ui.presentations, key = { "${it.lessonId}:${it.id}" }) { p -> MaterialRow(p.title, (if (p.isLesson) "课堂记录" else "课件") + " · " + p.recordedAt.ifBlank { "雨课堂未提供时间" }, !ui.locked, { vm.openPresentation(p) }) }
+                        items(ui.presentations, key = { "${it.lessonId}:${it.id}" }) { p -> MaterialRow(p.title, (if (p.isLesson) "课堂记录" else "课件") + " · " + p.recordedAt.ifBlank { "雨课堂未提供时间" }, !ui.locked, { vm.openPresentation(p) }) { DeckPreview(ui, p, vm) } }
                         item { Row { TextButton(onClick = { vm.loadActivities(ui.course, ui.activityPage - 1) }, enabled = !ui.locked && ui.activityPage > 0) { Text("上一批") }; TextButton(onClick = { vm.loadActivities(ui.course, ui.activityPage + 1) }, enabled = !ui.locked && ui.activityPage < 1000) { Text("下一批") } } }
                     }
                 }
@@ -70,19 +73,37 @@ import androidx.compose.ui.unit.dp
                 item { Text(ui.slideTitle, style = MaterialTheme.typography.titleMedium); Text(ui.slideRecordedAt.ifBlank { "雨课堂未提供时间" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 if (ui.localDocument == null) item { OutlinedButton(onClick = { vm.prepareDeckDownload()?.let { name -> if (ui.data.downloadTreeUri.isBlank()) pdf.launch(name) else vm.downloadDeck() } }, enabled = !ui.locked) { Text("下载课件 PDF") }; Text("按已开放页面重建 PDF，并非原始 PPT。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(from, { from = it.filter(Char::isDigit).take(5) }, label = { Text("开始页/段") }, singleLine = true, modifier = Modifier.weight(1f), enabled = !ui.locked); OutlinedTextField(to, { to = it.filter(Char::isDigit).take(5) }, label = { Text("结束页/段") }, singleLine = true, modifier = Modifier.weight(1f), enabled = !ui.locked) }; TextButton(onClick = { vm.closeMaterials(); vm.batchNotes(from, to) }, enabled = !ui.locked && from.isNotBlank() && to.isNotBlank()) { Text("连续讲解并保存 · 每次最多 50 页/段") } }
-                items(ui.slides, key = { it.page }) { page -> StudyPanel { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text("第 ${page.page} ${if (ui.localDocument?.material?.format in listOf("txt", "md", "docx")) "段" else "页"}", style = MaterialTheme.typography.titleSmall); if (page.text.isNotBlank()) Text(notePreview(page.text), maxLines = 2, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) { TextButton(onClick = { vm.attach(page) }, enabled = !ui.locked) { Text("带入学习") }; TextButton(onClick = { vm.explainPage(page) }, enabled = !ui.locked) { Text("讲解并保存") } } } } }
+                items(ui.slides.filter { focusedPage == 0 || it.page == focusedPage }, key = { it.page }) { page -> StudyPanel { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text("第 ${page.page} ${if (ui.localDocument?.material?.format in listOf("txt", "md", "docx")) "段" else "页"}", style = MaterialTheme.typography.titleSmall); PagePreview(vm.pagePreviewKey(ui, page), "${ui.slideTitle} · 第 ${page.page} 页", vm.previews) { vm.previewPage(ui, page) }; if (ui.localDocument?.material?.format in listOf("pptx", "docx")) Text("提取预览，复杂版式请导入 PDF", style = MaterialTheme.typography.labelSmall); if (page.text.isNotBlank()) Text(notePreview(page.text), maxLines = 2, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) { TextButton(onClick = { vm.attach(page) }, enabled = !ui.locked) { Text("带入学习") }; TextButton(onClick = { vm.explainPage(page) }, enabled = !ui.locked) { Text("讲解并保存") } } } } }
             }
             item { Spacer(Modifier.height(24.dp)) }
         }
     }
+    }
 }
 
-@Composable private fun MaterialRow(title: String, detail: String, enabled: Boolean, onClick: () -> Unit) {
-    Card(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text(title, style = MaterialTheme.typography.titleSmall); if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+@Composable private fun MaterialRow(title: String, detail: String, enabled: Boolean, onClick: () -> Unit, preview: (@Composable () -> Unit)? = null) {
+    Card(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text(title, style = MaterialTheme.typography.titleSmall); if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); preview?.invoke() } }
 }
 
 @Composable fun DownloadDirectorySettings(ui: UiState, vm: StudyViewModel) {
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> if (uri != null) vm.setDownloadDirectory(uri) }
     StudySectionLabel("文件与下载")
     StudyPanel { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text("下载文件夹", style = MaterialTheme.typography.titleSmall); Text(ui.data.downloadDirectoryName.ifBlank { "每次询问保存位置" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text("课件 PDF 与 Markdown 笔记共用此位置。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Row { TextButton(onClick = { picker.launch(ui.data.downloadTreeUri.takeIf(String::isNotBlank)?.let(Uri::parse)) }, enabled = !ui.locked) { Text("选择文件夹") }; if (ui.data.downloadTreeUri.isNotBlank()) TextButton(onClick = { vm.setDownloadDirectory(null) }, enabled = !ui.locked) { Text("每次询问") } } } }
+}
+
+@Composable fun DeckPreview(ui: UiState, p: Presentation, vm: StudyViewModel) {
+    PagePreview(vm.deckPreviewKey(ui, p), p.title, vm.previews) { vm.previewDeck(ui, p) }
+    Text(if (p.isLesson) "本节首份课件的首页；点卡片查看全部课件" else "课件首页；点卡片查看全部页面", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+@Composable fun OriginalNotePages(note: Note, ui: UiState, vm: StudyViewModel) {
+    val material = ui.data.materials.find { it.id == note.materialId } ?: return
+    if (material.format in listOf("txt", "md")) return
+    var selected by rememberSaveable(note.id) { mutableIntStateOf(1) }
+    var jump by remember { mutableStateOf(false) }
+    val page = selected.coerceIn(1, material.pages.coerceAtLeast(1))
+    if (jump) JumpDialog("选择原文页 / 段", (1..material.pages).map { "第 $it 页 / 段" }, { jump = false }) { selected = it + 1; jump = false }
+    Text("导入笔记原文 · $page / ${material.pages}", style = MaterialTheme.typography.titleSmall)
+    Row { TextButton(onClick = { selected = page - 1 }, enabled = page > 1) { Text("上一原页") }; TextButton(onClick = { selected = page + 1 }, enabled = page < material.pages) { Text("下一原页") }; TextButton(onClick = { jump = true }) { Text("跳转原页") } }
+    PagePreview("local:${material.id}:$page", "${material.title} · 第 $page 页 / 段", vm.previews) { vm.previewLocal(material, page) }
 }

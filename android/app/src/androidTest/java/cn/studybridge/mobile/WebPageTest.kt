@@ -3,6 +3,7 @@ package cn.studybridge.mobile
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlin.coroutines.resume
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -99,6 +100,32 @@ class WebPageTest {
         withPage(fixture(rich = true)) { page ->
             val text = WebStudyDriver(page, { delay(50) }, 20).generate("学习角色提示", Attachment(null,"第 2 页","原文"),"RS-rich") {}
             assertTrue(text.contains("知识点"))
+        }
+    }
+    @Test fun longPageNavigationScrollsNestedContainerWithoutChangingDraftOrSending() = runBlocking {
+        val html = """<!doctype html><html><body><main id="scroller" style="height:300px;overflow:auto">
+            <div data-message-author-role="user" style="height:800px">原问题</div>
+            <div data-message-author-role="assistant" style="height:800px">长回答</div>
+            <div data-message-author-role="user" style="height:800px">最后问题</div>
+            </main><form><textarea id="prompt-textarea">保留草稿</textarea><button type="button" data-testid="send-button" onclick="window.sent=true">Send</button></form></body></html>"""
+        withPage(html) { page ->
+            suspend fun snapshot(): JSONObject = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                kotlinx.coroutines.suspendCancellableCoroutine { c ->
+                    page.view.evaluateJavascript("JSON.stringify({scroll:document.querySelector('#scroller').scrollTop,draft:document.querySelector('#prompt-textarea').value,sent:!!window.sent})") {
+                        c.resume(JSONObject(org.json.JSONTokener(it).nextValue() as String))
+                    }
+                }
+            }
+            val list = page.call("outline").getJSONArray("labels")
+            assertEquals(3, list.length()); assertEquals("回答：长回答", list.getString(1))
+            assertTrue(page.call("navigate", JSONObject().put("target", "bottom")).optBoolean("ok"))
+            assertTrue(snapshot().getInt("scroll") > 1500)
+            assertTrue(page.call("navigate", JSONObject().put("target", "top")).optBoolean("ok"))
+            assertEquals(0, snapshot().getInt("scroll"))
+            assertFalse(page.call("navigate", JSONObject().put("index", 1).put("expected", "过期目标")).optBoolean("ok"))
+            assertTrue(page.call("navigate", JSONObject().put("index", 1).put("expected", list.getString(1))).optBoolean("ok"))
+            val after = snapshot()
+            assertTrue(after.getInt("scroll") >= 800); assertEquals("保留草稿", after.getString("draft")); assertFalse(after.getBoolean("sent"))
         }
     }
     @Test fun humanAttachmentIsPreservedAndPendingUserCanBeFoundBeforeFirstToken() = runBlocking {

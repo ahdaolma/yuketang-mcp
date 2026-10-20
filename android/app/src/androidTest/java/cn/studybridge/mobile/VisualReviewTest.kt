@@ -57,6 +57,8 @@ class VisualReviewTest {
         bitmap.recycle()
     }
     private fun verifyTableRows() {
+        compose.onNodeWithText("目录跳转").performClick()
+        compose.onNodeWithText("2. 对照理解").performClick()
         // A plain TextView.text assignment bypasses Markwon's table invalidation hooks.
         // Check the final Android layout, not just that table words exist in a string.
         compose.onRoot().captureToImage()

@@ -27,7 +27,9 @@ suspend fun buildNotebook(
     pages.forEachIndexed { index, page ->
         onPage(page.page, index + 1, pages.size)
         val text = try {
-            generate(read(page)).also { require(it.isNotBlank()) { "此页未生成有效笔记。" } }
+            val attachment = read(page)
+            val generated = generate(attachment).also { require(it.isNotBlank()) { "此页未生成有效笔记。" } }
+            withSourceImage(attachment, generated)
         } catch (e: CancellationException) { throw e }
         catch (e: Exception) { throw IllegalStateException("第 ${page.page} 页未完成；此前已完成 ${sections.size} 页并保存。${e.message?.take(160) ?: "请重试此页。"}", e) }
         sections.add(page.page to text)

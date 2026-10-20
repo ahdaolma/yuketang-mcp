@@ -6,7 +6,7 @@ fun priorNoteContext(title: String, markdown: String): String {
     if (markdown.isBlank()) return ""
     val outline = markdown.lineSequence().filter { it.startsWith("## ") }
         .take(40).joinToString("\n") { it.take(160) }.take(1800)
-    val tail = markdown.takeLast(8000)
+    val tail = sourceImagePattern.replace(markdown.takeLast(8000), "[原页图片]")
     val recent = if (tail.length < markdown.length) tail.substringAfter('\n', "") else tail
     return """【先前学习上下文，仅作衔接】
 资料：${title.take(300)}

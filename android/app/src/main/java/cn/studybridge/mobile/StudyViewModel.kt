@@ -30,6 +30,8 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     private val disk = Mutex()
     private val rain = RainApi()
     private val materials = MaterialStore(app)
+    val sourceImages = SourceImages(app)
+    val previews = MaterialPreviews(app)
     private val downloads = DownloadStore(app)
     private var exportDeck: UiState? = null
     private val ai = AiApi()
@@ -51,7 +53,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     private var lastResumeCheck = 0L
     init {
         viewModelScope.launch {
-            try { val saved = withContext(Dispatchers.IO) { vault.load() }; state.update { it.copy(data = saved, ready = true) } }
+            try { val saved = withContext(Dispatchers.IO) { vault.load().also { loaded -> runCatching { sourceImages.prune(loaded) } } }; state.update { it.copy(data = saved, ready = true) } }
             catch (_: Exception) { storageBlocked = true; state.update { it.copy(ready = true, storageError = "本机记录无法解密，已停止写入以保留原记录。请备份原安装后排查系统密钥，勿直接覆盖数据。") } }
         }
     }
@@ -101,7 +103,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         check(state.value.data.usesWeb) { "本节记录使用网页模式，请先切回网页学习。" }
         check(state.value.data.webPending == null) { "上一份网页回答尚未保存，请先在学习页恢复回答；不会重复发送。" }
         state.update { it.copy(tab = 0) }
-        val pending = WebPending("RS-${newId()}", a.label, webReturnUrl(webPage?.pageUrl ?: CHATGPT_WEB), pageKey, noteId, noteSource)
+        val pending = WebPending("RS-${newId()}", a.label, webReturnUrl(webPage?.pageUrl ?: CHATGPT_WEB), pageKey, noteId, noteSource, a.imageRef)
         val instructions = noteWebPrompt(prompt, state.value.data.learnerProfile) + if (priorContext.isBlank()) "" else "\n\n$priorContext"
         return webDriver().generate(instructions, a, pending.marker, onMatched = { webLocation(webPage?.pageUrl ?: CHATGPT_WEB) }) {
             checkpoint { it.copy(webPending = pending) }
@@ -305,7 +307,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         if (s.usesWeb) {
             require(a != null) { "请在学习页保存已有的网页回答，或先选择课件。" }
             val text = webGenerate(a, s.notesPrompt)
-            val n = Note(title = a.label, content = text, source = a.label, model = "ChatGPT 网页")
+            val n = Note(title = a.label, content = withSourceImage(a, text), source = a.label, model = "ChatGPT 网页")
             checkpoint { it.copy(notes = listOf(n) + it.notes, webPending = null) }; notice("网页讲解已保存为笔记。")
             return n
         }
@@ -316,7 +318,8 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         state.update { it.copy(operation = "自动整理笔记", noteDraft = "正在阅读资料…") }
         ai.stream(authorizedProvider(p), noteMessages(s.notesPrompt, input, source, s.learnerProfile)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
         require(text.isNotBlank()) { "模型未生成笔记。" }
-        val note = Note(title = a?.label ?: s.chat().title, content = text.toString(), source = source, model = "${p.name} / ${p.model}")
+        val illustrations = if (a != null) sourceImageMarkdown(a.imageRef, a.label) else withContext(Dispatchers.IO) { input.filter { it.image != null }.distinctBy { it.image }.joinToString("") { sourceImageMarkdown(sourceImages.save(it.image!!), it.source ?: "对话中的资料") } }
+        val note = Note(title = a?.label ?: s.chat().title, content = illustrations + text.toString(), source = source, model = "${p.name} / ${p.model}")
         checkpoint { it.copy(notes = listOf(note) + it.notes) }
         notice("笔记已保存，可在笔记页编辑和导出。")
         return note
@@ -345,7 +348,17 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
             imported?.let { doc -> if (state.value.data.materials.none { it.id == doc.material.id }) withContext(NonCancellable + Dispatchers.IO) { materials.remove(doc.material.id) } }
         }
     }
-    private fun readAttachment(s: UiState, slide: Slide): Attachment = s.localDocument?.let { materials.attachment(it, slide.page) } ?: rain.attachment(s.slideTitle, slide)
+    private fun keepImage(a: Attachment): Attachment = if (a.image == null || a.imageRef.isNotBlank()) a else a.copy(imageRef = sourceImages.save(a.image))
+    private fun readAttachment(s: UiState, slide: Slide): Attachment = keepImage(s.localDocument?.let { materials.attachment(it, slide.page) } ?: rain.attachment(s.slideTitle, slide))
+    fun pagePreviewKey(s: UiState, slide: Slide) = "page:${s.data.region}:${imageDigest(s.data.session.toByteArray()).take(12)}:${s.localDocument?.material?.id ?: s.presentationId}:${slide.page}:${slide.cover}"
+    fun deckPreviewKey(s: UiState, p: Presentation) = "deck:${s.data.region}:${imageDigest(s.data.session.toByteArray()).take(12)}:${p.lessonId}:${p.id}"
+    suspend fun previewPage(s: UiState, slide: Slide): Attachment = withContext(Dispatchers.IO) { s.localDocument?.let { materials.attachment(it, slide.page) } ?: rain.attachment(s.slideTitle, slide) }
+    suspend fun previewDeck(s: UiState, p: Presentation): Attachment = withContext(Dispatchers.IO) {
+        val deck = if (p.isLesson) rain.lessonPresentations(s.data, p).firstOrNull() ?: error("本节课未开放课件预览。") else p
+        val (title, pages) = rain.slides(s.data, deck.id, deck.lessonId)
+        rain.attachment(title, pages.firstOrNull() ?: error("课件尚未开放页面。"))
+    }
+    suspend fun previewLocal(m: StudyMaterial, page: Int = 1): Attachment = withContext(Dispatchers.IO) { materials.attachment(materials.read(m), page) }
     fun explainPage(slide: Slide) = operation("讲解并保存") {
         val s = state.value
         val a = withContext(Dispatchers.IO) { readAttachment(s, slide) }
@@ -407,7 +420,13 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun exportNote(note: Note, text: String, destination: Uri? = null) = operation("导出 Markdown") {
         val tree = state.value.data.downloadTreeUri
-        withContext(Dispatchers.IO) { downloads.write(tree, destination, downloadName(note.title, "md"), "text/markdown") { (text + "\n\n---\n来源：${note.source}\n模型：${note.model}\n").byteInputStream(Charsets.UTF_8) } }
+        withContext(Dispatchers.IO) {
+            val temp = java.io.File.createTempFile("note-export-", ".md", getApplication<Application>().cacheDir)
+            try {
+                temp.outputStream().buffered().use { sourceImages.writeExport(text + "\n\n---\n来源：${note.source}\n模型：${note.model}\n", it) }
+                downloads.write(tree, destination, downloadName(note.title, "md"), "text/markdown") { temp.inputStream() }
+            } finally { temp.delete() }
+        }
         notice("Markdown 笔记已保存。")
     }
     fun discoverClasses() = operation("查找正在进行的课堂") {
@@ -472,7 +491,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                     val pageAccess = classAccess
                     val (title, slides) = withContext(Dispatchers.IO) { rain.slides(saved, page.presentationId, lessonId = if (current.ended) current.lesson.id else "", authorization = pageAccess?.authorization ?: "", onAuthorization = { pageAccess?.authorization = it }) }
                     val slide = slides.find { it.page == page.page } ?: error("第 ${page.page} 页尚未开放，已暂停；可稍后继续。")
-                    val a = withContext(Dispatchers.IO) { rain.attachment(title, slide) }
+                    val a = withContext(Dispatchers.IO) { keepImage(rain.attachment(title, slide)) }
                     val prior = if (current.completed.isEmpty()) "" else priorNoteContext(current.lesson.title, state.value.data.notes.find { it.id == run.noteId }?.content.orEmpty())
                     val text = StringBuilder()
                     if (web) text.append(webGenerate(a, prompt, page.key, run.noteId, priorContext = prior))
@@ -484,7 +503,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                     checkpoint { d ->
                         val r = d.classRun?.takeIf { it.noteId == run.noteId }
                         val updated = r?.copy(completed = (r.completed + page.key).distinct(), pending = r.pending.filterNot { it.key == page.key })
-                        val notes = d.notes.map { if (it.id == run.noteId) it.copy(content = it.content + "## $title · 第 ${page.page} 页\n\n$text\n\n---\n\n") else it }
+                        val notes = d.notes.map { if (it.id == run.noteId) it.copy(content = it.content + "## $title · 第 ${page.page} 页\n\n${withSourceImage(a, text.toString())}\n\n---\n\n") else it }
                         check(notes.any { it.id == run.noteId }) { "课堂笔记已被移除。" }
                         d.copy(classRun = updated ?: d.classRun, notes = notes, webPending = if (web) null else d.webPending)
                     }

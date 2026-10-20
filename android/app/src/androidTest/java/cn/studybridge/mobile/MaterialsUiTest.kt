@@ -19,6 +19,7 @@ class MaterialsUiTest {
         val state = mutableStateOf(UiState(ready = true, materialsOpen = true, materialPane = "rain", course = Course("1", "医学遗传学"), presentations = listOf(Presentation("12", title, recordedAt = "2026-10-20 08:00"))))
         lateinit var vm: StudyViewModel
         compose.activityRule.scenario.onActivity { vm = ViewModelProvider(it)[StudyViewModel::class.java] }
+        kotlinx.coroutines.runBlocking { vm.previews.load(vm.deckPreviewKey(state.value, state.value.presentations.single())) { Attachment(syntheticSlideImage(), title, "") } }
         val beforeDialog = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
         compose.setContent { StudyTheme(false) { if (state.value.materialsOpen) LearningMaterialsHost(state.value, vm) else ModelScreen(state.value, vm) } }
         compose.onNodeWithText(title).assertIsDisplayed()

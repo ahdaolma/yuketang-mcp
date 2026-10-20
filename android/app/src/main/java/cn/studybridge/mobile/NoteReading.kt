@@ -12,9 +12,16 @@ fun noteReadingSegments(markdown: String, limit: Int = 12000): List<NoteReadingS
     val result = mutableListOf<NoteReadingSegment>()
     val fence = Regex("^ {0,3}(`{3,}|~{3,})(.*)$")
     var opened = ""; var opener = ""; var start = 0
+    val allHeadings = readingHeadings(markdown)
+    val pageHeadings = allHeadings.filter { markdown.startsWith("## ", it.first) && Regex("第\\s*\\d+\\s*页").containsMatchIn(it.second) }
+    // Keep each page's source image with its explanation, including ### subtopics.
+    val headings = (if (pageHeadings.isNotEmpty()) pageHeadings.drop(1) else allHeadings.filter { markdown.startsWith("# ", it.first) || markdown.startsWith("## ", it.first) }).map { it.first }
+    var headingIndex = 0
     while (start < markdown.length) {
-        var end = minOf(markdown.length, start + limit)
-        if (end < markdown.length) {
+        while (headingIndex < headings.size && headings[headingIndex] <= start) headingIndex++
+        val nextHeading = headings.getOrNull(headingIndex) ?: markdown.length
+        var end = minOf(markdown.length, start + limit, nextHeading)
+        if (end < markdown.length && end != nextHeading) {
             val paragraph = markdown.lastIndexOf("\n\n", end - 2)
             val line = markdown.lastIndexOf('\n', end - 1)
             end = when {

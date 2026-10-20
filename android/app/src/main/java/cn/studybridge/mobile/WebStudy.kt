@@ -44,10 +44,10 @@ fun allowedWebNavigation(url: String): Boolean = runCatching {
 }.getOrDefault(false)
 
 // A durable send intent prevents resubmission after cancellation, navigation or process death.
-data class WebPending(val marker: String, val label: String, val url: String = CHATGPT_WEB, val pageKey: String = "", val noteId: String = "", val noteSource: String = "") {
-    fun json() = JSONObject().put("marker", marker).put("label", label).put("url", url).put("pageKey", pageKey).put("noteId", noteId).put("noteSource", noteSource)
+data class WebPending(val marker: String, val label: String, val url: String = CHATGPT_WEB, val pageKey: String = "", val noteId: String = "", val noteSource: String = "", val imageRef: String = "") {
+    fun json() = JSONObject().put("marker", marker).put("label", label).put("url", url).put("pageKey", pageKey).put("noteId", noteId).put("noteSource", noteSource).put("imageRef", imageRef)
 }
-fun webPendingFromJson(o: JSONObject) = WebPending(o.getString("marker"), o.getString("label"), webReturnUrl(o.optString("url", CHATGPT_WEB)), o.optString("pageKey"), o.optString("noteId"), o.optString("noteSource"))
+fun webPendingFromJson(o: JSONObject) = WebPending(o.getString("marker"), o.getString("label"), webReturnUrl(o.optString("url", CHATGPT_WEB)), o.optString("pageKey"), o.optString("noteId"), o.optString("noteSource"), o.optString("imageRef"))
 
 fun recoverWebAnswer(saved: Saved, content: String, fallbackId: String = newId(), receivedAt: Long = System.currentTimeMillis()): Saved {
     require(content.isNotBlank())
@@ -58,10 +58,10 @@ fun recoverWebAnswer(saved: Saved, content: String, fallbackId: String = newId()
         if (run != null && pending.pageKey in run.completed) return saved.copy(webPending = null)
         require(run == null || run.ended || run.pending.any { it.key == pending.pageKey }) { "待保存页与课堂记录不一致，请先核对。" }
         val updated = run?.copy(completed = (run.completed + pending.pageKey).distinct(), pending = run.pending.filterNot { it.key == pending.pageKey })
-        return saved.copy(notes = saved.notes.map { if (it.id == note.id) it.copy(content = it.content + "## ${pending.label}\n\n$content\n\n---\n\n", source = pending.noteSource.ifBlank { it.source }) else it }, classRun = updated ?: saved.classRun, webPending = null)
+        return saved.copy(notes = saved.notes.map { if (it.id == note.id) it.copy(content = it.content + "## ${pending.label}\n\n${sourceImageMarkdown(pending.imageRef, pending.label)}$content\n\n---\n\n", source = pending.noteSource.ifBlank { it.source }) else it }, classRun = updated ?: saved.classRun, webPending = null)
     }
     val label = pending?.label ?: "ChatGPT 网页笔记"
-    return saved.copy(notes = listOf(Note(fallbackId, title = label, content = content, source = label, model = "ChatGPT 网页 · 网页中选择的模式", createdAt = receivedAt)) + saved.notes, webPending = null)
+    return saved.copy(notes = listOf(Note(fallbackId, title = label, content = sourceImageMarkdown(pending?.imageRef.orEmpty(), label) + content, source = label, model = "ChatGPT 网页 · 网页中选择的模式", createdAt = receivedAt)) + saved.notes, webPending = null)
 }
 
 // Only bind a pending intent to a conversation that visibly contains its marker.

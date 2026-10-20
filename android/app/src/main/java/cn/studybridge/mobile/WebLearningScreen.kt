@@ -1,5 +1,8 @@
 package cn.studybridge.mobile
 
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import org.json.JSONObject
 import android.net.Uri
 import android.view.View
 import android.webkit.ValueCallback
@@ -37,6 +40,15 @@ import androidx.compose.ui.viewinterop.AndroidView
 
 @Composable fun WebLearningScreen(ui: UiState, vm: StudyViewModel, web: ChatGptWebSession, active: Boolean, revision: Int) {
     var menu by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    var jumpLabels by remember { mutableStateOf<List<String>?>(null) }
+    fun navigate(target: String = "", index: Int = -1, expected: String = "") { scope.launch {
+        try {
+            val result = web.call("navigate", JSONObject().put("target", target).put("index", index).put("expected", expected))
+            if (!result.optBoolean("ok")) vm.notice("当前网页未找到可跳转的消息。")
+        } catch (e: CancellationException) { throw e } catch (_: Exception) { vm.notice("请等待 ChatGPT 对话加载后再跳转。") }
+    } }
+    jumpLabels?.let { labels -> JumpDialog("跳转到网页消息", labels, { jumpLabels = null }) { index -> jumpLabels = null; navigate(index = index, expected = labels[index]) } }
     var discard by remember { mutableStateOf(false) }
     var chooser by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -78,6 +90,17 @@ import androidx.compose.ui.viewinterop.AndroidView
                 }
                 IconButton(onClick = { vm.tab(3) }) { Icon(Icons.Outlined.Settings, "设置", Modifier.size(22.dp)) }
             }
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { navigate("top") }) { Text("顶部") }
+                TextButton(onClick = { navigate("bottom") }) { Text("底部") }
+                TextButton(onClick = { scope.launch {
+                    try {
+                        val list = web.call("outline").optJSONArray("labels")
+                        if (list == null || list.length() == 0) vm.notice("当前网页未找到可跳转的消息。")
+                        else jumpLabels = (0 until list.length()).map { list.getString(it) }
+                    } catch (e: CancellationException) { throw e } catch (_: Exception) { vm.notice("请等待 ChatGPT 对话加载后再跳转。") }
+                } }) { Text("跳转消息") }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             if ((web.progress < 100 || !web.visualReady) && web.error.isBlank() && !ui.busy) LinearProgressIndicator(Modifier.fillMaxWidth())

@@ -35,6 +35,19 @@ function rainStudyPage(action, payload) {
         return text;
     }
     function markdownChildren(node) { return Array.from(node.childNodes).map(markdown).join(''); }
+    if (action === 'outline' || action === 'navigate') {
+        const role = node => node.getAttribute('data-message-author-role') || node.getAttribute('data-turn');
+        const messages = Array.from(document.querySelectorAll('[data-message-author-role],[data-turn="user"],[data-turn="assistant"]'))
+            .filter(node => visible(node) && ['user','assistant'].includes(role(node)) && (node.hasAttribute('data-message-author-role') || !node.querySelector('[data-message-author-role]')));
+        if (action === 'outline') return {ok:true, labels:messages.map(node => (role(node)==='user'?'你：':'回答：') + content(node).trim().slice(0,100))};
+        let target;
+        if (payload.target === 'top') target = messages[0];
+        else if (payload.target === 'bottom') target = messages[messages.length-1];
+        else if (Number.isInteger(payload.index)) target = messages[payload.index];
+        if (!target || payload.expected && payload.expected !== (role(target)==='user'?'你：':'回答：') + content(target).trim().slice(0,100)) return {ok:false};
+        target.scrollIntoView({block:payload.target === 'bottom'?'end':'start',behavior:'instant'});
+        return {ok:true};
+    }
     if (action === 'prepare') {
         const el = composer();
         if (!el || busy() || content(el).trim() || hasAttachment() || !payload.text || payload.text.length > 100000) return {ok:false};

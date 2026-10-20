@@ -17,6 +17,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -212,6 +213,9 @@ private fun preview(bytes: ByteArray): Bitmap? {
     val chat = ui.data.chat()
     val latestMessages by rememberUpdatedState(chat.messages)
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    var jump by remember { mutableStateOf(false) }
+    if (jump) JumpDialog("跳转到消息", chat.messages.map { (if (it.role == "user") "你：" else "回答：") + notePreview(it.text).take(90) }, { jump = false }) { index -> jump = false; scope.launch { listState.scrollToItem(index) } }
     LaunchedEffect(chat.id) { if (chat.messages.isNotEmpty()) listState.scrollToItem(chat.messages.lastIndex) }
     LaunchedEffect(chat.id, ui.busy) {
         if (ui.busy) snapshotFlow { latestMessages.lastOrNull()?.text?.length }.distinctUntilChanged().collect {
@@ -227,6 +231,12 @@ private fun preview(bytes: ByteArray): Bitmap? {
             MaterialsButton(ui, vm)
             TextButton(onClick = vm::newChat, enabled = !ui.locked) { Text("新对话") }
             Spacer(Modifier.weight(1f)); TextButton(onClick = vm::notes, enabled = !ui.locked && (chat.messages.isNotEmpty() || ui.pending != null), unavailableReason = if (chat.messages.isEmpty() && ui.pending == null) "先选择一页课件或进行对话，再生成笔记。" else null) { Text("生成笔记") }
+        }
+        if (chat.messages.isNotEmpty()) Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(onClick = { scope.launch { listState.scrollToItem(0) } }) { Text("顶部") }
+            TextButton(onClick = { scope.launch { listState.scrollToItem(chat.messages.lastIndex); listState.scrollBy(1_000_000f) } }) { Text("底部") }
+            TextButton(onClick = { jump = true }) { Text("跳转消息") }
+            TextButton(onClick = { val target = chat.messages.indexOfLast { it.role == "assistant" }; if (target >= 0) scope.launch { listState.scrollToItem(target) } }, enabled = chat.messages.any { it.role == "assistant" }) { Text("最新回答") }
         }
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
             if (chat.messages.isEmpty()) item { StudyEmpty(Icons.Outlined.Description, "从一页课件开始", "选择一页课件，提问或整理笔记。", Modifier.padding(top = 24.dp)) { Spacer(Modifier.height(4.dp)); OutlinedButton(onClick = { vm.tab(1) }) { Text("选择课程") } } }
@@ -269,7 +279,10 @@ private fun preview(bytes: ByteArray): Bitmap? {
     var accountExpanded by remember { mutableStateOf(false) }
     var connectionHelp by remember { mutableStateOf(false) }
     var advanced by remember { mutableStateOf(false) }
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
+    var focusedPage by rememberSaveable(ui.presentationId, ui.slideTitle) { mutableIntStateOf(0) }
+    Column(Modifier.fillMaxSize()) {
+    SlidePageControls(ui.slides, focusedPage) { focusedPage = it }
+    LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
         item {
             StudyPanel {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -311,7 +324,11 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 if (ui.slides.isEmpty()) {
                     items(ui.presentations, key = { "${it.lessonId}:${it.id}" }) { p ->
                         Card(onClick = { vm.openPresentation(p) }, enabled = !ui.locked, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp), border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()) {
-                            ListItem(colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer), headlineContent = { Text(p.title, style = MaterialTheme.typography.titleSmall) }, supportingContent = { Text(if (p.isLesson) "课堂记录 · 查看本节课件" else "课件 · 查看页面", style = MaterialTheme.typography.bodySmall) }, leadingContent = { Icon(if (p.isLesson) Icons.Outlined.School else Icons.Outlined.Description, null, tint = MaterialTheme.colorScheme.primary) }, trailingContent = { Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.outline) })
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(p.title, style = MaterialTheme.typography.titleSmall)
+                                Text((if (p.isLesson) "课堂记录" else "课件") + " · " + p.recordedAt.ifBlank { "雨课堂未提供时间" }, style = MaterialTheme.typography.bodySmall)
+                                DeckPreview(ui, p, vm)
+                            }
                         }
                     }
                     item { Row { TextButton(onClick = { vm.loadActivities(c, ui.activityPage - 1) }, enabled = !ui.locked && ui.activityPage > 0) { Text("上一批") }; Text("第 ${ui.activityPage + 1} 批", Modifier.padding(12.dp), style = MaterialTheme.typography.labelMedium); TextButton(onClick = { vm.loadActivities(c, ui.activityPage + 1) }, enabled = !ui.locked && ui.activityPage < 1000) { Text("下一批") } } }
@@ -329,9 +346,15 @@ private fun preview(bytes: ByteArray): Bitmap? {
                     Text("每次最多 50 页，按当前学习方式逐页整理并保存。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            items(ui.slides, key = { it.page }) { slide -> StudyPanel { Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) { Icon(Icons.Outlined.Description, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant); Column(Modifier.weight(1f)) { Text("第 ${slide.page} 页", style = MaterialTheme.typography.titleSmall); if (slide.text.isNotBlank()) Text(notePreview(slide.text), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; TextButton(onClick = { vm.attach(slide) }, enabled = !ui.locked) { Text("带入学习") } } } }
+            items(ui.slides.filter { focusedPage == 0 || it.page == focusedPage }, key = { it.page }) { slide -> StudyPanel { Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("第 ${slide.page} 页", style = MaterialTheme.typography.titleSmall)
+                PagePreview(vm.pagePreviewKey(ui, slide), "${ui.slideTitle} · 第 ${slide.page} 页", vm.previews) { vm.previewPage(ui, slide) }
+                if (slide.text.isNotBlank()) Text(notePreview(slide.text), maxLines = 2, style = MaterialTheme.typography.bodySmall)
+                Row { TextButton(onClick = { vm.attach(slide) }, enabled = !ui.locked) { Text("带入学习") }; TextButton(onClick = { vm.explainPage(slide) }, enabled = !ui.locked) { Text("讲解并保存") } }
+            } } }
             item { TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "收起高级入口" else "高级：按课件编号读取") }; if (advanced) { OutlinedTextField(manualId, { if (it.length <= 24 && it.all(Char::isDigit)) manualId = it }, label = { Text("课件编号 presentation_id") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth()); TextButton(onClick = { vm.loadSlides(manualId) }, enabled = !ui.locked && manualId.isNotBlank()) { Text("读取课件") } } }
         }
+    }
     }
 }
 
@@ -396,14 +419,17 @@ private fun preview(bytes: ByteArray): Bitmap? {
             }
                 Box { IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreHoriz, "笔记选项", Modifier.size(22.dp)) }; DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) { DropdownMenuItem(text = { Text("删除笔记…") }, enabled = writable, onClick = { menu = false; deleting = true }) } }
             }
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text(note.title, style = MaterialTheme.typography.headlineSmall)
-            TextButton(onClick = { details = !details }) { Text("来源与模型"); Icon(if (details) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, Modifier.size(18.dp)) }
-            if (details) StudyPanel { Text("来源：${note.source}\n模型：${note.model}", Modifier.padding(14.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
-            if (reader.editing) OutlinedTextField(reader.draft, { reader.draft = it }, Modifier.fillMaxWidth().heightIn(min = 360.dp), label = { Text("Markdown 笔记") }, enabled = writable) else PagedNoteContent(note)
-            Spacer(Modifier.height(24.dp))
+            val heading: @Composable () -> Unit = {
+                Text(note.title, style = MaterialTheme.typography.headlineSmall)
+                TextButton(onClick = { details = !details }) { Text("来源与模型"); Icon(if (details) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, Modifier.size(18.dp)) }
+                if (details) StudyPanel { Text("来源：${note.source}\n模型：${note.model}", Modifier.padding(14.dp), style = MaterialTheme.typography.bodySmall) }
+                OriginalNotePages(note, ui, vm)
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             }
+            if (reader.editing) Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                heading()
+                OutlinedTextField(reader.draft, { reader.draft = it }, Modifier.fillMaxWidth().heightIn(min = 360.dp), label = { Text("Markdown 笔记") }, enabled = writable)
+            } else PagedNoteContent(note, Modifier.weight(1f), independentScroll = true, header = heading)
         }
     } else LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)) {
         item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -426,24 +452,42 @@ private fun preview(bytes: ByteArray): Bitmap? {
     }
 }
 
-@Composable fun PagedNoteContent(note: Note) {
+@OptIn(ExperimentalLayoutApi::class)
+@Composable fun PagedNoteContent(note: Note, modifier: Modifier = Modifier, independentScroll: Boolean = false, header: @Composable () -> Unit = {}) {
     var index by rememberSaveable(note.id) { mutableIntStateOf(0) }
+    var jump by remember(note.id) { mutableStateOf(false) }
+    val scroll = rememberScrollState(); val scope = rememberCoroutineScope()
     val prepared by produceState<Pair<String, List<NoteReadingSegment>>?>(null, note.id, note.content) {
         value = withContext(Dispatchers.Default) { note.content to noteReadingSegments(note.content) }
     }
-    // A changed key can briefly retain the previous produceState value. Never
-    // apply offsets from an older/longer note to the new source string.
     val segments = prepared?.takeIf { it.first == note.content }?.second
     if (segments == null) { CircularProgressIndicator(Modifier.size(24.dp)); return }
     val selected = index.coerceIn(0, segments.lastIndex)
-    if (segments.size > 1) {
-        Text("阅读分段 ${selected + 1} / ${segments.size} · 完整笔记已保留", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            TextButton(onClick = { index = selected - 1 }, enabled = selected > 0) { Text("上一段") }
-            TextButton(onClick = { index = selected + 1 }, enabled = selected < segments.lastIndex) { Text("下一段") }
+    LaunchedEffect(note.id, selected) { if (independentScroll) scroll.scrollTo(0) }
+    val labels = remember(note.content, segments) { segments.mapIndexed { i, part ->
+        val text = note.content.substring(part.start, minOf(part.end, part.start + 300))
+        (readingHeadings(text).firstOrNull { it.second.contains(Regex("第\\s*\\d+\\s*页")) } ?: readingHeadings(text).firstOrNull())?.second ?: "第 ${i + 1} 段 · ${notePreview(text).take(50)}"
+    } }
+    if (jump) JumpDialog("笔记目录 / 阅读分段", labels, { jump = false }) { index = it; jump = false }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (segments.size > 1) {
+            Text("阅读分段 ${selected + 1} / ${segments.size} · 完整笔记已保留", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = { index = selected - 1 }, enabled = selected > 0) { Text("上一段") }
+                TextButton(onClick = { index = selected + 1 }, enabled = selected < segments.lastIndex) { Text("下一段") }
+                TextButton(onClick = { jump = true }) { Text("目录跳转") }
+            }
+        }
+        if (independentScroll) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = { scope.launch { scroll.scrollTo(0) } }) { Text("本段顶部") }
+            TextButton(onClick = { scope.launch { scroll.scrollTo(scroll.maxValue) } }) { Text("本段底部") }
+        }
+        Column(if (independentScroll) Modifier.weight(1f).verticalScroll(scroll) else Modifier, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            header()
+            key(note.id, selected) { IllustratedMarkdown(segments[selected].display(note.content)) }
+            Spacer(Modifier.height(24.dp))
         }
     }
-    key(note.id, selected) { Markdown(segments[selected].display(note.content)) }
 }
 
 @Composable fun ChatGptAccountPanel(ui: UiState, vm: StudyViewModel) {

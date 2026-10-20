@@ -17,7 +17,7 @@ data class Saved(val providers: List<Provider> = listOf(Provider()), val selecte
 data class Course(val id: String, val title: String, val detail: String = "")
 data class Presentation(val id: String, val title: String, val lessonId: String = "", val isLesson: Boolean = false, val recordedAt: String = "")
 data class Slide(val page: Int, val cover: String, val text: String)
-data class Attachment(val image: String?, val label: String, val text: String)
+data class Attachment(val image: String?, val label: String, val text: String, val imageRef: String = "")
 
 fun JSONObject.optional(key: String): String? = if (isNull(key)) null else optString(key).takeIf { it.isNotEmpty() }
 fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
