@@ -146,6 +146,23 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
     }
     fun savePrompts(tutor: String, notes: String) { data { it.copy(tutorPrompt = tutor.ifBlank { TUTOR_PROMPT }, notesPrompt = notes.ifBlank { NOTES_PROMPT }) }; notice("角色提示词已保存，每次请求都会发送给所选模型。") }
     fun editNote(id: String, text: String): Boolean { if (state.value.locked || !state.value.data.noteWritable(id) || classWriter?.isActive == true && state.value.data.classRun?.noteId == id) { notice("请先结束整理并恢复待保存回答，再编辑笔记。"); return false }; if (state.value.data.notes.none { it.id == id }) return false; data { it.copy(notes = it.notes.map { n -> if (n.id == id) n.copy(content = text) else n }) }; return true }
+    fun createManualNote() {
+        if (state.value.locked) return
+        val note = Note(title = "新笔记", content = "", source = "手写笔记", model = "手写")
+        data { it.copy(notes = listOf(note) + it.notes) }
+        if (state.value.data.notes.any { it.id == note.id }) { noteReader.open(note); noteReader.editing = true; tab(2) }
+    }
+    fun renameNote(id: String, title: String): Boolean {
+        val value = title.trim()
+        if (state.value.locked || !state.value.data.noteWritable(id)) return false
+        if (value.isBlank() || value.length > 120) { notice("笔记标题请填写 1–120 个字。"); return false }
+        if (state.value.data.notes.none { it.id == id }) return false
+        data { it.copy(notes = it.notes.map { n -> if (n.id == id) n.copy(title = value) else n }) }; return true
+    }
+    fun toggleNotePin(id: String) {
+        if (state.value.locked) return
+        data { it.copy(notes = it.notes.map { n -> if (n.id == id) n.copy(pinned = !n.pinned) else n }) }
+    }
     fun deleteNote(id: String): Boolean { if (state.value.locked || !state.value.data.noteWritable(id) || classWriter?.isActive == true && state.value.data.classRun?.noteId == id) { notice("请先结束整理并恢复待保存回答，再删除笔记。"); return false }; if (state.value.data.notes.none { it.id == id }) return false; data { it.copy(notes = it.notes.filterNot { n -> n.id == id }) }; return true }
     fun newChat() { if (state.value.busy) return; val c = Conversation(); data { it.copy(conversations = listOf(c) + it.conversations, currentChat = c.id) }; state.update { it.copy(pending = null) } }
     fun selectChat(id: String) { if (!state.value.busy) { data { it.copy(currentChat = id) }; state.update { it.copy(pending = null) } } }
