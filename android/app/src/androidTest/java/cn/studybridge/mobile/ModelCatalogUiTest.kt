@@ -2,6 +2,7 @@ package cn.studybridge.mobile
 
 import android.content.ContentValues
 import android.graphics.Bitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
 import android.provider.MediaStore
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
@@ -35,7 +36,7 @@ class ModelCatalogUiTest {
         compose.onNodeWithText("模型 ID").assertDoesNotExist()
         compose.onNodeWithText("选择模型").performScrollTo().performClick()
         compose.onNodeWithText("视觉讲解").assertIsDisplayed()
-        val bitmap = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+        val bitmap = compose.onNode(isRoot() and hasAnyDescendant(hasText("选择可用模型"))).captureToImage().asAndroidBitmap()
         try {
             val resolver = compose.activity.contentResolver
             val values = ContentValues().apply { put(MediaStore.Images.Media.DISPLAY_NAME, "sample-model-picker.png"); put(MediaStore.Images.Media.MIME_TYPE, "image/png"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/StudyUiReview"); put(MediaStore.Images.Media.IS_PENDING, 1) }
