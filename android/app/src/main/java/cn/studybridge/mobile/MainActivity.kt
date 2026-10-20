@@ -401,7 +401,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             TextButton(onClick = { details = !details }) { Text("来源与模型"); Icon(if (details) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, Modifier.size(18.dp)) }
             if (details) StudyPanel { Text("来源：${note.source}\n模型：${note.model}", Modifier.padding(14.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
-            if (reader.editing) OutlinedTextField(reader.draft, { reader.draft = it }, Modifier.fillMaxWidth().heightIn(min = 360.dp), label = { Text("Markdown 笔记") }, enabled = writable) else Markdown(note.content)
+            if (reader.editing) OutlinedTextField(reader.draft, { reader.draft = it }, Modifier.fillMaxWidth().heightIn(min = 360.dp), label = { Text("Markdown 笔记") }, enabled = writable) else PagedNoteContent(note)
             Spacer(Modifier.height(24.dp))
             }
         }
@@ -424,6 +424,26 @@ private fun preview(bytes: ByteArray): Bitmap? {
             }
         } }
     }
+}
+
+@Composable fun PagedNoteContent(note: Note) {
+    var index by rememberSaveable(note.id) { mutableIntStateOf(0) }
+    val prepared by produceState<Pair<String, List<NoteReadingSegment>>?>(null, note.id, note.content) {
+        value = withContext(Dispatchers.Default) { note.content to noteReadingSegments(note.content) }
+    }
+    // A changed key can briefly retain the previous produceState value. Never
+    // apply offsets from an older/longer note to the new source string.
+    val segments = prepared?.takeIf { it.first == note.content }?.second
+    if (segments == null) { CircularProgressIndicator(Modifier.size(24.dp)); return }
+    val selected = index.coerceIn(0, segments.lastIndex)
+    if (segments.size > 1) {
+        Text("阅读分段 ${selected + 1} / ${segments.size} · 完整笔记已保留", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            TextButton(onClick = { index = selected - 1 }, enabled = selected > 0) { Text("上一段") }
+            TextButton(onClick = { index = selected + 1 }, enabled = selected < segments.lastIndex) { Text("下一段") }
+        }
+    }
+    key(note.id, selected) { Markdown(segments[selected].display(note.content)) }
 }
 
 @Composable fun ChatGptAccountPanel(ui: UiState, vm: StudyViewModel) {
