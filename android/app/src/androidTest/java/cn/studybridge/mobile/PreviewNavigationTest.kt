@@ -17,6 +17,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicInteger
 import java.io.ByteArrayOutputStream
 
 fun syntheticSlideImage(): String {
@@ -56,9 +57,9 @@ class PreviewNavigationTest {
     }
     @Test fun thumbnailCanRetryEnlargeAndThenLoadFromCacheWithoutSource() {
         val repository = MaterialPreviews(compose.activity)
-        var calls = 0; val image = syntheticSlideImage(); val cacheKey = "test:" + newId()
+        val calls = AtomicInteger(); val image = syntheticSlideImage(); val cacheKey = "test:" + newId()
         compose.setContent { StudyTheme(false) { Column { PagePreview(cacheKey, "测试课件第 3 页", repository) {
-            calls++; if (calls == 1) error("synthetic unavailable")
+            if (calls.incrementAndGet() == 1) error("synthetic unavailable")
             Attachment(image, "测试课件", "")
         } } } }
         compose.waitUntil(5000) { compose.onAllNodesWithText("重试预览").fetchSemanticsNodes().isNotEmpty() }
@@ -66,13 +67,28 @@ class PreviewNavigationTest {
         compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("测试课件第 3 页 缩略图").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("测试课件第 3 页 缩略图").assertIsDisplayed()
         shot("sample-slide-preview")
-        compose.onNodeWithText("放大预览").performClick()
-        compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("测试课件第 3 页").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("放大预览").assertIsDisplayed().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
+        try {
+            compose.waitUntil(5000) { compose.onAllNodesWithText("关闭预览").fetchSemanticsNodes().isNotEmpty() }
+            compose.waitUntil(10000) { compose.onAllNodesWithContentDescription("测试课件第 3 页").fetchSemanticsNodes().isNotEmpty() }
+        } catch (error: Throwable) {
+            val trees = compose.onAllNodes(isRoot()).printToString()
+            val bitmap = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+            bitmap?.let {
+                val resolver = compose.activity.contentResolver
+                val uri = requireNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, "preview-enlarge-failure.png"); put(MediaStore.Images.Media.MIME_TYPE, "image/png"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/StudyUiReview"); put(MediaStore.Images.Media.IS_PENDING, 1)
+                }))
+                requireNotNull(resolver.openOutputStream(uri)).use { out -> check(it.compress(Bitmap.CompressFormat.PNG, 100, out)) }
+                resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+            }
+            throw AssertionError("Full preview did not become visible. Source calls=${calls.get()}; semantics=$trees", error)
+        }
         compose.onNodeWithContentDescription("测试课件第 3 页").assertIsDisplayed()
         compose.onNodeWithText("重置缩放").performClick()
         compose.onNodeWithText("关闭预览").performClick()
         runBlocking { assertNotNull(repository.load(cacheKey) { error("must use cached thumbnail") }.bitmap) }
-        assertEquals(3, calls)
+        assertEquals(3, calls.get())
     }
     @Test fun noteDirectoryJumpsToPageWithInlineImageAndPersistentControls() {
         val images = SourceImages(compose.activity); val id = images.save(syntheticSlideImage())
