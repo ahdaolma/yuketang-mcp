@@ -97,12 +97,13 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         data { d -> val current = d.webPending; if (current != null && current.marker == pending.marker && webReturnUrl(current.url) == CHATGPT_WEB) d.copy(webPending = current.copy(url = safe)) else d }
     }
     private fun webDriver() = WebStudyDriver(webPage ?: error("请先打开学习页中的 ChatGPT 网页。"))
-    private suspend fun webGenerate(a: Attachment, prompt: String, pageKey: String = "", noteId: String = "", noteSource: String = ""): String {
+    private suspend fun webGenerate(a: Attachment, prompt: String, pageKey: String = "", noteId: String = "", noteSource: String = "", priorContext: String = ""): String {
         check(state.value.data.usesWeb) { "本节记录使用网页模式，请先切回网页学习。" }
         check(state.value.data.webPending == null) { "上一份网页回答尚未保存，请先在学习页恢复回答；不会重复发送。" }
         state.update { it.copy(tab = 0) }
         val pending = WebPending("RS-${newId()}", a.label, webReturnUrl(webPage?.pageUrl ?: CHATGPT_WEB), pageKey, noteId, noteSource)
-        return webDriver().generate(noteWebPrompt(prompt, state.value.data.learnerProfile), a, pending.marker, onMatched = { webLocation(webPage?.pageUrl ?: CHATGPT_WEB) }) {
+        val instructions = noteWebPrompt(prompt, state.value.data.learnerProfile) + if (priorContext.isBlank()) "" else "\n\n$priorContext"
+        return webDriver().generate(instructions, a, pending.marker, onMatched = { webLocation(webPage?.pageUrl ?: CHATGPT_WEB) }) {
             checkpoint { it.copy(webPending = pending) }
         }
     }
@@ -270,6 +271,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         val noteId = newId(); val createdAt = System.currentTimeMillis()
         val title = "${s.slideTitle} · 第 ${pages.first().page}–${pages.last().page} 页"
         var pageNumber = pages.first().page; var pageIndex = 1
+        var previousNotes = ""
         fun source(completed: Int) = "$title（已完成 $completed/${pages.size} 页${if (completed < pages.size) "，其余页面待处理" else "，全部完成"}）"
         if (s.data.usesWeb) {
             require(s.data.webPending == null) { "请先恢复上一份网页回答，再开始连续整理。" }
@@ -281,8 +283,9 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
             read = { page -> withContext(Dispatchers.IO) { readAttachment(s, page) } },
             generate = { a ->
                 val text = StringBuilder()
-                val input = listOf(Message("user", a.text.ifBlank { "请阅读课件图片并整理笔记。" }, a.image, a.label))
-                if (s.data.usesWeb) webGenerate(a, s.data.notesPrompt, "batch:$pageNumber", noteId, source(pageIndex)) else {
+                val prior = priorNoteContext(s.slideTitle, previousNotes)
+                val input = (if (prior.isBlank()) emptyList() else listOf(Message("user", prior))) + Message("user", a.text.ifBlank { "请阅读课件图片并整理笔记。" }, a.image, a.label)
+                if (s.data.usesWeb) webGenerate(a, s.data.notesPrompt, "batch:$pageNumber", noteId, source(pageIndex), prior) else {
                     ai.stream(authorizedProvider(p), noteMessages(s.data.notesPrompt, input, a.label, s.data.learnerProfile)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
                     text.toString()
                 }
@@ -290,6 +293,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
             checkpoint = { progress ->
                 val note = Note(noteId, title, progress.markdown, source(progress.completed), if (s.data.usesWeb) "ChatGPT 网页" else "${p.name} / ${p.model}", createdAt)
                 checkpoint { it.copy(notes = listOf(note) + it.notes.filterNot { n -> n.id == noteId }, webPending = if (s.data.usesWeb) null else it.webPending) }
+                previousNotes = progress.markdown
             },
             onPage = { page, index, total -> pageNumber = page; pageIndex = index; state.update { it.copy(operation = "连续笔记 $index/$total · 第 $page 页", noteDraft = "正在读取第 $page 页…") } },
             includeProgress = !s.data.usesWeb
@@ -469,9 +473,13 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                     val (title, slides) = withContext(Dispatchers.IO) { rain.slides(saved, page.presentationId, lessonId = if (current.ended) current.lesson.id else "", authorization = pageAccess?.authorization ?: "", onAuthorization = { pageAccess?.authorization = it }) }
                     val slide = slides.find { it.page == page.page } ?: error("第 ${page.page} 页尚未开放，已暂停；可稍后继续。")
                     val a = withContext(Dispatchers.IO) { rain.attachment(title, slide) }
+                    val prior = if (current.completed.isEmpty()) "" else priorNoteContext(current.lesson.title, state.value.data.notes.find { it.id == run.noteId }?.content.orEmpty())
                     val text = StringBuilder()
-                    if (web) text.append(webGenerate(a, prompt, page.key, run.noteId))
-                    else ai.stream(authorizedProvider(p!!), noteMessages(prompt, listOf(Message("user", a.text.ifBlank { "讲解这一页课件。" }, a.image, a.label)), a.label, saved.learnerProfile)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
+                    if (web) text.append(webGenerate(a, prompt, page.key, run.noteId, priorContext = prior))
+                    else {
+                        val input = (if (prior.isBlank()) emptyList() else listOf(Message("user", prior))) + Message("user", a.text.ifBlank { "讲解这一页课件。" }, a.image, a.label)
+                        ai.stream(authorizedProvider(p!!), noteMessages(prompt, input, a.label, saved.learnerProfile)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
+                    }
                     require(text.isNotBlank()) { "这一页没有生成有效讲解。" }
                     checkpoint { d ->
                         val r = d.classRun?.takeIf { it.noteId == run.noteId }

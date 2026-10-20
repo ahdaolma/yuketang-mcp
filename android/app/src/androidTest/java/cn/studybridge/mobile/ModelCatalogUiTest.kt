@@ -22,6 +22,9 @@ class ModelCatalogUiTest {
         val state = mutableStateOf(UiState(ready = true, tab = 3, data = Saved(learningMode = "native", providers = listOf(p), selectedProvider = p.id),
             modelListFor = p.id, modelListRequest = modelCatalogKey(p), modelList = listOf("text-model", "vision-model"), modelNames = mapOf("text-model" to "文字讲解", "vision-model" to "视觉讲解")))
         lateinit var vm: StudyViewModel
+        // The displayed fixture and the real ViewModel must use the same saved
+        // configuration; another test's live class/recovery state is unrelated.
+        Vault(compose.activity).save(state.value.data)
         compose.activityRule.scenario.onActivity { vm = ViewModelProvider(it)[StudyViewModel::class.java] }
         compose.waitUntil(5000) { vm.ui.value.ready }
         compose.setContent {
@@ -50,8 +53,10 @@ class ModelCatalogUiTest {
         compose.onNodeWithText("搜索模型").performTextInput("vision")
         compose.onNodeWithText("文字讲解").assertDoesNotExist()
         compose.onNodeWithText("视觉讲解").performClick()
-        compose.onNodeWithText("保存并使用").performScrollTo().performClick()
-        compose.runOnIdle { assertEquals("vision-model", vm.ui.value.data.provider().model) }
+        compose.onNodeWithText("vision-model").assertIsDisplayed()
+        compose.onNodeWithText("保存并使用").performScrollTo().assertIsEnabled().performClick()
+        compose.waitUntil(5000) { vm.ui.value.data.provider().model == "vision-model" }
+        compose.runOnIdle { assertEquals("vision-model", vm.ui.value.data.provider().model); assertEquals("模型配置已保存。", vm.ui.value.notice) }
         compose.onNodeWithText("API Base URL").performScrollTo().performTextReplacement("https://other.example/v1")
         compose.onNodeWithText("选择模型").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("保存并使用").performScrollTo().assertIsNotEnabled()

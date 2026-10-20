@@ -104,7 +104,7 @@ class MaterialStore(private val context: Context) {
         when (m.format) {
             "pdf" -> { val count = PdfRenderer(ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)).use { it.pageCount }; require(count in 1..1000) { "PDF 需为 1–1000 页，请拆分后导入。" }; pages = (1..count).map { MaterialPage(it) } }
             "image" -> pages = listOf(MaterialPage(1))
-            "txt", "md" -> { require(file.length() <= MAX_TEXT_BYTES); noteText = decodeText(file.readBytes()); pages = textMaterialPages(noteText) }
+            "txt", "md" -> { require(file.length() <= MAX_TEXT_BYTES) { "文字文件超过 2 MB，请拆分后导入。" }; noteText = decodeText(file.readBytes()); pages = textMaterialPages(noteText) }
             "pptx", "docx" -> {
                 val parsed = readOffice(file, m.format); pages = parsed.first; noteText = parsed.second
             }
