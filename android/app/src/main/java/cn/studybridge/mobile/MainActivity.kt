@@ -263,7 +263,8 @@ private fun preview(bytes: ByteArray): Bitmap? {
             MaterialsButton(ui, vm)
             IconButton(onClick = vm::newChat, enabled = !ui.locked) { Icon(Icons.Outlined.AddComment, "新对话") }
             Spacer(Modifier.weight(1f))
-            IconButton(onClick = vm::notes, enabled = !ui.locked && (chat.messages.isNotEmpty() || ui.pending != null), unavailableReason = if (chat.messages.isEmpty() && ui.pending == null) "先选择一页课件或进行对话，再生成笔记。" else null) { Icon(Icons.Outlined.NoteAdd, "生成笔记") }
+            if (ui.busy && inlineHeader) IconButton(onClick = vm::stop) { Icon(Icons.Outlined.StopCircle, "停止生成") }
+            else IconButton(onClick = vm::notes, enabled = !ui.locked && (chat.messages.isNotEmpty() || ui.pending != null), unavailableReason = if (chat.messages.isEmpty() && ui.pending == null) "先选择一页课件或进行对话，再生成笔记。" else null) { Icon(Icons.Outlined.NoteAdd, "生成笔记") }
             if (chat.messages.isNotEmpty()) Box {
                 IconButton(onClick = { navigation = true }) { Icon(Icons.Outlined.SwapVert, "消息跳转") }
                 DropdownMenu(expanded = navigation, onDismissRequest = { navigation = false }) {

@@ -122,8 +122,17 @@ class ResponsiveReadingTest {
             listOf("DNA 结构课件 · 第 1 页", "移除课件附件", "管理 ChatGPT 用量").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
             compose.onNodeWithText("DNA 结构课件 · 第 1 页").performClick()
             compose.onNode(hasSetTextAction()).assertTextEquals("解释复制")
+            compose.runOnIdle { state.value = state.value.copy(busy = true, operation = "合成生成测试") }
+            compose.onNodeWithTag("应用顶部栏").assertDoesNotExist()
+            if (compose.onAllNodesWithContentDescription("停止生成").fetchSemanticsNodes().isEmpty()) compose.onNodeWithContentDescription("悬浮阅读工具").performClick()
+            compose.onNodeWithContentDescription("停止生成").assertIsDisplayed().assertIsEnabled()
+            val busyBody = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
+            assertTrue("Generation must not reintroduce a stacked landscape header", (busyBody.bottom - busyBody.top).value > 48f)
+            if (compose.onAllNodesWithContentDescription("收起悬浮工具").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithContentDescription("收起悬浮工具").performClick()
+            compose.runOnIdle { state.value = state.value.copy(busy = false, operation = "") }
             val longDraft = "解释复制：" + "模板方向、配对关系和具体步骤。".repeat(50)
             compose.onNode(hasSetTextAction()).performTextReplacement(longDraft)
+            compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("悬浮阅读工具").fetchSemanticsNodes().isNotEmpty() }
             compose.onNode(hasSetTextAction()).assertTextEquals(longDraft)
             compose.onNodeWithContentDescription("发送给所选模型").assertIsDisplayed().assertIsEnabled()
             val longDraftBody = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()

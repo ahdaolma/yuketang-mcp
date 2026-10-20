@@ -79,7 +79,7 @@ import androidx.compose.ui.unit.dp
     val wide = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && maxWidth > maxHeight && maxHeight < 500.dp
     val landscapeKeyboard = wide && WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val reading = (ui.tab == 0 && !ui.data.usesWeb) || noteOpen
-    val inlineHeader = wide && reading && !ui.busy
+    val inlineHeader = wide && reading && (!ui.busy || ui.tab == 0)
     val density = LocalDensity.current
     val chrome = remember(ui.tab, noteOpen, ui.data.currentChat) { ReadingChromeState(with(density) { 24.dp.toPx() }) }
     LaunchedEffect(ui.busy) { if (ui.busy) chrome.restore() }
