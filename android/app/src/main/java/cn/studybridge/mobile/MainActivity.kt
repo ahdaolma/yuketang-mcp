@@ -233,6 +233,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable fun ChatScreen(ui: UiState, vm: StudyViewModel) {
     var input by rememberSaveable { mutableStateOf("") }
+    var composerDetails by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf(false) }
     var navigation by remember { mutableStateOf(false) }
     val chrome = LocalReadingChrome.current
@@ -280,10 +281,21 @@ private fun preview(bytes: ByteArray): Bitmap? {
         }
     }, composer = {
         Column {
-        ui.pending?.let { a -> ElevatedCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) { Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.AttachFile, null); Text(a.label, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); IconButton(onClick = vm::clearAttachment, enabled = !ui.locked) { Icon(Icons.Default.Close, "移除课件附件") } } } }
-        if (ui.data.provider().chatgptAccountId.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) { Text("使用 ChatGPT 套餐", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary); TextButton(onClick = { vm.openLink(CHATGPT_USAGE) }) { Text("管理用量") } }
+        if (!keyboardBeside) ui.pending?.let { a -> ElevatedCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) { Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.AttachFile, null); Text(a.label, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); IconButton(onClick = vm::clearAttachment, enabled = !ui.locked) { Icon(Icons.Default.Close, "移除课件附件") } } } }
+        if (!keyboardBeside && ui.data.provider().chatgptAccountId.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) { Text("使用 ChatGPT 套餐", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary); TextButton(onClick = { vm.openLink(CHATGPT_USAGE) }) { Text("管理用量") } }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-            OutlinedTextField(input, { if (it.length <= 20000) input = it }, Modifier.weight(1f).onFocusChanged { chrome?.locked = it.isFocused }, placeholder = { Text("问问这页课件…", style = MaterialTheme.typography.bodyMedium) }, textStyle = MaterialTheme.typography.bodyMedium, shape = RoundedCornerShape(14.dp), maxLines = if (inlineHeader) 2 else 4, enabled = !ui.locked)
+            OutlinedTextField(input, { if (it.length <= 20000) input = it }, Modifier.weight(1f).onFocusChanged { chrome?.locked = it.isFocused }, placeholder = { Text("问问这页课件…", style = MaterialTheme.typography.bodyMedium) }, textStyle = MaterialTheme.typography.bodyMedium, shape = RoundedCornerShape(14.dp), maxLines = if (inlineHeader) 2 else 4, enabled = !ui.locked, trailingIcon = if (keyboardBeside && (ui.pending != null || ui.data.provider().chatgptAccountId.isNotBlank())) ({
+                Box {
+                    IconButton(onClick = { composerDetails = true }) { Icon(Icons.Outlined.MoreHoriz, "附件与用量") }
+                    DropdownMenu(expanded = composerDetails, onDismissRequest = { composerDetails = false }, properties = androidx.compose.ui.window.PopupProperties(focusable = false)) {
+                        ui.pending?.let { attachment ->
+                            DropdownMenuItem(text = { Text(attachment.label) }, onClick = { composerDetails = false })
+                            DropdownMenuItem(text = { Text("移除课件附件") }, enabled = !ui.locked, onClick = { composerDetails = false; vm.clearAttachment() })
+                        }
+                        if (ui.data.provider().chatgptAccountId.isNotBlank()) DropdownMenuItem(text = { Text("管理 ChatGPT 用量") }, onClick = { composerDetails = false; vm.openLink(CHATGPT_USAGE) })
+                    }
+                }
+            }) else null)
             FilledIconButton(onClick = { if (vm.send(input.trim())) input = "" }, enabled = !ui.locked && input.isNotBlank(), unavailableReason = if (input.isBlank()) "先输入你的问题，再发送。" else null) { Icon(Icons.Default.ArrowUpward, "发送给所选模型") }
         }
         }

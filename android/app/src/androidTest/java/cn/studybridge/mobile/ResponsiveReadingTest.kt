@@ -104,6 +104,7 @@ class ResponsiveReadingTest {
             assertTrue("Landscape body must keep most height", (body.bottom - body.top).value >= (screen.bottom - screen.top).value * 0.55f)
             listOf("学习", "课程", "笔记", "学习资料", "新对话", "生成笔记", "消息跳转", "设置").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
             shot("sample-chat-landscape")
+            compose.runOnIdle { state.value = state.value.copy(pending = Attachment(null, "DNA 结构课件 · 第 1 页", "合成附件"), data = state.value.data.copy(providers = listOf(Provider(chatgptAccountId = "fixture-only")))) }
             compose.onNode(hasSetTextAction()).performTextInput("解释复制")
             compose.waitUntil(5000) {
                 androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == true
@@ -114,9 +115,15 @@ class ResponsiveReadingTest {
             listOf("学习", "课程", "笔记", "学习资料", "新对话", "生成笔记", "消息跳转", "设置").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
             val typingBody = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
             assertTrue("Landscape composer must leave a usable scroll viewport", (typingBody.bottom - typingBody.top).value > 48f)
+            compose.onNodeWithContentDescription("附件与用量").performClick()
+            listOf("DNA 结构课件 · 第 1 页", "移除课件附件", "管理 ChatGPT 用量").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
+            compose.onNodeWithText("DNA 结构课件 · 第 1 页").performClick()
+            compose.onNode(hasSetTextAction()).assertTextEquals("解释复制")
             compose.runOnIdle {
                 androidx.core.view.WindowInsetsControllerCompat(compose.activity.window, compose.activity.window.decorView).hide(androidx.core.view.WindowInsetsCompat.Type.ime())
             }
+            compose.waitUntil(5000) { androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == false }
+            compose.waitForIdle()
             compose.onNodeWithContentDescription("消息跳转").performClick()
             compose.onNodeWithText("顶部").performClick()
             compose.onNodeWithText("展开原文").assertIsDisplayed()
