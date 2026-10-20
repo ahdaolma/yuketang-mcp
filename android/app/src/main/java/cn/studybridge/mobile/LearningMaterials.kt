@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material3.*
+import cn.studybridge.mobile.StudyModalBottomSheet as ModalBottomSheet
 import cn.studybridge.mobile.FeedbackOutlinedButton as OutlinedButton
 import cn.studybridge.mobile.FeedbackTextButton as TextButton
 import cn.studybridge.mobile.FeedbackIconButton as IconButton

@@ -43,6 +43,7 @@ import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import cn.studybridge.mobile.StudyModalBottomSheet as ModalBottomSheet
 import cn.studybridge.mobile.FeedbackButton as Button
 import cn.studybridge.mobile.FeedbackOutlinedButton as OutlinedButton
 import cn.studybridge.mobile.FeedbackTextButton as TextButton

@@ -42,6 +42,7 @@ class ModelCatalogUiTest {
         val beforeDialog = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
         compose.onNodeWithText("选择模型").performClick()
         compose.onNodeWithText("视觉讲解").assertIsDisplayed()
+        compose.waitUntil(5000) { focusedAppStatusBarsHidden() }
         val bitmap = dialogScreenshot(compose, beforeDialog)
         try {
             val resolver = compose.activity.contentResolver

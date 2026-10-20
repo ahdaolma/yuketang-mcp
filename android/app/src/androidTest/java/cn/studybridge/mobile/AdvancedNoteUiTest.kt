@@ -40,6 +40,11 @@ fun advancedUiShot(context: Context, name: String) {
     resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
 }
 
+fun focusedAppStatusBarsHidden(): Boolean {
+    val focused = android.view.inspector.WindowInspector.getGlobalWindowViews().filter { it.isAttachedToWindow && it.hasWindowFocus() }
+    return focused.isNotEmpty() && focused.all { androidx.core.view.ViewCompat.getRootWindowInsets(it)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars()) == false }
+}
+
 class AdvancedNoteUiTest {
     @get:Rule val compose = createAndroidComposeRule<WebFixtureActivity>()
     private fun render(current: MutableState<StudyViewModel>) {
@@ -68,6 +73,8 @@ class AdvancedNoteUiTest {
             compose.runOnIdle { first.tab(2); first.noteReader.open(note); first.noteReader.editing = true; first.noteReader.draft = draft }
             compose.waitUntil(5000) { !first.ui.value.noteDraftSaving && Vault(app, "note-drafts-v1.enc").load().noteDrafts.singleOrNull()?.content == draft }
             assertEquals(note, vault.load().notes.single())
+            compose.waitForIdle()
+            compose.onNodeWithText("草稿已自动保存").assertIsDisplayed()
             advancedUiShot(compose.activity, "sample-note-autosave")
             lateinit var second: StudyViewModel
             compose.runOnIdle { stores.first().clear(); stores += ViewModelStore(); second = noteTestViewModel(app, stores.last()); current.value = second }
@@ -109,6 +116,8 @@ class AdvancedNoteUiTest {
             compose.onNodeWithContentDescription("笔记选项").performClick()
             compose.onNodeWithText("按页删除内容…").performClick()
             compose.onNodeWithText("第 2 页").performClick()
+            compose.waitForIdle()
+            compose.onNodeWithText("删除所选 1 页…").assertIsEnabled()
             advancedUiShot(compose.activity, "sample-note-delete-pages")
             compose.onNodeWithText("删除所选 1 页…").performClick()
             compose.onNodeWithText("返回选择").performClick()
@@ -126,6 +135,9 @@ class AdvancedNoteUiTest {
             assertFalse(sourceImagePattern.containsMatchIn(vm.noteReader.draft))
             compose.onNodeWithText("撤销图片修改").performScrollTo().performClick()
             assertEquals(rotated, sourceImagePattern.find(vm.noteReader.draft)!!.groupValues[2])
+            compose.waitForIdle()
+            compose.onNodeWithText("图片 1 ▴").assertIsDisplayed()
+            compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("图片 1 · 第一张原图 缩略图").fetchSemanticsNodes().isNotEmpty() }
             advancedUiShot(compose.activity, "sample-note-image-editor")
             compose.onNodeWithText("保存修改").performClick()
             compose.waitUntil(5000) { vault.load().notes.single { it.id == note.id }.content.contains(rotated) }
@@ -156,6 +168,7 @@ class AdvancedNoteUiTest {
             compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记正文").fetchSemanticsNodes().isNotEmpty() }
             compose.waitUntil(5000) { compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value() > 100f }
             compose.onNodeWithContentDescription("目录跳转").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "阅读分段 2 / 3 · 完整笔记已保留"))
+            compose.waitForIdle()
             advancedUiShot(compose.activity, "sample-note-memory-restored")
         } finally { compose.runOnIdle { stores.forEach { it.clear() } } }
     }
