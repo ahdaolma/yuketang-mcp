@@ -45,7 +45,9 @@ def tap(label):
 
 
 def start():
-    adb('shell', 'am', 'start', '-W', '-n', package + '/.MainActivity')
+    result = adb('shell', 'am', 'start', '-W', '-n', package + '/.MainActivity')
+    with (out / 'upgrade-launch.txt').open('ab') as stream:
+        stream.write(result + b'\n')
     time.sleep(1)
 
 
@@ -58,6 +60,7 @@ def native_mode():
 
 
 try:
+    adb('logcat', '-c')
     adb('install', '-r', apk)
     start()
     tap('设置')
@@ -74,6 +77,22 @@ try:
     native_mode()
     (out / 'upgrade.txt').write_text('PASS: adb install -r succeeded; encrypted learning preference survived restart and APK replacement.\n')
     (out / 'upgrade.png').write_bytes(adb('exec-out', 'screencap', '-p'))
+except Exception:
+    # Preserve the original failure before the disposable installation is removed.
+    # A missing control must not hide a release-only crash or a system dialog.
+    commands = {
+        'upgrade-failure.png': ('exec-out', 'screencap', '-p'),
+        'upgrade-runtime.txt': ('logcat', '-d'),
+        'upgrade-activity.txt': ('shell', 'dumpsys', 'activity', 'activities'),
+        'upgrade-window.txt': ('shell', 'dumpsys', 'window', 'windows'),
+        'upgrade-ui.xml': ('shell', 'cat', '/sdcard/update-ui.xml'),
+    }
+    for name, command in commands.items():
+        try:
+            (out / name).write_bytes(adb(*command))
+        except Exception as error:
+            (out / (name + '.error')).write_text(type(error).__name__)
+    raise
 finally:
     # Only the disposable, emulator-guarded test installation is removed.
     adb('uninstall', package)
