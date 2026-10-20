@@ -94,7 +94,7 @@ class VisualReviewTest {
         compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记正文").fetchSemanticsNodes().isNotEmpty() }
         val page = compose.onNodeWithTag("笔记阅读页").getUnclippedBoundsInRoot()
         val body = compose.onNodeWithTag("笔记正文").getUnclippedBoundsInRoot()
-        assertTrue("Body should occupy at least 80% of the note reader: $body / $page", body.height.value >= page.height.value * 0.80f)
+        assertTrue("Body should occupy at least 80% of the note reader: $body / $page", (body.bottom - body.top).value >= (page.bottom - page.top).value * 0.80f)
         compose.onNodeWithContentDescription("目录跳转").assertIsDisplayed()
         compose.onNodeWithContentDescription("阅读跳转").assertIsDisplayed()
         compose.onNodeWithText("编辑笔记").assertDoesNotExist()
