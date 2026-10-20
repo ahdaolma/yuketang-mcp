@@ -1,5 +1,6 @@
 """Verify replacement preserves an encrypted preference on a disposable CI emulator."""
 import pathlib
+import os
 import re
 import subprocess
 import time
@@ -12,7 +13,7 @@ def adb(*args):
 
 assert adb('shell', 'getprop', 'ro.kernel.qemu').decode().strip() == '1', 'Upgrade check is emulator-only'
 package = 'cn.studybridge.mobile'
-apk = 'app/build/outputs/apk/release/app-release.apk'
+apk = os.environ.get('RAIN_UPDATE_APK', 'app/build/outputs/apk/release/app-release.apk')
 out = pathlib.Path('signing-artifacts')
 out.mkdir(exist_ok=True)
 
@@ -51,13 +52,18 @@ def nodes():
 
 def tap(label):
     for attempt in range(8):
-        for node in nodes():
-            if label in (node.get('text'), node.get('content-desc')):
-                x1, y1, x2, y2 = map(int, re.findall(r'\d+', node.get('bounds')))
-                if x2 > x1 and y2 > y1:
-                    adb('shell', 'input', 'tap', str((x1+x2)//2), str((y1+y2)//2))
-                    time.sleep(0.5)
-                    return
+        items = nodes()
+        # A setting label and its switch share a name. Prefer the actual
+        # accessible control instead of tapping the non-interactive label.
+        candidates = [n for n in items if n.get('content-desc') == label]
+        if not candidates:
+            candidates = [n for n in items if n.get('text') == label]
+        for node in candidates:
+            x1, y1, x2, y2 = map(int, re.findall(r'\d+', node.get('bounds')))
+            if x2 > x1 and y2 > y1:
+                adb('shell', 'input', 'tap', str((x1+x2)//2), str((y1+y2)//2))
+                time.sleep(0.5)
+                return
         time.sleep(0.5)
     raise AssertionError('Missing upgrade control: ' + label)
 
@@ -69,12 +75,16 @@ def start():
     time.sleep(1)
 
 
-def native_mode():
+def focus_mode():
+    tap('设置')
+    tap('笔记生成')
     for attempt in range(8):
-        if any(node.get('text') == '从一页课件开始' for node in nodes()):
+        if any(node.get('content-desc') == '超重点模式' and node.get('checked') == 'true' for node in nodes()):
+            tap('返回设置')
+            tap('返回学习')
             return
         time.sleep(0.5)
-    raise AssertionError('Encrypted learning preference did not survive replacement')
+    raise AssertionError('Encrypted super-focus preference did not survive replacement')
 
 
 try:
@@ -82,18 +92,22 @@ try:
     adb('install', '-r', apk)
     start()
     tap('设置')
-    tap('模型接口')
+    tap('笔记生成')
+    switch = next(n for n in nodes() if n.get('content-desc') == '超重点模式')
+    assert switch.get('checked') == 'false', 'Disposable installation must start with super-focus disabled'
+    tap('超重点模式')
+    tap('返回设置')
     tap('返回学习')
-    native_mode()
+    focus_mode()
     # Restart first: prove the preference was persisted, rather than only kept in RAM.
     adb('shell', 'am', 'force-stop', package)
     start()
-    native_mode()
+    focus_mode()
     result = adb('install', '-r', apk).decode()
     assert 'Success' in result, 'Fixed-key replacement failed'
     start()
-    native_mode()
-    (out / 'upgrade.txt').write_text('PASS: adb install -r succeeded; encrypted learning preference survived restart and APK replacement.\n')
+    focus_mode()
+    (out / 'upgrade.txt').write_text('PASS: adb install -r succeeded; encrypted super-focus preference survived restart and APK replacement.\n')
     (out / 'upgrade.png').write_bytes(adb('exec-out', 'screencap', '-p'))
 except Exception:
     # Preserve the original failure before the disposable installation is removed.
@@ -114,3 +128,4 @@ except Exception:
 finally:
     # Only the disposable, emulator-guarded test installation is removed.
     adb('uninstall', package)
+
