@@ -103,14 +103,18 @@ class WebStudyDriver(private val page: WebPagePort, private val wait: suspend ()
         check(ready) { "网页附件或发送按钮尚未就绪。请检查上传、登录或额度提示，再手动处理草稿。" }
         beforeSend() // Must reach encrypted storage BEFORE the only click.
         check(page.call("send", JSONObject().put("marker", marker)).optBoolean("sent")) { "网页未确认发送，请检查草稿；不会自动重复发送。" }
+        return awaitAnswer(marker, onMatched)
+    }
+    // Read-only recovery: never fill or send a second question for an existing intent.
+    suspend fun awaitAnswer(marker: String, onMatched: suspend () -> Unit = {}, requireCurrent: Boolean = false): String {
         var previous = ""; var stable = 0; var matched = false
         repeat(attempts) {
             wait()
             val s = page.call("answer", JSONObject().put("marker", marker))
-            check(!matched || !s.optBoolean("otherUser")) { "网页对话发生变化，已暂停；请检查待完成回答。" }
+            check(!(matched || requireCurrent) || !s.optBoolean("otherUser")) { "网页对话发生变化，已暂停；请检查待完成回答。" }
             if (s.optBoolean("matchedUser")) { matched = true; onMatched() }
             val text = s.optString("markdown")
-            stable = if (!s.optBoolean("otherUser") && s.optBoolean("finished") && text.isNotBlank() && text == previous) stable + 1 else 0
+            stable = if ((!requireCurrent || s.optBoolean("matchedUser")) && !s.optBoolean("otherUser") && s.optBoolean("finished") && text.isNotBlank() && text == previous) stable + 1 else 0
             previous = text
             if (stable >= 2) return text
         }
@@ -118,7 +122,15 @@ class WebStudyDriver(private val page: WebPagePort, private val wait: suspend ()
     }
     suspend fun capture(marker: String = ""): String {
         val first = page.call("answer", JSONObject().put("marker", marker))
-        require(first.optBoolean("finished") && !first.optBoolean("otherUser")) { "没有找到对应的完整网页回答，或仍在生成；请核对当前对话。" }
+        require(first.optBoolean("finished") && !first.optBoolean("otherUser")) {
+            when (first.optString("phase")) {
+                "wrong-conversation" -> "当前对话不是这份课件的待保存回答，请在网页选项中打开待完成的对话。"
+                "missing-user" -> "未找到本页提问，请滚动到这页课件对应的提问，或打开待完成的对话后重试。"
+                "generating", "waiting" -> "网页仍在生成，请等待回答结束后再恢复。"
+                "unconfirmed" -> "已找到回答，但未识别到完成控件。请等网页显示复制或评价按钮后重试；待处理记录已保留。"
+                else -> "没有找到对应的完整网页回答，请检查当前对话和生成状态。"
+            }
+        }
         wait()
         val next = page.call("answer", JSONObject().put("marker", marker))
         val text = next.optString("markdown")

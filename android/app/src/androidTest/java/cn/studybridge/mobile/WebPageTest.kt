@@ -62,6 +62,25 @@ class WebPageTest {
             assertTrue(page.call("ready", JSONObject().put("marker", "PROFILE-beginner：先解释术语")).optBoolean("ready"))
         }
     }
+    @Test fun localizedCompletionControlsAndNewTurnContainersCanBeRecoveredWithoutSendingAgain() = runBlocking {
+        val pageHtml = """<!doctype html><html><body>
+            <section data-turn="user">RS-localized</section>
+            <section data-turn="assistant"><div class="markdown"><h2>完整讲解</h2><p>氨基酸与酶活性中心。</p></div>
+                <div><button aria-label="复制">copy</button><button aria-label="差评">bad</button></div>
+            </section><form><textarea id="prompt-textarea"></textarea><button data-testid="send-button">Send</button></form>
+            </body></html>"""
+        withPage(pageHtml) { page ->
+            val driver = WebStudyDriver(page, { delay(50) }, 20)
+            assertTrue(driver.capture("RS-localized").contains("## 完整讲解"))
+            assertTrue(driver.awaitAnswer("RS-localized", requireCurrent = true).contains("酶活性中心"))
+            assertTrue(runCatching { driver.capture("RS-another-page") }.isFailure)
+        }
+        withPage(pageHtml.replace("</form>", "<button aria-label=\"停止生成\">Stop</button></form>")) { page ->
+            val status = page.call("answer", JSONObject().put("marker", "RS-localized"))
+            assertEquals("generating", status.optString("phase")); assertFalse(status.optBoolean("finished"))
+            assertTrue(runCatching { WebStudyDriver(page, { delay(10) }).capture("RS-localized") }.isFailure)
+        }
+    }
     @Test fun actualPageDraftIsPreservedAndIncompleteOutputCannotBeSaved() = runBlocking {
         withPage(fixture(draft = "我还没写完的问题")) { page ->
             assertFalse(page.call("prepare", JSONObject().put("text", "不得覆盖")).optBoolean("ok"))

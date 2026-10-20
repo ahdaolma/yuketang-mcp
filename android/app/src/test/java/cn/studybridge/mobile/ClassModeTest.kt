@@ -76,6 +76,13 @@ class ClassModeTest {
         assertTrue(frames.pages(JSONObject("""{"op":"newdanmu","presentation":999,"slideindex":4}""")).isEmpty())
         assertTrue(frames.pages(JSONObject("""{"op":"slide","slideindex":0}""")).isEmpty())
     }
+    @Test fun reconnectTimelineWithoutTypeAndShowFinishedStillDeliverOnlyObservedPages() {
+        val frames = LessonFrames()
+        assertEquals(listOf(LivePage("12", 2)), frames.pages(JSONObject("""{"op":"hello","timeline":[{"pres":12,"si":2},{"pres":12},{"si":4}]}""")))
+        assertEquals(listOf(LivePage("12", 3)), frames.pages(JSONObject("""{"op":"showfinished","slideindex":3}""")))
+        assertTrue(frames.pages(JSONObject("""{"op":"newdanmu","presentation":99,"slideindex":7}""")).isEmpty())
+        assertTrue(frames.pages(JSONObject("""{"op":"showfinished","presentation":"not-a-presentation","slideindex":5}""")).isEmpty())
+    }
     @Test fun repeatedPagesAndReconnectDoNotDuplicateCompletedOrQueuedPages() {
         val page1 = LivePage("12", 1); val page2 = LivePage("12", 2)
         val run = ClassRun(LiveLesson("42", "课程", "7"), providerId = "model", completed = listOf(page1.key), pending = listOf(page2))

@@ -87,7 +87,10 @@ import androidx.compose.ui.viewinterop.AndroidView
                 }
             }
             if (ui.classUi.running) Row(Modifier.fillMaxWidth().padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(ui.classUi.status, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Column(Modifier.weight(1f)) {
+                    Text(ui.classUi.status, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    ui.classUi.lastPage?.let { Text("已收到老师第 ${it.page} 页 · 待整理 ${ui.data.classRun?.pending?.size ?: 0} 页", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
                 TextButton(onClick = { if (ui.classUi.paused) vm.resumeClass() else vm.pauseClass() }, enabled = !ui.busy && !ui.chatgptLoginActive) { Text(if (ui.classUi.paused) "继续" else "暂停") }
             }
             ui.pending?.let { a -> Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh) {

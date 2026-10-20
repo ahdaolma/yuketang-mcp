@@ -34,7 +34,7 @@ class WebStudyTest {
                 "prepare" -> { fileName = payload.optString("fileName"); JSONObject().put("ok", prepare) }
                 "ready" -> JSONObject().put("ready", true)
                 "send" -> { check(persisted); JSONObject().put("sent", true) }
-                "answer" -> JSONObject().put("finished", finish).put("otherUser", foreign).put("markdown", if (++answers == 1) "部分内容" else "# 完整笔记\n\n有效讲解")
+                "answer" -> JSONObject().put("matchedUser", !foreign).put("finished", finish).put("otherUser", foreign).put("markdown", if (++answers == 1) "部分内容" else "# 完整笔记\n\n有效讲解")
                 else -> error("Unexpected action")
             }
         }
@@ -66,6 +66,14 @@ class WebStudyTest {
         p.foreign = false; p.finish = false
         assertTrue(runCatching { WebStudyDriver(p, {}).capture("RS-test") }.isFailure)
         assertFalse("send" in p.actions)
+    }
+    @Test fun continuingExistingAnswerNeverPreparesOrSendsAndRejectsDifferentConversation() = runBlocking {
+        val page = Page(); page.answers = 5
+        val answer = WebStudyDriver(page, {}, 8).awaitAnswer("RS-pending", requireCurrent = true)
+        assertTrue(answer.contains("完整笔记")); assertTrue(page.actions.all { it == "answer" })
+        val foreign = Page(foreign = true)
+        assertTrue(runCatching { WebStudyDriver(foreign, {}, 8).awaitAnswer("RS-pending", requireCurrent = true) }.isFailure)
+        assertEquals(listOf("answer"), foreign.actions)
     }
     @Test fun uploadFilenameMatchesItsRealImageFormat() = runBlocking {
         val p = Page()

@@ -3,8 +3,9 @@ function rainStudyPage(action, payload) {
     if (location.protocol !== 'https:' || location.hostname !== 'chatgpt.com') return {ok:false};
     const composer = () => document.querySelector('#prompt-textarea');
     const form = () => composer()?.closest('form');
-    const send = () => document.querySelector('button[data-testid="send-button"]');
-    const busy = () => !!document.querySelector('button[data-testid="stop-button"],button[data-testid="stop-streaming-button"],[data-is-streaming="true"]');
+    const visible = e => !!e && !!e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
+    const send = () => Array.from(document.querySelectorAll('button[data-testid="send-button"],button[data-testid="fruitjuice-send-button"],button[aria-label="Send prompt"],button[aria-label="发送提示"]')).find(visible);
+    const busy = () => Array.from(document.querySelectorAll('button[data-testid="stop-button"],button[data-testid="stop-streaming-button"],[data-is-streaming="true"],[data-message-state="streaming"],button[aria-label="Stop generating"],button[aria-label="停止生成"]')).some(visible);
     const content = e => e ? (e.value === undefined ? e.innerText : e.value) || '' : '';
     const hasAttachment = () => !!form()?.querySelector('button[aria-label*="Remove file"],button[aria-label*="Remove attachment"],button[aria-label*="移除附件"],button[aria-label*="删除附件"],img[alt="Uploaded image"],img[src^="blob:"]') || Array.from(document.querySelectorAll('input[type="file"]')).some(e => e.files?.length);
     function markdown(node) {
@@ -61,18 +62,30 @@ function rainStudyPage(action, payload) {
     }
     if (action === 'send') { const b=send(); if (!b || b.disabled || busy() || payload.marker && !content(composer()).includes(payload.marker)) return {sent:false}; b.click(); return {sent:true}; }
     if (action === 'answer') {
-        const messages=Array.from(document.querySelectorAll('[data-message-author-role]'));
+        // Current and older page layouts use different turn containers. Prefer the
+        // message node when both exist, so each turn is counted exactly once.
+        const role = node => node.getAttribute('data-message-author-role') || node.getAttribute('data-turn');
+        const messages=Array.from(document.querySelectorAll('[data-message-author-role],[data-turn="user"],[data-turn="assistant"]'))
+            .filter(node => ['user','assistant'].includes(role(node)) && (node.hasAttribute('data-message-author-role') || !node.querySelector('[data-message-author-role]')));
         let user=-1;
-        for (let i=messages.length-1;i>=0;i--) if(messages[i].getAttribute('data-message-author-role')==='user'){user=i;break;}
-        if(user<0) return {finished:false};
-        if(payload.marker && !content(messages[user]).includes(payload.marker)) return {finished:false,otherUser:true};
-        const assistant=messages.slice(user+1).filter(m=>m.getAttribute('data-message-author-role')==='assistant').pop();
-        if(!assistant) return {finished:false,matchedUser:true};
-        const article=assistant.closest('article') || assistant.parentElement;
-        const done=!!article?.querySelector('[data-testid="copy-turn-action-button"],[data-testid="good-response-turn-action-button"],[data-testid="bad-response-turn-action-button"]');
+        for (let i=messages.length-1;i>=0;i--) if(role(messages[i])==='user'){user=i;break;}
+        if(user<0) return {finished:false,phase:'missing-user'};
+        if(payload.marker && !content(messages[user]).includes(payload.marker)) return {finished:false,otherUser:true,phase:'wrong-conversation'};
+        const assistant=messages.slice(user+1).filter(m=>role(m)==='assistant').pop();
+        if(!assistant) return {finished:false,matchedUser:true,phase:'waiting'};
+        const article=assistant.closest('[data-testid^="conversation-turn-"],[data-turn="assistant"],article') || assistant.parentElement;
+        const done=Array.from(article?.querySelectorAll('button') || []).some(button => {
+            if (!visible(button)) return false;
+            const testId=button.getAttribute('data-testid') || '';
+            const label=button.getAttribute('aria-label') || button.getAttribute('title') || '';
+            return /^(copy-turn-action-button|good-response-turn-action-button|bad-response-turn-action-button)$/.test(testId)
+                || /^(Copy|Copy response|Copy answer|Good response|Bad response|复制|复制回答|复制回复|好评|差评|赞|踩)$/i.test(label.trim());
+        });
         const body=assistant.querySelector('.markdown') || assistant;
         const text=markdown(body).replace(/\n{3,}/g,'\n\n').trim();
-        return {matchedUser:true,finished:!busy() && done && !!text && text.length<=200000,markdown:text.slice(0,200000)};
+        const streaming=busy();
+        return {matchedUser:true,finished:!streaming && done && !!text && text.length<=200000,
+            phase:streaming?'generating':done?'complete':'unconfirmed',markdown:text.slice(0,200000)};
     }
     return {ok:false};
 }

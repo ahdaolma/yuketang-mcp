@@ -321,7 +321,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         val saved = state.value.data
         val p = saved.provider()
         if (saved.usesWeb && !saved.webClassConsent) { notice("请先在设置启用网页跟课适配，并在学习页登录网页。"); tab(3); return }
-        if (saved.usesWeb && saved.webPending != null) { notice("请先在学习页恢复待完成的网页回答。"); tab(0); return }
+        if (saved.usesWeb && saved.webPending != null && saved.webPending.noteId != saved.classRun?.takeUnless { it.ended }?.takeIf { it.lesson.id == lesson.id }?.noteId) { notice("请先在学习页恢复待完成的网页回答。"); tab(0); return }
         if (!saved.usesWeb && (!saved.providerReady(p) || p.model.isBlank() || !p.images)) { notice("上课模式需要先配置支持图片的模型。"); tab(3); return }
         if (state.value.locked) return
         val existing = state.value.data.classRun
@@ -339,7 +339,7 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         val p = state.value.data.providers.find { it.id == run.providerId }
         val web = run.providerId == WEB_PROVIDER_ID
         if (web && (!state.value.data.usesWeb || !state.value.data.webClassConsent)) { notice("请先启用网页跟课适配。"); tab(3); return }
-        if (web && state.value.data.webPending != null) { notice("请先在学习页恢复待完成回答，不会重复发送。"); tab(0); return }
+        if (web && state.value.data.webPending?.let { it.noteId != run.noteId } == true) { notice("另一份网页回答尚未保存，请先恢复；不会重复发送。"); tab(0); return }
         if (!web && (state.value.data.usesWeb || p == null || !state.value.data.providerReady(p) || !p.images)) { notice("本节课记录使用原模型配置，请切回接口模式，或结束本节后新建网页课堂。"); return }
         val previousWriter = classWriter
         val previousFeed = classFeed
@@ -349,8 +349,16 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
         classWriter = viewModelScope.launch {
             previousWriter?.join()
             try {
+                val pending = state.value.data.webPending
+                if (web && pending != null) {
+                    state.update { it.copy(tab = 0, classUi = it.classUi.copy(status = "正在恢复上一页网页讲解，不会重复发送…")) }
+                    val answer = webDriver().awaitAnswer(pending.marker, onMatched = { webLocation(webPage?.pageUrl ?: CHATGPT_WEB) }, requireCurrent = true)
+                    val receivedAt = System.currentTimeMillis()
+                    checkpoint { recoverWebAnswer(it, answer, receivedAt = receivedAt) }
+                }
                 while (isActive) {
                     val current = state.value.data.classRun ?: break
+                    if (current.ended && current.pending.isEmpty()) { state.update { it.copy(classUi = ClassUi(status = "本节课堂笔记已完成")) }; break }
                     if (!current.ended && classAccess == null) { classWake.receive(); continue }
                     val page = current.pending.firstOrNull()
                     if (page == null) { classWake.receive(); continue }
@@ -388,8 +396,12 @@ class StudyViewModel(app: Application) : AndroidViewModel(app) {
                 while (isActive) {
                     try {
                         rain.followLesson(saved, run.lesson, classAccess!!).collect { signal -> when (signal) {
-                            LiveSignal.Connected -> { state.update { it.copy(classUi = it.classUi.copy(connected = true, status = "已连接课堂，跟随老师翻页")) } }
-                            is LiveSignal.Pages -> { data { d -> d.copy(classRun = d.classRun?.let { enqueueClassPages(it, signal.pages) }) }; classWake.trySend(Unit) }
+                            LiveSignal.Connected -> { state.update { it.copy(classUi = it.classUi.copy(connected = true, status = if (it.classUi.current != null || it.data.webPending != null) it.classUi.status else "课堂已连接，等待课件页")) } }
+                            is LiveSignal.Pages -> {
+                                data { d -> d.copy(classRun = d.classRun?.let { enqueueClassPages(it, signal.pages) }) }
+                                state.update { it.copy(classUi = it.classUi.copy(lastPage = signal.pages.lastOrNull() ?: it.classUi.lastPage)) }
+                                classWake.trySend(Unit)
+                            }
                             LiveSignal.Ended -> { data { it.copy(classRun = it.classRun?.copy(ended = true)) }; state.update { it.copy(classUi = it.classUi.copy(connected = false, status = "老师已下课，正在保存剩余讲解")) }; if (state.value.data.classRun?.pending?.isEmpty() == true) { classWriter?.cancel(); state.update { it.copy(classUi = ClassUi(status = "本节课堂笔记已完成")) } } }
                         } }
                         if (state.value.data.classRun?.ended == true) break

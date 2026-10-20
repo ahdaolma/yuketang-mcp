@@ -15,7 +15,7 @@ data class LiveLesson(val id: String, val title: String, val classroomId: String
 data class LessonAccess(val token: String, val userId: String, var authorization: String)
 data class LivePage(val presentationId: String, val page: Int) { val key get() = "$presentationId:$page" }
 data class ClassRun(val lesson: LiveLesson, val noteId: String = newId(), val providerId: String, val startedAt: Long = System.currentTimeMillis(), val completed: List<String> = emptyList(), val pending: List<LivePage> = emptyList(), val ended: Boolean = false)
-data class ClassUi(val running: Boolean = false, val paused: Boolean = true, val connected: Boolean = false, val status: String = "", val current: LivePage? = null)
+data class ClassUi(val running: Boolean = false, val paused: Boolean = true, val connected: Boolean = false, val status: String = "", val current: LivePage? = null, val lastPage: LivePage? = null)
 sealed interface LiveSignal {
     data class Pages(val pages: List<LivePage>) : LiveSignal
     data object Connected : LiveSignal
@@ -28,15 +28,15 @@ class LessonFrames {
     fun pages(frame: JSONObject): List<LivePage> {
         val out = mutableListOf<LivePage>()
         fun add(pres: String?, index: Int) {
-            if (pres != null && pres.matches(Regex("[0-9]{1,24}"))) currentPresentation = pres
+            if (pres != null) { if (!pres.matches(Regex("[0-9]{1,24}"))) return; currentPresentation = pres }
             if (currentPresentation.isNotBlank() && index in 1..100000) out.add(LivePage(currentPresentation, index))
         }
         when (frame.optString("op")) {
             "hello", "fetchtimeline" -> {
-                frame.optJSONArray("timeline")?.objects()?.forEach { if (it.optString("type") == "slide") add(it.optional("pres"), it.optInt("si", -1)) }
+                frame.optJSONArray("timeline")?.objects()?.forEach { if (it.has("pres") && it.has("si")) add(it.optional("pres"), it.optInt("si", -1)) }
                 add(frame.optional("presentation"), frame.optInt("slideindex", -1))
             }
-            "showpresentation", "slide" -> add(frame.optional("presentation"), frame.optInt("slideindex", -1))
+            "showpresentation", "showfinished", "slide" -> add(frame.optional("presentation"), frame.optInt("slideindex", -1))
             "slidenav" -> frame.optJSONObject("slide")?.let { add(it.optional("pres"), it.optInt("si", -1)) }
             "presentationcreated", "presentationupdated" -> add(frame.optional("presentation"), frame.optInt("slideindex", -1))
         }
