@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.role
@@ -75,7 +76,7 @@ import androidx.compose.ui.unit.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun StudyFrame(ui: UiState, onTab: (Int) -> Unit, onBack: () -> Unit, onStop: () -> Unit, snackbar: SnackbarHostState = remember { SnackbarHostState() }, noteOpen: Boolean = false, content: @Composable (PaddingValues) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
-    val wide = maxWidth > maxHeight && maxHeight < 500.dp
+    val wide = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && maxWidth > maxHeight && maxHeight < 500.dp
     val reading = (ui.tab == 0 && !ui.data.usesWeb) || noteOpen
     val inlineHeader = wide && reading && !ui.busy
     val density = LocalDensity.current
@@ -128,7 +129,7 @@ import androidx.compose.ui.unit.dp
         if (wide && ui.tab != 3) Row(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) {
             Column(Modifier.width(64.dp).fillMaxHeight().testTag("横屏导航"), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 labels.forEachIndexed { index, label ->
-                    FeedbackIconButton(onClick = { onTab(index) }, modifier = Modifier.size(56.dp).semantics { contentDescription = label; selected = ui.tab == index; role = Role.Tab }) {
+                    FeedbackIconButton(onClick = { onTab(index) }, modifier = Modifier.size(48.dp).semantics { contentDescription = label; selected = ui.tab == index; role = Role.Tab }) {
                         Surface(shape = RoundedCornerShape(12.dp), color = if (ui.tab == index) MaterialTheme.colorScheme.primaryContainer else Color.Transparent) {
                             Icon(if (ui.tab == index) selectedIcons[index] else icons[index], null, Modifier.padding(10.dp).size(22.dp), tint = if (ui.tab == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         }

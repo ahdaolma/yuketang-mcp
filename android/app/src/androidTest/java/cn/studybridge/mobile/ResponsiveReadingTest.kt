@@ -104,6 +104,13 @@ class ResponsiveReadingTest {
             assertTrue("Landscape body must keep most height", (body.bottom - body.top).value >= (screen.bottom - screen.top).value * 0.55f)
             listOf("学习", "课程", "笔记", "学习资料", "新对话", "生成笔记", "消息跳转", "设置").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
             shot("sample-chat-landscape")
+            compose.onNode(hasSetTextAction()).performTextInput("解释复制")
+            compose.onNodeWithContentDescription("发送给所选模型").assertIsDisplayed().assertIsEnabled()
+            val typingBody = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
+            assertTrue("Landscape composer must leave a usable scroll viewport", (typingBody.bottom - typingBody.top).value > 24f)
+            compose.runOnIdle {
+                androidx.core.view.WindowInsetsControllerCompat(compose.activity.window, compose.activity.window.decorView).hide(androidx.core.view.WindowInsetsCompat.Type.ime())
+            }
             compose.onNodeWithContentDescription("消息跳转").performClick()
             compose.onNodeWithText("顶部").performClick()
             compose.onNodeWithText("展开原文").assertIsDisplayed()

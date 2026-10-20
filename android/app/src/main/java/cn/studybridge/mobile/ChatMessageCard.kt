@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.dp
         modifier = Modifier.fillMaxWidth().padding(start = if (user && !reference) 28.dp else 0.dp)
     ) {
         Column(Modifier.padding(horizontal = if (user) 14.dp else 4.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(if (reference) "参考笔记" else if (user) "你" else provider, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (reference && (message.source != null || message.text.startsWith("用户选择的笔记原文："))) "参考笔记" else if (user) "你" else provider, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             message.source?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             message.image?.let { DataImage(it, message.source ?: "课件") }
             if (reference && !expanded) Text(remember(text) { notePreview(text).take(600) }, maxLines = 4, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
