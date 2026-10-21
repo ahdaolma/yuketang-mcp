@@ -179,6 +179,7 @@ class AdvancedNoteUiTest {
             compose.onNodeWithTag("笔记正文").performTouchInput { swipeUp(durationMillis = 500) }
             compose.waitUntil(5000) { first.readingMemory.position(note.id)?.let { it.index == 1 && it.scroll > 100 } == true }
             val expectedScrollAxis = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+            android.util.Log.i("ReaderRegression", "before close axis=$expectedScrollAxis position=" + first.readingMemory.position(note.id))
             compose.runOnIdle { first.noteReader.close() }
             compose.waitUntil(5000) { Vault(app, "note-reading-v1.enc").load().noteReadingPositions.singleOrNull()?.let { it.index == 1 && it.scroll > 100 } == true }
             lateinit var second: StudyViewModel
@@ -188,6 +189,7 @@ class AdvancedNoteUiTest {
             compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记正文").fetchSemanticsNodes().isNotEmpty() }
             compose.waitUntil(5000) {
                 val restoredScrollAxis = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+                android.util.Log.i("ReaderRegression", "restored axis=$restoredScrollAxis position=" + second.readingMemory.position(note.id))
                 restoredScrollAxis > 0f && kotlin.math.abs(restoredScrollAxis - expectedScrollAxis) < .0001f
             }
             compose.onNodeWithContentDescription("当前阅读页码").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "阅读分段 2 / 3 · 完整笔记已保留"))

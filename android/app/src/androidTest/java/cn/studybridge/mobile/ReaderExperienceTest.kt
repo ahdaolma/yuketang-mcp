@@ -128,6 +128,7 @@ class ReaderExperienceTest {
         val seen = mutableSetOf<String>()
         for (attempt in 0 until 45) {
             seen += visibleMarkers(markers)
+            if (attempt % 5 == 0) android.util.Log.i("ReaderRegression", "continuous step=$attempt seen=${seen.size} axis=" + compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value())
             if (seen.size == markers.size) break
             compose.onNodeWithTag("笔记正文").performTouchInput {
                 down(Offset(center.x, height * .8f))
@@ -137,11 +138,11 @@ class ReaderExperienceTest {
             }
             compose.waitForIdle()
         }
+        advancedUiShot(compose.activity, "sample-reader-continuous-end")
         assertEquals("Scrolling must expose every source marker", markers.toSet(), seen)
         compose.waitUntil(5000) { vm.readingMemory.position(vm.noteReader.id!!)?.index == 2 }
         compose.onNodeWithContentDescription("当前阅读页码").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "阅读分段 3 / 3 · 完整笔记已保留"))
         assertReaderChrome()
-        advancedUiShot(compose.activity, "sample-reader-continuous-end")
         assertSingleVerticalTools()
     }
 

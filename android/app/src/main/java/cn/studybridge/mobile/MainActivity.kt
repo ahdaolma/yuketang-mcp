@@ -212,6 +212,10 @@ class MainActivity : ComponentActivity() {
         it.block = if (sourceOffset != null && decorated != null) NoteSelectionBlock(text, sourceOffset) else null
         if (selectionController != null) it.useApplicationMenu() else it.customSelectionActionModeCallback = null
         val parsed = decorated
+        // Lazy lists must reserve text height while formatting runs. An empty
+        // native view can otherwise let a gesture skip an unloaded source page.
+        if (parsed == null && it.tag != text) { it.text = text; it.tag = text }
+        it.alpha = if (parsed == null) 0f else 1f
         if (parsed != null && it.tag !== parsed) { renderer.setParsedMarkdown(it, parsed); it.tag = parsed }
         if (parsed != null) it.post { renderReady?.invoke() }
         val target = searchTarget

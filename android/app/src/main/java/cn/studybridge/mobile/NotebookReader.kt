@@ -50,8 +50,8 @@ import kotlin.math.abs
 
 @OptIn(kotlinx.coroutines.FlowPreview::class)
 @Composable fun NotebookReader(note: Note, ui: UiState, vm: StudyViewModel, modifier: Modifier = Modifier, extraHeader: @Composable () -> Unit = {}, onOptions: () -> Unit, onBack: () -> Unit) {
-    val prepared by produceState<List<NoteReadingSegment>?>(null, note.content) { value = withContext(Dispatchers.Default) { noteReadingSegments(note.content) } }
-    val segments = prepared ?: run { CircularProgressIndicator(Modifier.size(24.dp)); return }
+    val prepared by produceState<Pair<String, List<NoteReadingSegment>>?>(null, note.content) { value = withContext(Dispatchers.Default) { note.content to noteReadingSegments(note.content) } }
+    val segments = prepared?.takeIf { it.first == note.content }?.second ?: run { CircularProgressIndicator(Modifier.size(24.dp)); return }
     val labels = remember(note.content, segments) { segments.mapIndexed { i, part -> readingHeadings(note.content.substring(part.start, minOf(part.end, part.start + 300))).firstOrNull()?.second ?: "第 ${i + 1} 段" } }
     val pageLabels = remember(note.content, segments) { readerPageLabels(note.content, segments) }
     val hash = remember(note.content) { noteContentHash(note.content) }
@@ -81,7 +81,8 @@ import kotlin.math.abs
     var searchRevision by remember(note.id) { mutableIntStateOf(0) }
     val hits by produceState(emptyList<NoteSearchHit>(), query, note.content) { value = withContext(Dispatchers.Default) { searchNoteContent(note.content, query, segments) } }
     val selected = if (continuous && restored) (list.firstVisibleItemIndex - 1).coerceIn(segments.indices) else index.coerceIn(segments.indices)
-    var renderReady by remember(note.id, hash, selected, mode) { mutableStateOf(false) }
+    val readyPages = remember(note.id, hash, mode) { mutableStateMapOf<Int, Boolean>() }
+    val renderReady = readyPages[selected] == true
     val latestSelected by rememberUpdatedState(selected)
     val latestLabels by rememberUpdatedState(labels)
     val latestContinuous by rememberUpdatedState(continuous)
@@ -93,7 +94,14 @@ import kotlin.math.abs
         restored = false
         val position = if (readyMode.isEmpty()) initial else vm.readingMemory.position(note.id)
         index = restoredNoteIndex(position, hash, labels)
-        if (continuous) list.scrollToItem(if (index == 0 && (position == null || position.scroll == 0)) 0 else index + 1, if (position?.contentHash == hash) position.scroll else 0)
+        if (continuous) {
+            val item = if (index == 0 && (position == null || position.scroll == 0)) 0 else index + 1
+            val offset = if (position?.contentHash == hash) position.scroll else 0
+            list.scrollToItem(item, offset)
+            withTimeoutOrNull(1800) { snapshotFlow { readyPages[index] == true }.first { it } }
+            withFrameNanos { }; withFrameNanos { }
+            list.scrollToItem(item, offset)
+        }
         else {
             val offset = if (position?.contentHash == hash && readyMode.isEmpty()) position.scroll else 0
             if (offset > 0) withTimeoutOrNull(1800) { snapshotFlow { scroll.maxValue }.first { it >= offset } }
@@ -116,7 +124,12 @@ import kotlin.math.abs
     fun goTo(segment: Int, offset: Int = 0) {
         val target = segment.coerceIn(segments.indices)
         scope.launch {
-            if (continuous) list.scrollToItem(target + 1, offset)
+            if (continuous) {
+                list.scrollToItem(target + 1, offset)
+                withTimeoutOrNull(1800) { snapshotFlow { readyPages[target] == true }.first { it } }
+                withFrameNanos { }; withFrameNanos { }
+                list.scrollToItem(target + 1, offset)
+            }
             else {
                 index = target
                 withFrameNanos { }; withFrameNanos { }
@@ -196,7 +209,7 @@ import kotlin.math.abs
         Text("字号预览：理解概念、联系课件、整理重点。", Modifier.padding(12.dp), fontSize = fontSize.sp)
         FeedbackTextButton(onClick = { fontSize = 16; vm.updateNotebookState { it.copy(noteFontSize = 16) } }) { Text("恢复默认字号") }
     }
-    CompositionLocalProvider(LocalNoteFontSize provides fontSize, LocalNoteSearchQuery provides query, LocalNoteSearchTarget provides target, LocalNoteSearchReveal provides reveal, LocalNoteRenderReady provides { renderReady = true }) {
+    CompositionLocalProvider(LocalNoteFontSize provides fontSize, LocalNoteSearchQuery provides query, LocalNoteSearchTarget provides target, LocalNoteSearchReveal provides reveal) {
         Column(modifier.fillMaxSize()) {
             val sticky by remember { derivedStateOf { list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > titleHeight } }
             if (query.isNotBlank()) Row(Modifier.fillMaxWidth().testTag("查找命中导航"), verticalAlignment = Alignment.CenterVertically) {
@@ -215,7 +228,9 @@ import kotlin.math.abs
                 val segment: @Composable (Int) -> Unit = { page ->
                     val part = segments[page]; val raw = part.display(note.content)
                     val shown = if (page == 0) noteTextForDisplay(raw, note.title) else raw
-                    IllustratedMarkdown(shown, vm.sourceImages, part.start - part.prefix.length + raw.length - shown.length)
+                    CompositionLocalProvider(LocalNoteRenderReady provides { readyPages[page] = true }) {
+                        IllustratedMarkdown(shown, vm.sourceImages, part.start - part.prefix.length + raw.length - shown.length)
+                    }
                 }
                 if (continuous) LazyColumn(bodyModifier, state = list, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 72.dp)) {
                     item(key = "title") { Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { heading() } }

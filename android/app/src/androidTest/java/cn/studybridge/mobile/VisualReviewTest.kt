@@ -153,14 +153,12 @@ class VisualReviewTest {
         render(state, scale = 1.5f)
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasTestTag("上课控制面板"))
         compose.onNodeWithTag("上课控制面板").assertIsDisplayed()
-        compose.onNodeWithContentDescription("上课管理").performClick()
         compose.onAllNodesWithText("继续", useUnmergedTree = true).onLast().performScrollTo().assertIsDisplayed()
         compose.onAllNodesWithText("结束", useUnmergedTree = true).onLast().performScrollTo().assertIsDisplayed()
         compose.onAllNodesWithTag("上课控制面板").onLast().captureToImage()
         advancedUiShot(compose.activity, "sample-class-large-text")
         compose.runOnIdle { state.value = state.value.copy(classUi = ClassUi(running = true, paused = false, status = "正在重新连接课堂…")) }
         compose.onAllNodesWithText("连接中").onLast().performScrollTo().assertIsDisplayed()
-        compose.onNodeWithContentDescription("关闭上课管理").performClick()
         compose.runOnIdle { state.value = base.copy(tab = 3) }
         compose.onNodeWithText("模型与账号").assertIsDisplayed(); shot("sample-settings-large-text")
         compose.runOnIdle { state.value = state.value.copy(settingsPage = "learning") }
