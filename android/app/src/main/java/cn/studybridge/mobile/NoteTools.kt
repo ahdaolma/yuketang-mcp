@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.dp
 
 fun findNotes(notes: List<Note>, query: String): List<Note> {
     val terms = query.trim().split(Regex("\\s+")).filter(String::isNotEmpty)
-    return notes.filter { note -> terms.all { term -> listOf(note.title, note.content, note.source).any { it.contains(term, ignoreCase = true) } } }
+    return notes.filter { note -> terms.all { term -> (listOf(note.title, note.content, note.source) + note.tags).any { it.contains(term, ignoreCase = true) } } }
         .sortedWith(compareByDescending<Note> { it.pinned }.thenByDescending { it.createdAt })
 }
 
@@ -34,18 +34,38 @@ fun formatNoteSelection(text: String, start: Int, end: Int, kind: String): NoteT
     return NoteTextEdit(text.replaceRange(lineStart, lineEnd, replacement), lineStart + prefix.length, lineStart + replacement.length)
 }
 
+private class NoteEditHistory(initial: TextFieldValue) {
+    private val values = mutableStateListOf(initial)
+    private var index by mutableIntStateOf(0)
+    val value get() = values[index]
+    val canUndo get() = index > 0
+    val canRedo get() = index < values.lastIndex
+    fun record(next: TextFieldValue) {
+        if (next.text == value.text) { values[index] = next; return }
+        while (values.lastIndex > index) values.removeAt(values.lastIndex)
+        values += next; index++
+        if (values.size > 100) { values.removeAt(0); index-- }
+    }
+    fun undo(): TextFieldValue { if (canUndo) index--; return value }
+    fun redo(): TextFieldValue { if (canRedo) index++; return value }
+}
+
 @Composable fun NoteEditor(text: String, onChange: (String) -> Unit, enabled: Boolean) {
-    var value by remember { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
-    LaunchedEffect(text) { if (text != value.text) value = TextFieldValue(text, TextRange(text.length)) }
+    val history = remember { NoteEditHistory(TextFieldValue(text, TextRange(text.length))) }
+    val value = history.value
+    LaunchedEffect(text) { if (text != history.value.text) history.record(TextFieldValue(text, TextRange(text.length))) }
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
+            FeedbackTextButton(onClick = { onChange(history.undo().text) }, enabled = enabled && history.canUndo) { Text("撤销") }
+            FeedbackTextButton(onClick = { onChange(history.redo().text) }, enabled = enabled && history.canRedo) { Text("重做") }
             (listOf("标题" to "heading", "加粗" to "bold", "列表" to "list", "待办" to "todo", "引用" to "quote", "代码" to "code") + StudyMark.entries.map { it.label to "mark:${it.name}" }).forEach { (label, kind) ->
                 FeedbackTextButton(onClick = {
-                    val edit = formatNoteSelection(value.text, value.selection.start, value.selection.end, kind)
-                    value = TextFieldValue(edit.text, TextRange(edit.start, edit.end)); onChange(edit.text)
+                    val current = history.value
+                    val edit = formatNoteSelection(current.text, current.selection.start, current.selection.end, kind)
+                    history.record(TextFieldValue(edit.text, TextRange(edit.start, edit.end))); onChange(edit.text)
                 }, enabled = enabled) { Text(label) }
             }
         }
-        OutlinedTextField(value, { value = it; onChange(it.text) }, Modifier.fillMaxWidth().heightIn(min = 240.dp, max = 520.dp), label = { Text("Markdown 笔记") }, minLines = 8, maxLines = 18, enabled = enabled)
+        OutlinedTextField(value, { history.record(it); onChange(it.text) }, Modifier.fillMaxWidth().heightIn(min = 240.dp, max = 520.dp), label = { Text("Markdown 笔记") }, minLines = 8, maxLines = 18, enabled = enabled)
     }
 }

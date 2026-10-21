@@ -67,7 +67,8 @@ class PreviewNavigationTest {
         compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("测试课件第 3 页 缩略图").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("测试课件第 3 页 缩略图").assertIsDisplayed()
         shot("sample-slide-preview")
-        compose.onNodeWithText("放大预览").assertIsDisplayed().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
+        compose.onNodeWithText("放大预览").assertDoesNotExist()
+        compose.onNodeWithContentDescription("测试课件第 3 页 缩略图").performClick()
         try {
             compose.waitUntil(5000) { compose.onAllNodesWithText("关闭预览").fetchSemanticsNodes().isNotEmpty() }
             compose.waitUntil(10000) { compose.onAllNodesWithContentDescription("测试课件第 3 页").fetchSemanticsNodes().isNotEmpty() }

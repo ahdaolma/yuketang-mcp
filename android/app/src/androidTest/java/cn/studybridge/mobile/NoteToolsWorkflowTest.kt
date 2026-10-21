@@ -56,6 +56,10 @@ class NoteToolsWorkflowTest {
             compose.runOnIdle { vm.tab(2) }
             compose.onNodeWithContentDescription("新建笔记").performClick()
             compose.onNodeWithText("Markdown 笔记").performTextInput("正文独有关键词：复制起点。")
+            compose.onNodeWithText("撤销").performClick()
+            compose.runOnIdle { assertTrue(vm.noteReader.draft.isEmpty()) }
+            compose.onNodeWithText("重做").performClick()
+            compose.runOnIdle { assertTrue(vm.noteReader.draft.contains("复制起点")) }
             compose.runOnIdle { clearFocus(); androidx.core.view.WindowInsetsControllerCompat(compose.activity.window, compose.activity.window.decorView).hide(androidx.core.view.WindowInsetsCompat.Type.ime()) }
             compose.waitUntil(5000) { androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) != true }
             compose.onNodeWithText("待办").performScrollTo().performClick()

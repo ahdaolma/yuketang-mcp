@@ -56,6 +56,14 @@ class ReadingMarksAndClassControlTest {
         val before = compose.onNodeWithTag("上课悬浮圆钮").getUnclippedBoundsInRoot()
         compose.onNodeWithTag("上课悬浮圆钮").performTouchInput { longClick(durationMillis = 900) }
         assertEquals(0, taps)
+        compose.onNodeWithTag("上课悬浮圆钮").performTouchInput {
+            down(0, center)
+            down(1, center + androidx.compose.ui.geometry.Offset(4f, 4f))
+            advanceEventTime(80)
+            up(0)
+            up(1)
+        }
+        assertEquals("Two-finger gestures must never toggle the lesson", 0, taps)
         compose.onNodeWithTag("上课悬浮圆钮").performTouchInput { swipe(center, center + androidx.compose.ui.geometry.Offset(-180f, 100f), durationMillis = 900) }
         assertEquals(0, taps)
         val moved = compose.onNodeWithTag("上课悬浮圆钮").getUnclippedBoundsInRoot()

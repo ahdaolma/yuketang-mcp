@@ -1,6 +1,7 @@
 package cn.studybridge.mobile
 
 import androidx.compose.animation.*
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -65,6 +66,7 @@ import androidx.compose.ui.window.PopupProperties
 
 @Composable private fun FloatingReadingTools(panelWidth: androidx.compose.ui.unit.Dp, toolbar: @Composable () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    BackHandler(expanded) { expanded = false }
     val reveal = remember { MutableTransitionState(false) }
     LaunchedEffect(expanded) { reveal.targetState = expanded }
     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer, shadowElevation = 3.dp) {

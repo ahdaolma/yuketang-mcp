@@ -1,21 +1,29 @@
 package cn.studybridge.mobile
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performTouchInput
-import androidx.compose.ui.test.click
+import androidx.compose.ui.test.*
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
+@OptIn(ExperimentalTestApi::class)
 class ControlFeedbackTest {
     @get:Rule val compose = createAndroidComposeRule<WebFixtureActivity>()
     @Test fun physicalTapRunsOnceAndDisabledTapExplainsWithoutRunningAction() {
@@ -35,5 +43,95 @@ class ControlFeedbackTest {
         compose.runOnIdle { assertEquals(1, clicks.get()) }
         compose.onNodeWithText("需要课件").performTouchInput { click() }
         compose.runOnIdle { assertEquals("请先选择课件", explanation.get()); assertEquals(1, clicks.get()) }
+    }
+
+    @Test fun disabledLongPressCancelledTouchAndScrollingDoNotExplainOrRun() {
+        val clicks = AtomicInteger()
+        val explanations = AtomicInteger()
+        lateinit var scroll: ScrollState
+        compose.setContent {
+            MaterialTheme {
+                scroll = rememberScrollState()
+                CompositionLocalProvider(LocalControlFeedback provides ControlFeedback({ explanations.incrementAndGet() }, "暂不可用")) {
+                    Column(Modifier.systemBarsPadding().height(260.dp).verticalScroll(scroll)) {
+                        FeedbackButton(onClick = { clicks.incrementAndGet() }, enabled = false, modifier = Modifier.fillMaxWidth().height(160.dp)) { Text("不可用入口") }
+                        repeat(30) { Text("可滚动正文 $it") }
+                    }
+                }
+            }
+        }
+        compose.onNodeWithText("不可用入口").performTouchInput { longClick(durationMillis = 900) }
+        compose.onNodeWithText("不可用入口").performTouchInput { down(center); cancel() }
+        compose.onNodeWithText("不可用入口").performTouchInput { swipeUp(durationMillis = 400) }
+        compose.runOnIdle {
+            assertEquals(0, clicks.get())
+            assertEquals(0, explanations.get())
+            assertTrue("A disabled control must not block its parent's scrolling", scroll.value > 0)
+        }
+    }
+
+    @Test fun feedbackUsesLatestProviderAndRapidLegitimateTapsRemainAvailable() {
+        val first = AtomicInteger()
+        val latest = AtomicInteger()
+        val revision = mutableStateOf(false)
+        compose.setContent {
+            MaterialTheme {
+                val explain: (String) -> Unit = if (revision.value) ({ latest.incrementAndGet() }) else ({ first.incrementAndGet() })
+                CompositionLocalProvider(LocalControlFeedback provides ControlFeedback(explain, "相同的不可用原因")) {
+                    Column(Modifier.systemBarsPadding()) {
+                        FeedbackButton(onClick = {}, enabled = false) { Text("原因") }
+                        FeedbackButton(onClick = { latest.incrementAndGet() }) { Text("继续编辑") }
+                    }
+                }
+            }
+        }
+        compose.runOnIdle { revision.value = true }
+        compose.onNodeWithText("原因").performTouchInput { click() }
+        compose.onNodeWithText("继续编辑").performTouchInput { repeat(3) { click(); advanceEventTime(50) } }
+        compose.runOnIdle { assertEquals(0, first.get()); assertEquals(4, latest.get()) }
+    }
+
+    @Test fun pressingNestedActionDoesNotShrinkOrActivateItsParentCard() {
+        val parentClicks = AtomicInteger()
+        val childClicks = AtomicInteger()
+        compose.setContent {
+            MaterialTheme {
+                Column(Modifier.systemBarsPadding()) {
+                    FeedbackCard(onClick = { parentClicks.incrementAndGet() }, modifier = Modifier.fillMaxWidth().testTag("父卡")) {
+                        Text("课程内容")
+                        FeedbackButton(onClick = { childClicks.incrementAndGet() }) { Text("子操作") }
+                    }
+                }
+            }
+        }
+        val before = compose.onNodeWithTag("父卡").getUnclippedBoundsInRoot()
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.onNodeWithText("子操作").performTouchInput { down(center) }
+            compose.mainClock.advanceTimeBy(180)
+            val held = compose.onNodeWithTag("父卡").getUnclippedBoundsInRoot()
+            assertEquals("Only the actual pressed control may scale", before.width.value, held.width.value, 0.1f)
+            compose.onNodeWithText("子操作").performTouchInput { up() }
+        } finally { compose.mainClock.autoAdvance = true }
+        compose.runOnIdle { assertEquals(0, parentClicks.get()); assertEquals(1, childClicks.get()) }
+    }
+
+    @Test fun nativeScrollingCancelsActionAndKeyboardActivationRunsOnce() {
+        val clicks = AtomicInteger()
+        lateinit var scroll: ScrollState
+        compose.setContent {
+            MaterialTheme {
+                scroll = rememberScrollState()
+                Column(Modifier.systemBarsPadding().height(260.dp).verticalScroll(scroll)) {
+                    FeedbackButton(onClick = { clicks.incrementAndGet() }, modifier = Modifier.fillMaxWidth().height(160.dp)) { Text("滚动中的入口") }
+                    repeat(30) { Text("正文 $it") }
+                }
+            }
+        }
+        compose.onNodeWithText("滚动中的入口").performTouchInput { swipeUp(durationMillis = 400) }
+        compose.runOnIdle { assertEquals(0, clicks.get()); assertTrue(scroll.value > 0) }
+        compose.onNodeWithText("滚动中的入口").performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus) { it() }
+        compose.onNodeWithText("滚动中的入口").performKeyInput { keyDown(Key.Enter); keyUp(Key.Enter) }
+        compose.runOnIdle { assertEquals(1, clicks.get()) }
     }
 }

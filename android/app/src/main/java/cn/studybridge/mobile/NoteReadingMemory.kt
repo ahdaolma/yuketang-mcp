@@ -31,6 +31,11 @@ class NoteReadingMemory(context: Context, scope: CoroutineScope, private val onE
         catch (_: Exception) { blocked = true; onError("上次阅读位置暂时无法读取，已保留原记录。"); emptyList() }
     }
     fun position(id: String) = entries.find { it.noteId == id }
+    fun merge(imported: List<NoteReadingPosition>, noteIds: Set<String>) {
+        if (blocked) return
+        entries = (entries + imported.filter { it.noteId in noteIds }).distinctBy { it.noteId }
+        writes.trySend(Unit)
+    }
     fun remember(position: NoteReadingPosition) {
         if (blocked || entries.find { it.noteId == position.noteId } == position) return
         entries = entries.filterNot { it.noteId == position.noteId } + position

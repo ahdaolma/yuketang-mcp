@@ -120,7 +120,7 @@ fun Saved.folderName(note: Note) = noteFolders.find { it.id == note.folderId }?.
                 if (ui.data.noteFolders.isEmpty()) Text("可在笔记列表右侧的文件夹按钮中新建分类。", style = MaterialTheme.typography.bodySmall)
             }
         }, confirmButton = { FeedbackTextButton(onClick = onDismiss) { Text("取消") } })
-        "delete" -> AlertDialog(onDismissRequest = onDismiss, title = { Text("删除这份笔记？") }, text = { Text("“${note.title}”将从本机删除，此操作无法撤销。") },
+        "delete" -> AlertDialog(onDismissRequest = onDismiss, title = { Text("删除这份笔记？") }, text = { Text("“${note.title}”将移到回收站，可以恢复。") },
             confirmButton = { FeedbackTextButton(onClick = { if (vm.deleteNote(note.id)) onDismiss() }, enabled = removable, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("删除笔记") } },
             dismissButton = { FeedbackTextButton(onClick = onDismiss) { Text("保留笔记") } })
     }

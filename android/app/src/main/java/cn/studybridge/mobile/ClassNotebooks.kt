@@ -33,7 +33,7 @@ fun appendClassNotebookPage(saved: Saved, noteId: String, page: LivePage, conten
     val note = saved.notes.find { it.id == noteId } ?: error("课堂笔记已被移除。")
     if (page.key in run.completed || page.key in note.classNotebook?.completed.orEmpty()) return saved.copy(classRun = run.copy(completed = (run.completed + note.classNotebook?.completed.orEmpty()).distinct(), pending = run.pending.filterNot { it.key == page.key }))
     val completed = (run.completed + page.key).distinct()
-    return saved.copy(classRun = run.copy(completed = completed, pending = run.pending.filterNot { it.key == page.key }), notes = saved.notes.map {
+    return saved.copy(noteModifiedTimes = saved.noteModifiedTimes + (noteId to System.currentTimeMillis()), classRun = run.copy(completed = completed, pending = run.pending.filterNot { it.key == page.key }), notes = saved.notes.map {
         if (it.id == noteId) it.copy(content = it.content + "## $label\n\n${sourceImageMarkdown(imageRef, label)}$content\n\n---\n\n", classNotebook = it.classNotebook?.copy(completed = completed)) else it
     })
 }

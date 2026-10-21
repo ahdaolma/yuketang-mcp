@@ -42,7 +42,10 @@ fun UiState.hasClassSession() = classUi.running || data.classRun?.let { !it.ende
                 Text("上课管理", Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
                 FeedbackIconButton(onClick = { opened = false }) { Icon(Icons.Default.Close, "关闭上课管理") }
             }
-            Box(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState())) { ClassModePanel(ui, vm) { opened = false } }
+            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                ClassModePanel(ui, vm) { opened = false }
+                ClassFollowSettings(ui, vm)
+            }
         }
     }
 }
@@ -72,7 +75,7 @@ fun UiState.hasClassSession() = classUi.running || data.classRun?.let { !it.ende
                 FeedbackFilledTonalButton(colors = classButtonColors, onClick = vm::discoverClasses, enabled = !ui.locked && ui.data.session.isNotBlank()) { Icon(Icons.Outlined.PlayCircleOutline, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (ui.data.session.isBlank()) "登录后开启上课模式" else "查找正在上的课") }
                 ui.liveLessons.forEach { lesson -> FeedbackFilledTonalButton(colors = classButtonColors, onClick = { vm.startClass(lesson); onClose() }, enabled = !ui.locked, modifier = Modifier.fillMaxWidth()) { Text("进入：${lesson.title}") } }
             }
-            Text("进入会登记入课 · 保持 App 前台", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("进入会登记入课 · 离开 App 后继续整理", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

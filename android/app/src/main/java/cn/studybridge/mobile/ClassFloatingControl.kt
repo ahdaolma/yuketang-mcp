@@ -45,9 +45,11 @@ import kotlin.math.roundToInt
                     val down = awaitFirstDown(requireUnconsumed = false)
                     down.consume()
                     var dragging = false
+                    var multiplePointers = false
                     var finished = false
                     do {
                         val event = awaitPointerEvent()
+                        if (event.changes.count { it.pressed } > 1) multiplePointers = true
                         val change = event.changes.find { it.id == down.id } ?: break
                         if (!dragging && (change.position - down.position).getDistance() > view.touchSlop) dragging = true
                         if (dragging && change.pressed) {
@@ -57,7 +59,7 @@ import kotlin.math.roundToInt
                         }
                         change.consume()
                         if (!change.pressed) {
-                            if (!dragging && change.uptimeMillis - down.uptimeMillis < view.longPressTimeoutMillis) latestToggle()
+                            if (!dragging && !multiplePointers && change.uptimeMillis - down.uptimeMillis < view.longPressTimeoutMillis) latestToggle()
                             finished = true
                         }
                     } while (!finished)

@@ -54,6 +54,8 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
     private var job: Job? = null
     private var classFeed: Job? = null
     private var classWriter: Job? = null
+    private var classStartJob: Job? = null
+    private var classResumeStart: Job? = null
     private val classWake = Channel<Unit>(Channel.CONFLATED)
     private var login: AutoCloseable? = null
     private var storageBlocked = false
@@ -71,7 +73,8 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
                 durableNoteIds.addAll(loaded.first.notes.map { it.id })
                 savedDrafts = loaded.second
                 readingMemory.load(loaded.first.notes.map { it.id }.toSet())
-                state.update { it.copy(data = loaded.first, ready = true) }
+                val interrupted = loaded.first.classRun?.let { !it.ended || it.pending.isNotEmpty() } == true
+                state.update { it.copy(data = loaded.first, ready = true, classUi = if (interrupted) ClassUi(running = true, paused = true, status = "已恢复上次课堂，点击继续后才会重新连接；已保存页面会跳过。") else ClassUi()) }
                 savedDrafts.maxByOrNull { it.updatedAt }?.let { draft -> loaded.first.notes.find { it.id == draft.noteId }?.let { note ->
                     noteReader.open(note); state.update { it.copy(tab = 2, notice = "已恢复上次自动保存的笔记草稿。", noteDraftSavedAt = draft.updatedAt) }
                 } }
@@ -130,7 +133,17 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
             if (remaining != savedDrafts) { savedDrafts = remaining; draftRevision++; draftWrites.trySend(Unit) }
         }
     } catch (_: Exception) { notice("本机记录保存失败，请检查存储空间。") } } } }
-    private fun data(change: (Saved) -> Saved) { if (storageBlocked || !state.value.ready) { notice("本机记录尚不可写，设置未保存。"); return }; state.update { it.copy(data = change(it.data)) }; persist() }
+    private fun data(change: (Saved) -> Saved) { if (storageBlocked || !state.value.ready) { notice("本机记录尚不可写，设置未保存。"); return }; state.update { it.copy(data = recordNotebookMutation(it.data, change(it.data))) }; persist() }
+    fun updateNotebookState(change: (Saved) -> Saved): Boolean {
+        if (storageBlocked || !state.value.ready) { notice("本机记录尚不可写，笔记未修改。"); return false }
+        data(change)
+        return true
+    }
+    fun notebookSnapshot(): Saved {
+        val saved = state.value.data
+        val ids = saved.notes.map { it.id }.toSet()
+        return saved.copy(noteDrafts = savedDrafts.filter { it.noteId in ids }, noteReadingPositions = saved.notes.mapNotNull { readingMemory.position(it.id) })
+    }
     private suspend fun checkpoint(change: (Saved) -> Saved) = withContext(NonCancellable + Dispatchers.Main.immediate) {
         disk.withLock {
             check(!storageBlocked) { "本机记录不可写，已保留待恢复状态。" }
@@ -512,11 +525,12 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         if (state.value.locked) return
         val existing = saved.classRun
         if (existing != null && !existing.ended && (existing.lesson.id != lesson.id || existing.lesson.classroomId != lesson.classroomId)) { notice("请先结束上一节的上课模式，再开始另一节课。"); return }
-        state.update { it.copy(busy = true, operation = "连接课堂并查找原笔记") }
-        job = viewModelScope.launch {
+        state.update { it.copy(busy = true, operation = "连接课堂并查找原笔记", classUi = ClassUi(running = true, paused = true, status = "正在准备课堂…")) }
+        classStartJob = viewModelScope.launch {
             var access: LessonAccess? = null
             try {
                 classWriter?.join(); classFeed?.join()
+                if (!ensureClassService()) return@launch
                 val authorized = withContext(Dispatchers.IO) { rain.enterLesson(saved, lesson) }
                 require(state.value.data.session == saved.session && state.value.data.region == saved.region) { "账号已变化，请重新进入课堂。" }
                 val newNoteId = newId(); val startedAt = System.currentTimeMillis()
@@ -525,17 +539,41 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
                 access = authorized
                 notice("已接回课堂笔记，跳过已保存的 "+state.value.data.classRun!!.completed.size+" 页。")
             } catch (e: CancellationException) { throw e }
-            catch (e: Exception) { notice(e.message?.take(200) ?: "连接课堂失败，原笔记已保留。") }
+            catch (e: Exception) {
+                val reason = e.message?.take(200) ?: "连接课堂失败，原笔记已保留。"
+                state.update { it.copy(classUi = ClassUi(running = it.data.classRun?.let { run -> !run.ended || run.pending.isNotEmpty() } == true, paused = true, status = reason), notice = reason) }
+            }
             finally { state.update { it.copy(busy = false, operation = "") } }
             access?.let { resumeClassWithAccess(it) }
         }
+        job = classStartJob
     }
     fun resumeClass() = resumeClassWithAccess(null)
     private fun resumeClassWithAccess(preparedAccess: LessonAccess?) {
         if (state.value.busy || state.value.chatgptLoginActive || storageBlocked || state.value.classUi.let { it.running && !it.paused }) return
+        if (classResumeStart?.isActive == true) return
         val run = state.value.data.classRun?.takeUnless { it.ended && it.pending.isEmpty() } ?: return
         val p = state.value.data.providers.find { it.id == run.providerId }
         if (p == null || !state.value.data.providerReady(p) || !p.images) { notice("请在模型与账号中配置支持图片的模型，再进入课堂。原笔记会保留。"); return }
+        state.update { it.copy(classUi = it.classUi.copy(running = true, paused = true, status = "正在启动后台上课服务…")) }
+        classResumeStart = viewModelScope.launch {
+            if (ensureClassService()) launchClassRuntime(preparedAccess)
+        }
+    }
+    private suspend fun ensureClassService(): Boolean {
+        val app = getApplication<Application>() as? StudyApplication ?: return true
+        return try { app.awaitClassFollowService(); true }
+        catch (error: CancellationException) { throw error }
+        catch (_: Exception) {
+            val reason = "后台上课服务未能启动，上课已暂停；待整理页面已保留，请回到应用重试。"
+            state.update { it.copy(classUi = it.classUi.copy(running = it.data.classRun?.let { run -> !run.ended || run.pending.isNotEmpty() } == true, paused = true, connected = false, status = reason), notice = reason) }
+            app.updateClassFollowStatus { it.copy(serviceRunning = false, error = reason) }
+            false
+        }
+    }
+    private fun launchClassRuntime(preparedAccess: LessonAccess?) {
+        val run = state.value.data.classRun?.takeUnless { it.ended && it.pending.isEmpty() } ?: return
+        val p = state.value.data.providers.find { it.id == run.providerId } ?: return
         val previousWriter = classWriter
         val previousFeed = classFeed
         val saved = state.value.data
@@ -589,11 +627,11 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
                         rain.followLesson(saved, run.lesson, classAccess!!).collect { signal -> when (signal) {
                             LiveSignal.Connected -> { state.update { it.copy(classUi = it.classUi.copy(connected = true, status = if (it.classUi.current != null) it.classUi.status else "课堂已连接，等待课件页")) } }
                             is LiveSignal.Pages -> {
-                                data { d -> d.copy(classRun = d.classRun?.let { enqueueClassPages(it, signal.pages) }) }
+                                checkpoint { d -> d.copy(classRun = d.classRun?.let { enqueueClassPages(it, signal.pages) }) }
                                 state.update { it.copy(classUi = it.classUi.copy(lastPage = signal.pages.lastOrNull() ?: it.classUi.lastPage)) }
                                 classWake.trySend(Unit)
                             }
-                            LiveSignal.Ended -> { data { it.copy(classRun = it.classRun?.copy(ended = true)) }; state.update { it.copy(classUi = it.classUi.copy(connected = false, status = "老师已下课，正在保存剩余讲解")) }; if (state.value.data.classRun?.pending?.isEmpty() == true) { classWriter?.cancel(); state.update { it.copy(classUi = ClassUi(status = "本节课堂笔记已完成")) } } }
+                            LiveSignal.Ended -> { checkpoint { it.copy(classRun = it.classRun?.copy(ended = true)) }; state.update { it.copy(classUi = it.classUi.copy(connected = false, status = "老师已下课，正在保存剩余讲解")) }; if (state.value.data.classRun?.pending?.isEmpty() == true) { classWriter?.cancel(); state.update { it.copy(classUi = ClassUi(status = "本节课堂笔记已完成")) } } }
                         } }
                         if (state.value.data.classRun?.ended == true) break
                         error("课堂连接已断开。")
@@ -612,12 +650,19 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
     }
     private var classAccess: LessonAccess? = null
     fun pauseClass(reason: String = "已暂停，完成的页面已保存") {
+        classStartJob?.cancel(); classResumeStart?.cancel()
         classFeed?.cancel(); classWriter?.cancel(); classAccess = null
-        state.update { it.copy(classUi = it.classUi.copy(paused = true, connected = false, current = null, status = reason), noteDraft = "") }
+        state.update { it.copy(classUi = it.classUi.copy(running = it.data.classRun?.let { run -> !run.ended || run.pending.isNotEmpty() } == true, paused = true, connected = false, current = null, status = reason)) }
         persist()
     }
-    fun background() { if (state.value.noteDraftSaving) draftWrites.trySend(Unit); if (state.value.classUi.running && !state.value.classUi.paused) pauseClass("已切到后台，上课模式已暂停；回到 App 后点击继续。") }
-    fun endClass() { pauseClass(); data { it.copy(classRun = it.classRun?.copy(ended = true, pending = emptyList())) }; state.update { it.copy(classUi = ClassUi(status = "本节已结束，已完成的笔记已保留")) } }
+    fun background() { if (state.value.noteDraftSaving) draftWrites.trySend(Unit); persist() }
+    fun endClass() { pauseClass(); data { it.copy(classRun = it.classRun?.copy(ended = true, pending = emptyList())) }; state.update { it.copy(classUi = ClassUi(status = "本节已结束，已完成的笔记已保留"), noteDraft = "") } }
+    // After stopping the runtime, callers restoring fixture storage must wait
+    // for any non-cancellable notebook checkpoint already being committed.
+    internal suspend fun awaitClassPersistence() {
+        classStartJob?.join(); classResumeStart?.join(); classFeed?.join(); classWriter?.join()
+        saveNow()
+    }
     private suspend fun saveNow() = withContext(NonCancellable + Dispatchers.IO) { disk.withLock { check(!storageBlocked); vault.save(state.value.data) } }
     private fun setChatGptAccount(account: ChatGptAccount) { state.update { u -> u.copy(data = u.data.copy(chatgptAccounts = u.data.chatgptAccounts.filterNot { it.id == account.id } + account)) } }
     private suspend fun authorizedProvider(p: Provider): Provider {

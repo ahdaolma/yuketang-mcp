@@ -5,6 +5,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.ColumnScope
@@ -44,70 +46,82 @@ val LocalControlFeedback = staticCompositionLocalOf { ControlFeedback({}, "æ­¤æ“
     return remember(view) { { view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); current() } }
 }
 
-// Observe, never consume, the touch stream. Native Material ripple and click handling remain active.
-// Moving beyond touch slop cancels the visual press and never activates a disabled action.
-private fun Modifier.pressFeedback(enabled: Boolean, unavailableReason: String? = null): Modifier = composed {
-    val feedback = LocalControlFeedback.current
+// Use the native control's press lifecycle so child actions, scroll cancellation,
+// keyboard input and the ripple all agree about which control is actually pressed.
+private fun Modifier.pressFeedback(enabled: Boolean, interactionSource: MutableInteractionSource, unavailableReason: String? = null): Modifier = composed {
+    val feedback by rememberUpdatedState(LocalControlFeedback.current)
     val reason = unavailableReason ?: feedback.unavailable
-    val slop = LocalViewConfiguration.current.touchSlop
-    var pressed by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (pressed) 0.97f else 1f, tween(90), label = "control-press")
-    this.graphicsLayer { scaleX = scale; scaleY = scale }
+    val configuration = LocalViewConfiguration.current
+    val slop = configuration.touchSlop
+    val longPressTimeout = configuration.longPressTimeoutMillis
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (enabled && pressed) 0.97f else 1f, tween(90), label = "control-press")
+    val visual = this.graphicsLayer { scaleX = scale; scaleY = scale }
         .semantics { if (!enabled) stateDescription = reason }
-        .pointerInput(enabled, reason, slop) {
-            awaitEachGesture {
-                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
-                var tap = true
-                pressed = true
-                try {
-                    while (true) {
-                        val event = awaitPointerEvent(PointerEventPass.Initial)
-                        val change = event.changes.find { it.id == down.id } ?: break
-                        if ((change.position - down.position).getDistance() > slop || event.changes.count { it.pressed } > 1) { tap = false; pressed = false }
-                        if (!change.pressed) {
-                            if (tap && !enabled) feedback.explain(reason)
-                            break
-                        }
-                    }
-                } finally { pressed = false }
+    // A disabled Material control has no click callback. Observe its touch stream
+    // without consuming it so a drag may still scroll the surrounding content.
+    if (enabled) visual else visual.pointerInput(reason, slop, longPressTimeout) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            var tap = true
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                val change = event.changes.find { it.id == down.id } ?: break
+                if ((change.position - down.position).getDistance() > slop || event.changes.count { it.pressed } > 1 ||
+                    change.position.x < 0f || change.position.x > size.width || change.position.y < 0f || change.position.y > size.height) tap = false
+                if (!change.pressed) {
+                    if (tap && change.uptimeMillis - down.uptimeMillis < longPressTimeout) feedback.explain(reason)
+                    break
+                }
             }
         }
+    }
 }
 
 @Composable fun FeedbackButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, colors: ButtonColors = ButtonDefaults.buttonColors(), shape: Shape = RoundedCornerShape(12.dp), unavailableReason: String? = null, content: @Composable RowScope.() -> Unit) {
-    NativeButton(feedbackClick(onClick), modifier.pressFeedback(enabled, unavailableReason), enabled = enabled, colors = colors, shape = shape, content = content)
+    val interaction = remember { MutableInteractionSource() }
+    NativeButton(feedbackClick(onClick), modifier.pressFeedback(enabled, interaction, unavailableReason), enabled = enabled, colors = colors, shape = shape, interactionSource = interaction, content = content)
 }
 @Composable fun FeedbackOutlinedButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, colors: ButtonColors = ButtonDefaults.outlinedButtonColors(), unavailableReason: String? = null, content: @Composable RowScope.() -> Unit) {
-    NativeOutlinedButton(feedbackClick(onClick), modifier.pressFeedback(enabled, unavailableReason), enabled = enabled, colors = colors, shape = RoundedCornerShape(12.dp), content = content)
+    val interaction = remember { MutableInteractionSource() }
+    NativeOutlinedButton(feedbackClick(onClick), modifier.pressFeedback(enabled, interaction, unavailableReason), enabled = enabled, colors = colors, shape = RoundedCornerShape(12.dp), interactionSource = interaction, content = content)
 }
 @Composable fun FeedbackTextButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, colors: ButtonColors = ButtonDefaults.textButtonColors(), unavailableReason: String? = null, content: @Composable RowScope.() -> Unit) {
-    NativeTextButton(feedbackClick(onClick), modifier.pressFeedback(enabled, unavailableReason), enabled = enabled, colors = colors, shape = RoundedCornerShape(12.dp), content = content)
+    val interaction = remember { MutableInteractionSource() }
+    NativeTextButton(feedbackClick(onClick), modifier.pressFeedback(enabled, interaction, unavailableReason), enabled = enabled, colors = colors, shape = RoundedCornerShape(12.dp), interactionSource = interaction, content = content)
 }
 @Composable fun FeedbackFilledTonalButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, colors: ButtonColors = ButtonDefaults.filledTonalButtonColors(), unavailableReason: String? = null, content: @Composable RowScope.() -> Unit) {
-    NativeFilledTonalButton(feedbackClick(onClick), modifier.pressFeedback(enabled, unavailableReason), enabled = enabled, colors = colors, shape = RoundedCornerShape(12.dp), content = content)
+    val interaction = remember { MutableInteractionSource() }
+    NativeFilledTonalButton(feedbackClick(onClick), modifier.pressFeedback(enabled, interaction, unavailableReason), enabled = enabled, colors = colors, shape = RoundedCornerShape(12.dp), interactionSource = interaction, content = content)
 }
 @Composable fun FeedbackIconButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, unavailableReason: String? = null, content: @Composable () -> Unit) {
-    NativeIconButton(feedbackClick(onClick), modifier.pressFeedback(enabled, unavailableReason), enabled = enabled, content = content)
+    val interaction = remember { MutableInteractionSource() }
+    NativeIconButton(feedbackClick(onClick), modifier.pressFeedback(enabled, interaction, unavailableReason), enabled = enabled, interactionSource = interaction, content = content)
 }
 @Composable fun FeedbackFilledIconButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, unavailableReason: String? = null, content: @Composable () -> Unit) {
-    NativeFilledIconButton(feedbackClick(onClick), modifier.pressFeedback(enabled, unavailableReason), enabled = enabled, content = content)
+    val interaction = remember { MutableInteractionSource() }
+    NativeFilledIconButton(feedbackClick(onClick), modifier.pressFeedback(enabled, interaction, unavailableReason), enabled = enabled, interactionSource = interaction, content = content)
 }
 @Composable fun FeedbackFilterChip(selected: Boolean, onClick: () -> Unit, label: @Composable () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    NativeFilterChip(selected, feedbackClick(onClick), label, modifier.pressFeedback(enabled), enabled = enabled)
+    val interaction = remember { MutableInteractionSource() }
+    NativeFilterChip(selected, feedbackClick(onClick), label, modifier.pressFeedback(enabled, interaction), enabled = enabled, interactionSource = interaction)
 }
 @Composable fun FeedbackSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, unavailableReason: String? = null) {
     val view = LocalView.current
-    NativeSwitch(checked, { view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); onCheckedChange(it) }, modifier.pressFeedback(enabled, unavailableReason), enabled = enabled, colors = SwitchDefaults.colors(
+    val interaction = remember { MutableInteractionSource() }
+    NativeSwitch(checked, { view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); onCheckedChange(it) }, modifier.pressFeedback(enabled, interaction, unavailableReason), enabled = enabled, interactionSource = interaction, colors = SwitchDefaults.colors(
         checkedThumbColor = MaterialTheme.colorScheme.onPrimary, checkedTrackColor = MaterialTheme.colorScheme.primary,
         uncheckedThumbColor = MaterialTheme.colorScheme.outline, uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHigh, uncheckedBorderColor = MaterialTheme.colorScheme.outline,
         disabledUncheckedThumbColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f), disabledUncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHigh, disabledUncheckedBorderColor = MaterialTheme.colorScheme.outlineVariant
     ))
 }
 @Composable fun FeedbackDropdownMenuItem(text: @Composable () -> Unit, onClick: () -> Unit, modifier: Modifier = Modifier, leadingIcon: @Composable (() -> Unit)? = null, trailingIcon: @Composable (() -> Unit)? = null, enabled: Boolean = true) {
-    NativeDropdownMenuItem(text, feedbackClick(onClick), modifier.pressFeedback(enabled), leadingIcon = leadingIcon, trailingIcon = trailingIcon, enabled = enabled)
+    val interaction = remember { MutableInteractionSource() }
+    NativeDropdownMenuItem(text, feedbackClick(onClick), modifier.pressFeedback(enabled, interaction), leadingIcon = leadingIcon, trailingIcon = trailingIcon, enabled = enabled, interactionSource = interaction)
 }
 @Composable fun RowScope.FeedbackNavigationBarItem(selected: Boolean, onClick: () -> Unit, icon: @Composable () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, label: @Composable (() -> Unit)? = null) {
-    NativeNavigationBarItem(selected, feedbackClick(onClick), icon, modifier.pressFeedback(enabled), enabled = enabled, label = label, colors = NavigationBarItemDefaults.colors(
+    val interaction = remember { MutableInteractionSource() }
+    NativeNavigationBarItem(selected, feedbackClick(onClick), icon, modifier.pressFeedback(enabled, interaction), enabled = enabled, label = label, interactionSource = interaction, colors = NavigationBarItemDefaults.colors(
         selectedIconColor = MaterialTheme.colorScheme.primary, selectedTextColor = MaterialTheme.colorScheme.onSurface,
         unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant, unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant, indicatorColor = Color.Transparent
     ))
@@ -116,8 +130,10 @@ private fun Modifier.pressFeedback(enabled: Boolean, unavailableReason: String? 
     NativeCard(modifier, shape = shape, colors = colors, content = content)
 }
 @Composable fun FeedbackCard(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, shape: Shape = CardDefaults.shape, colors: CardColors = CardDefaults.cardColors(), border: androidx.compose.foundation.BorderStroke? = null, content: @Composable ColumnScope.() -> Unit) {
-    NativeCard(feedbackClick(onClick), modifier.pressFeedback(enabled), enabled = enabled, shape = shape, colors = colors, border = border, content = content)
+    val interaction = remember { MutableInteractionSource() }
+    NativeCard(feedbackClick(onClick), modifier.pressFeedback(enabled, interaction), enabled = enabled, shape = shape, colors = colors, border = border, interactionSource = interaction, content = content)
 }
 @Composable fun FeedbackOutlinedCard(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, content: @Composable ColumnScope.() -> Unit) {
-    NativeOutlinedCard(feedbackClick(onClick), modifier.pressFeedback(enabled), enabled = enabled, content = content)
+    val interaction = remember { MutableInteractionSource() }
+    NativeOutlinedCard(feedbackClick(onClick), modifier.pressFeedback(enabled, interaction), enabled = enabled, interactionSource = interaction, content = content)
 }

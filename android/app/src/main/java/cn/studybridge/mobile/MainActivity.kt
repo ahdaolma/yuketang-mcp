@@ -102,8 +102,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            StudyTheme { StudyApp() }
+            StudyTheme { StudyApp((application as StudyApplication).studyViewModel) }
         }
+    }
+    override fun onResume() {
+        super.onResume()
+        ClassFollowService.refreshPermission(this)
     }
 }
 
@@ -414,22 +418,26 @@ private fun preview(bytes: ByteArray): Bitmap? {
     var titleDraft by remember { mutableStateOf("") }
     var query by rememberSaveable { mutableStateOf("") }
     var selectedFolder by rememberSaveable { mutableStateOf<String?>(null) }
+    var tagFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var reviewFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var libraryPane by remember { mutableStateOf("") }
     var actionNoteId by rememberSaveable { mutableStateOf<String?>(null) }
     var initialListAction by rememberSaveable { mutableStateOf("options") }
     NoteListActions(ui, vm, actionNoteId, initialListAction) { actionNoteId = null }
-    val sortedNotes = remember(ui.data.notes) { findNotes(ui.data.notes, "") }
+    val sortedNotes = remember(ui.data.notes, ui.data.noteSort, ui.data.noteModifiedTimes) { libraryNotes(ui.data, "", null, null, null) }
     val searchedNotes by produceState(sortedNotes, sortedNotes, query) {
         if (query.isBlank()) value = sortedNotes
         else {
             kotlinx.coroutines.delay(140)
-            value = withContext(Dispatchers.Default) { findNotes(sortedNotes, query) }
+            value = withContext(Dispatchers.Default) { val matched = findNotes(sortedNotes, query).map { it.id }.toSet(); sortedNotes.filter { it.id in matched } }
         }
     }
-    val visibleNotes = remember(searchedNotes, selectedFolder, ui.data.noteFolders) {
-        searchedNotes.filter { selectedFolder == null || ui.data.effectiveFolder(it) == selectedFolder }
+    val visibleNotes = remember(searchedNotes, selectedFolder, ui.data.noteFolders, tagFilter, reviewFilter) {
+        searchedNotes.filter { (selectedFolder == null || ui.data.effectiveFolder(it) == selectedFolder) && (tagFilter == null || it.tags.any { tag -> tag.equals(tagFilter, true) }) && (reviewFilter == null || it.reviewState == reviewFilter) }
     }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val exportPdf = rememberNotePdfExport(vm)
     fun requestClose() { if (note != null && reader.editing && reader.draft != note.content) leaving = true else reader.close() }
     BackHandler(enabled = note != null) { requestClose() }
     LaunchedEffect(reader.closeRequested) { if (reader.closeRequested) { reader.closeRequested = false; requestClose() } }
@@ -443,7 +451,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
         val removable = !ui.locked && ui.data.noteWritable(note.id)
         if (leaving) AlertDialog(onDismissRequest = { leaving = false }, title = { Text("保存这次修改？") }, text = { Text("切换底部标签会保留草稿。返回笔记列表前，可以保存或放弃这次修改。") }, confirmButton = { TextButton(onClick = { if (vm.editNote(note.id, reader.draft)) { reader.close(); leaving = false } }, enabled = writable) { Text("保存并返回") } }, dismissButton = { FlowRow { TextButton(onClick = { vm.discardNoteDraft(note.id); reader.close(); leaving = false }) { Text("放弃修改") }; TextButton(onClick = { leaving = false }) { Text("继续编辑") } } })
         if (deletingPages) NotePageDeletion(note, vm, removable && !reader.editing) { deletingPages = false }
-        if (deleting) AlertDialog(onDismissRequest = { deleting = false }, title = { Text("删除这份笔记？") }, text = { Text("“${note.title}”将从本机删除，此操作无法撤销。") }, confirmButton = { TextButton(onClick = { if (vm.deleteNote(note.id)) { reader.close(); deleting = false } }, enabled = removable, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("删除笔记") } }, dismissButton = { TextButton(onClick = { deleting = false }) { Text("保留笔记") } })
+        if (deleting) AlertDialog(onDismissRequest = { deleting = false }, title = { Text("删除这份笔记？") }, text = { Text("“${note.title}”将移到回收站，可以恢复。") }, confirmButton = { TextButton(onClick = { if (vm.deleteNote(note.id)) { reader.close(); deleting = false } }, enabled = removable, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("删除笔记") } }, dismissButton = { TextButton(onClick = { deleting = false }) { Text("保留笔记") } })
         if (renaming) AlertDialog(onDismissRequest = { renaming = false }, title = { Text("重命名笔记") }, text = {
             OutlinedTextField(titleDraft, { titleDraft = it.take(120) }, label = { Text("笔记标题") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         }, confirmButton = { TextButton(onClick = { if (vm.renameNote(note.id, titleDraft)) renaming = false }, enabled = writable && titleDraft.isNotBlank()) { Text("保存标题") } }, dismissButton = { TextButton(onClick = { renaming = false }) { Text("取消") } })
@@ -452,6 +460,9 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreHoriz, "笔记选项", Modifier.size(22.dp)) }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     ClassManagerMenuItem { menu = false }
+                    DropdownMenuItem(text = { Text("标签与复习") }, enabled = writable, onClick = { menu = false; libraryPane = "details" })
+                    DropdownMenuItem(text = { Text("关联笔记") }, enabled = !reader.editing || reader.draft == note.content, onClick = { menu = false; libraryPane = "links" })
+                    DropdownMenuItem(text = { Text("历史版本") }, onClick = { menu = false; libraryPane = "history" })
                     DropdownMenuItem(text = { Text(if (note.pinned) "取消置顶" else "置顶笔记") }, enabled = !ui.locked, onClick = { menu = false; vm.toggleNotePin(note.id) })
                     DropdownMenuItem(text = { Text("重命名笔记") }, enabled = writable, onClick = { menu = false; titleDraft = note.title; renaming = true })
                     DropdownMenuItem(text = { Text("移动到分类") }, enabled = !ui.locked, onClick = { menu = false; initialListAction = "move"; actionNoteId = note.id })
@@ -462,6 +473,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                         if (ui.data.downloadTreeUri.isNotBlank()) vm.exportNote(note, text) else { exportSnapshot = note to text; export.launch(downloadName(note.title, "md")) }
                     })
                     DropdownMenuItem(text = { Text("AI 讲解") }, enabled = !ui.locked && (!reader.editing || reader.draft == note.content), onClick = { menu = false; vm.explainNote(note) })
+                    DropdownMenuItem(text = { Text("导出 PDF") }, enabled = !ui.locked, onClick = { menu = false; exportPdf(note.copy(content = if (reader.editing) reader.draft else note.content)) })
                     DropdownMenuItem(text = { Text("我的标记与备注") }, onClick = { menu = false; remarks = true })
                     DropdownMenuItem(text = { Text("标记说明") }, onClick = { menu = false; markLegend = true })
                     DropdownMenuItem(text = { Text("来源与模型") }, onClick = { menu = false; details = true })
@@ -472,6 +484,9 @@ private fun preview(bytes: ByteArray): Bitmap? {
             }
         }
         if (remarks) NoteRemarksDialog(note, vm) { remarks = false }
+        if (libraryPane == "details") NotebookNoteDetails(note, ui, vm) { libraryPane = "" }
+        if (libraryPane == "history") NotebookHistory(note, ui, vm) { libraryPane = "" }
+        if (libraryPane == "links") NotebookRelated(note, ui, { target -> libraryPane = ""; reader.open(target) }) { libraryPane = "" }
         if (markLegend) StudyMarkLegend { markLegend = false }
         if (details) AlertDialog(onDismissRequest = { details = false }, title = { Text("来源与模型") }, text = {
             Text("来源：${note.source}\n\n模型：${note.model}", Modifier.verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodyMedium)
@@ -502,9 +517,11 @@ private fun preview(bytes: ByteArray): Bitmap? {
             Text(if (query.isBlank()) "${visibleNotes.size} 份笔记" else "找到 ${visibleNotes.size} 份", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             IconButton(onClick = { vm.createManualNote(selectedFolder ?: "") }, enabled = !ui.locked) { Icon(Icons.Outlined.Add, "新建笔记") }
             TextButton(onClick = vm::notes, enabled = !ui.locked) { Text("生成笔记") }
+            NotebookTools(ui, vm, selectedFolder, tagFilter, reviewFilter) { tag, review -> tagFilter = tag; reviewFilter = review }
         } }
         item { OutlinedTextField(query, { query = it.take(200) }, Modifier.fillMaxWidth(), label = { Text("搜索笔记") }, placeholder = { Text("标题、正文或来源") }, singleLine = true, leadingIcon = { Icon(Icons.Outlined.Search, null) }, trailingIcon = if (query.isNotBlank()) ({ IconButton(onClick = { query = "" }) { Icon(Icons.Outlined.Close, "清除笔记搜索") } }) else null) }
         item { NoteFolderBar(ui, vm, selectedFolder) { selectedFolder = it } }
+        if (tagFilter != null || reviewFilter != null) item { TextButton(onClick = { tagFilter = null; reviewFilter = null }) { Text("清除筛选：" + listOfNotNull(tagFilter?.let { "#$it" }, reviewFilter?.let { NOTE_REVIEW_STATES[it] }).joinToString(" · ")) } }
         if (selectedFolder != null && query.isBlank() && visibleNotes.isEmpty() && ui.data.notes.isNotEmpty()) item { StudyEmpty(Icons.Outlined.FolderOpen, "这个分类还没有笔记", "长按笔记选择移动分类，或在当前分类中新建笔记。") }
         if (query.isNotBlank() && visibleNotes.isEmpty()) item { StudyEmpty(Icons.Outlined.Search, "没有找到相关笔记", "试试正文中的关键词或课件名称。") }
         if (ui.noteDraft.isNotBlank()) item { StudyPanel { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("正在整理", style = MaterialTheme.typography.titleSmall); Text(ui.noteDraft.takeLast(1600), maxLines = 8, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } } }
@@ -516,6 +533,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                     Text(remember(n.createdAt) { java.text.SimpleDateFormat("MM月dd日", java.util.Locale.CHINA).format(java.util.Date(n.createdAt)) }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text(remember(n.content) { notePreview(n.content) }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                NotebookStatus(n)
             }
         } }
     }
@@ -746,7 +764,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 StudyPanel { SettingsToggle("添加课件时自动整理", "选择课件后自动生成讲解并保存笔记。", ui.data.autoNotes, !ui.locked, vm::autoNotes) }
                 Text("原有笔记保留原样；以上设置只影响后续生成。", style = MaterialTheme.typography.bodySmall)
             }
-            "files" -> DownloadDirectorySettings(ui, vm)
+            "files" -> { DownloadDirectorySettings(ui, vm); NotebookStorage(ui, vm) }
             "learning" -> {
                         StudyPanel { Card(onClick = { showLearner = !showLearner }, colors = CardDefaults.cardColors(containerColor = Color.Transparent)) {
             Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -774,6 +792,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             OutlinedTextField(notes, { notes = it }, label = { Text("笔记助手提示词") }, modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp), maxLines = 12, enabled = !ui.locked)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Button(onClick = { vm.savePrompts(tutor, notes) }, enabled = !ui.locked) { Text("保存提示词") }; TextButton(onClick = { tutor = TUTOR_PROMPT; notes = NOTES_PROMPT; vm.savePrompts(tutor, notes) }, enabled = !ui.locked) { Text("恢复默认") } }
         }
+        ClassFollowSettings(ui, vm)
 
             }
         }
