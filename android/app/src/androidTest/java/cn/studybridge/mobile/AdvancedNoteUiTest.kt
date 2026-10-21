@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
+import androidx.compose.ui.test.junit4.ComposeContentTestRule
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.*
 import androidx.test.platform.app.InstrumentationRegistry
@@ -43,6 +44,26 @@ fun advancedUiShot(context: Context, name: String) {
 fun focusedAppStatusBarsHidden(): Boolean {
     val focused = android.view.inspector.WindowInspector.getGlobalWindowViews().filter { it.isAttachedToWindow && it.hasWindowFocus() }
     return focused.isNotEmpty() && focused.all { androidx.core.view.ViewCompat.getRootWindowInsets(it)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars()) == false }
+}
+
+/** Open notebook actions through the same floating tool flow used by readers. */
+fun ComposeContentTestRule.ensureNoteTools() {
+    if (onAllNodesWithContentDescription("关闭阅读工具").fetchSemanticsNodes().isEmpty()) {
+        waitUntil(5000) { onAllNodesWithContentDescription("悬浮阅读工具").fetchSemanticsNodes().isNotEmpty() }
+        onNodeWithContentDescription("悬浮阅读工具").assertIsDisplayed().performClick()
+    }
+    onNodeWithText("阅读工具").assertIsDisplayed()
+    onNodeWithTag("阅读操作列表").assertExists()
+}
+
+fun ComposeContentTestRule.openNoteTool(label: String) {
+    if (onAllNodesWithContentDescription(label).fetchSemanticsNodes().isEmpty()) {
+        ensureNoteTools()
+        onNodeWithContentDescription(label).performScrollTo().assertIsDisplayed().performClick()
+    } else {
+        if (onAllNodesWithContentDescription("关闭阅读工具").fetchSemanticsNodes().isNotEmpty()) onNodeWithContentDescription(label).performScrollTo()
+        onNodeWithContentDescription(label).assertIsDisplayed().performClick()
+    }
 }
 
 class AdvancedNoteUiTest {
@@ -112,9 +133,8 @@ class AdvancedNoteUiTest {
         try {
             compose.waitUntil(5000) { vm.ui.value.ready }
             compose.runOnIdle { vm.tab(2); vm.noteReader.open(note) }
-            compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("笔记选项").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithContentDescription("笔记选项").performClick()
-            compose.onNodeWithText("按页删除内容…").performClick()
+            compose.openNoteTool("笔记选项")
+            compose.onNodeWithText("按页删除内容…").performScrollTo().performClick()
             compose.onNodeWithText("第 2 页").performClick()
             compose.waitForIdle()
             compose.onNodeWithText("删除所选 1 页…").assertIsEnabled()
@@ -125,7 +145,7 @@ class AdvancedNoteUiTest {
             compose.onNodeWithText("删除所选 1 页…").performClick()
             compose.onNodeWithText("确认删除所选页").performClick()
             compose.waitUntil(5000) { vm.ui.value.data.notes.single { it.id == note.id }.content == firstPage }
-            compose.onNodeWithContentDescription("笔记选项").performClick(); compose.onNodeWithText("编辑笔记").performClick()
+            compose.openNoteTool("笔记选项"); compose.onNodeWithText("编辑笔记").performScrollTo().performClick()
             compose.onNodeWithText("图片 1 ▾").performScrollTo().performClick()
             compose.onNodeWithText("旋转 90°").performScrollTo().performClick()
             compose.waitUntil(5000) { sourceImagePattern.find(vm.noteReader.draft)?.groupValues?.get(2) != image }
@@ -154,11 +174,11 @@ class AdvancedNoteUiTest {
         try {
             compose.waitUntil(5000) { first.ui.value.ready }
             compose.runOnIdle { first.tab(2); first.noteReader.open(note) }
-            compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("目录跳转").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithContentDescription("目录跳转").performClick(); compose.onNodeWithText("2. 第 2 页").performClick()
-            compose.waitUntil(5000) { compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue() > 100f }
+            compose.openNoteTool("目录跳转"); compose.onNodeWithText("2. 第 2 页").performClick()
+            compose.waitUntil(5000) { compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue() > 0f }
             compose.onNodeWithTag("笔记正文").performTouchInput { swipeUp(durationMillis = 500) }
             compose.waitUntil(5000) { first.readingMemory.position(note.id)?.let { it.index == 1 && it.scroll > 100 } == true }
+            val expectedScrollAxis = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
             compose.runOnIdle { first.noteReader.close() }
             compose.waitUntil(5000) { Vault(app, "note-reading-v1.enc").load().noteReadingPositions.singleOrNull()?.let { it.index == 1 && it.scroll > 100 } == true }
             lateinit var second: StudyViewModel
@@ -166,8 +186,11 @@ class AdvancedNoteUiTest {
             compose.waitUntil(5000) { second.ui.value.ready }
             compose.runOnIdle { second.tab(2); second.noteReader.open(note) }
             compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记正文").fetchSemanticsNodes().isNotEmpty() }
-            compose.waitUntil(5000) { compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value() > 100f }
-            compose.onNodeWithContentDescription("目录跳转").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "阅读分段 2 / 3 · 完整笔记已保留"))
+            compose.waitUntil(5000) {
+                val restoredScrollAxis = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+                restoredScrollAxis > 0f && kotlin.math.abs(restoredScrollAxis - expectedScrollAxis) < .0001f
+            }
+            compose.onNodeWithContentDescription("当前阅读页码").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "阅读分段 2 / 3 · 完整笔记已保留"))
             compose.waitForIdle()
             advancedUiShot(compose.activity, "sample-note-memory-restored")
         } finally { compose.runOnIdle { stores.forEach { it.clear() } } }

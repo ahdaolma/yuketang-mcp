@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -97,7 +98,7 @@ import androidx.compose.ui.unit.dp
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-@Composable fun StudyFrame(ui: UiState, onTab: (Int) -> Unit, onBack: () -> Unit, onStop: () -> Unit, snackbar: SnackbarHostState = remember { SnackbarHostState() }, noteOpen: Boolean = false, onClassToggle: () -> Unit = {}, content: @Composable (PaddingValues) -> Unit) {
+@Composable fun StudyFrame(ui: UiState, onTab: (Int) -> Unit, onBack: () -> Unit, onStop: () -> Unit, snackbar: SnackbarHostState = remember { SnackbarHostState() }, noteOpen: Boolean = false, onClassToggle: () -> Unit = {}, classServiceRunning: Boolean = false, content: @Composable (PaddingValues) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
     val wide = LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE && maxWidth > maxHeight && maxHeight < 500.dp
     val landscapeKeyboard = wide && WindowInsets.ime.getBottom(LocalDensity.current) > 0
@@ -115,19 +116,21 @@ import androidx.compose.ui.unit.dp
     val selectedIcons = listOf(Icons.Filled.ChatBubble, Icons.Filled.School, Icons.Filled.AutoStories)
     val expandedNavigation = 68f + (density.fontScale - 1f).coerceAtLeast(0f) * 24f
     val navigationHeight = (expandedNavigation + (48f - expandedNavigation) * slide).dp
-    CompositionLocalProvider(LocalReadingChrome provides if (reading) chrome else null, LocalInlineReadingHeader provides inlineHeader, LocalReadingCompactFraction provides if (wide) 0f else slide) {
+    var readerProgress by remember(noteOpen) { mutableStateOf<ReaderProgress?>(null) }
+    val progressChanged = remember(noteOpen) { { value: ReaderProgress? -> readerProgress = value } }
+    CompositionLocalProvider(LocalReadingChrome provides if (reading) chrome else null, LocalInlineReadingHeader provides inlineHeader, LocalReadingCompactFraction provides if (wide) 0f else slide, LocalReaderProgress provides progressChanged) {
     Scaffold(
         contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
-        topBar = { Column(Modifier.windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))) {
-            StudyTimeBar()
-            if (!inlineHeader) TopAppBar(
+        topBar = { Column(Modifier.windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))) {
+            StudyTimeBar(readingProgress = if (noteOpen) readerProgress else null)
+            if (ui.tab == 3) TopAppBar(
             modifier = Modifier.testTag("应用顶部栏"), expandedHeight = 56.dp, windowInsets = WindowInsets(0, 0, 0, 0),
             title = { Text(if (ui.tab == 3) settingsPageTitle(ui.settingsPage) else labels.getOrElse(ui.tab) { "学习" }, style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp), maxLines = 1) },
             navigationIcon = { if (ui.tab == 3 || noteOpen) FeedbackIconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, if (noteOpen) "返回笔记列表" else if (ui.tab == 3 && ui.settingsPage.isNotEmpty()) "返回设置" else "返回学习", Modifier.size(22.dp)) } },
             actions = { if (ui.busy) FeedbackTextButton(onClick = onStop) { Text("停止") }; ClassManagerButton(); if (ui.tab != 3) FeedbackIconButton(onClick = { onTab(3) }) { Icon(Icons.Outlined.Settings, "设置", Modifier.size(22.dp)) } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
         ) } },
-        bottomBar = { if (ui.tab != 3 && !wide) Column {
+        bottomBar = { if (ui.tab != 3 && !wide && !noteOpen) Column {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             if (reading) Row(Modifier.fillMaxWidth().height(navigationHeight).clipToBounds().testTag("应用底部导航")) {
                 labels.forEachIndexed { index, label ->
@@ -154,7 +157,7 @@ import androidx.compose.ui.unit.dp
         } },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { padding ->
-        if (wide && ui.tab != 3) Row(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
+        if (wide && ui.tab != 3 && !noteOpen) Row(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             FlowRow(Modifier.width(if (landscapeKeyboard) 96.dp else 64.dp).fillMaxHeight().testTag("横屏导航"), horizontalArrangement = Arrangement.Center, verticalArrangement = Arrangement.Center, maxItemsInEachRow = if (landscapeKeyboard) 2 else 1) {
                 labels.forEachIndexed { index, label ->
                     FeedbackIconButton(onClick = { onTab(index) }, modifier = Modifier.size(48.dp).semantics { contentDescription = label; selected = ui.tab == index; role = Role.Tab }) {
@@ -168,7 +171,7 @@ import androidx.compose.ui.unit.dp
             Box(Modifier.weight(1f).fillMaxHeight()) { content(PaddingValues(0.dp)) }
         } else content(padding)
     }
-    if (ui.hasClassSession() && ui.data.classRun != null) ClassFloatingControl(!ui.classUi.running || ui.classUi.paused, ui.data.classRun.noteId, onClassToggle)
+    if (showClassControl(ui, classServiceRunning)) ClassFloatingControl(ui.classUi.paused, ui.data.classRun!!.noteId, onClassToggle)
     }
     }
 }
@@ -178,7 +181,7 @@ import androidx.compose.ui.unit.dp
 fun studyClockText(now: Long = System.currentTimeMillis()): String =
     java.text.SimpleDateFormat("HH:mm", java.util.Locale.ROOT).format(java.util.Date(now))
 
-@Composable fun StudyTimeBar() {
+@Composable fun StudyTimeBar(clockCutoutHeight: androidx.compose.ui.unit.Dp? = null, readingProgress: ReaderProgress? = null) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val clock by produceState(studyClockText(), lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -189,9 +192,23 @@ fun studyClockText(now: Long = System.currentTimeMillis()): String =
             }
         }
     }
-    Box(Modifier.fillMaxWidth().testTag("应用时间栏").padding(horizontal = 20.dp, vertical = 2.dp)) {
+    val density = LocalDensity.current
+    val view = LocalView.current
+    val cutoutTop = WindowInsets.displayCutout.getTop(density)
+    val barHeight = maxOf(32.dp, (clockCutoutHeight ?: with(density) { cutoutTop.toDp() }) + 4.dp)
+    // The clock shares the safe cutout row; it is not placed below a second
+    // full-width cutout spacer. Move it sideways if a left camera occupies it.
+    val defaultStart = with(density) { 20.dp.roundToPx() }
+    val clockWidth = with(density) { 60.dp.roundToPx() }
+    val gap = with(density) { 8.dp.roundToPx() }
+    var start = defaultStart
+    if (Build.VERSION.SDK_INT >= 28) view.rootWindowInsets?.displayCutout?.boundingRects.orEmpty().sortedBy { it.left }.forEach { rect ->
+        if (rect.top < with(density) { barHeight.roundToPx() } && rect.left < start + clockWidth && rect.right > start) start = rect.right + gap
+    }
+    Box(Modifier.fillMaxWidth().height(barHeight).testTag("应用时间栏").padding(start = with(density) { start.toDp() }, end = 20.dp), contentAlignment = Alignment.CenterStart) {
         Text(clock, style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, lineHeight = 16.sp), maxLines = 1,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { contentDescription = "当前时间 $clock" })
+        if (readingProgress != null) Text(readingProgress.text, Modifier.align(Alignment.CenterEnd).testTag("阅读页码").semantics { contentDescription = "当前阅读页码"; stateDescription = readingProgress.description }, style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, lineHeight = 16.sp), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
     }
 }
 

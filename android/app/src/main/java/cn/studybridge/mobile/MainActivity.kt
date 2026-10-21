@@ -114,6 +114,9 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable fun StudyApp(vm: StudyViewModel = viewModel()) {
     val ui by vm.ui.collectAsStateWithLifecycle()
+    val app = LocalContext.current.applicationContext as? StudyApplication
+    val followState = app?.classFollowStatus ?: remember { kotlinx.coroutines.flow.MutableStateFlow(ClassFollowStatus()) }
+    val follow by followState.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, vm) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) vm.background() }
@@ -148,7 +151,7 @@ class MainActivity : ComponentActivity() {
     val controlFeedback = remember(vm, unavailable) { ControlFeedback(vm::notice, unavailable) }
     CompositionLocalProvider(LocalControlFeedback provides controlFeedback) {
     ClassManagerHost(ui, vm) {
-    StudyFrame(ui, onTab = { target -> if (target == 3) previousTab = ui.tab; vm.tab(target) }, onBack = { if (ui.tab == 2) vm.noteReader.closeRequested = true else if (ui.tab == 3 && ui.settingsPage.isNotEmpty()) vm.settingsPage("") else vm.tab(previousTab) }, onStop = vm::stop, snackbar = snackbar, noteOpen = ui.tab == 2 && ui.data.notes.any { it.id == vm.noteReader.id }, onClassToggle = { if (ui.classUi.paused) vm.resumeClass() else vm.pauseClass() }) { padding ->
+    StudyFrame(ui, onTab = { target -> if (target == 3) previousTab = ui.tab; vm.tab(target) }, onBack = { if (ui.tab == 2) vm.noteReader.closeRequested = true else if (ui.tab == 3 && ui.settingsPage.isNotEmpty()) vm.settingsPage("") else vm.tab(previousTab) }, onStop = vm::stop, snackbar = snackbar, noteOpen = ui.tab == 2 && ui.data.notes.any { it.id == vm.noteReader.id }, onClassToggle = { if (ui.classUi.paused) vm.resumeClass() else vm.pauseClass() }, classServiceRunning = follow.serviceRunning) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             if (ui.storageError.isNotBlank()) Text(ui.storageError, Modifier.fillMaxWidth().padding(16.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
             StudyOperationProgress(ui)
@@ -183,7 +186,7 @@ class MainActivity : ComponentActivity() {
     val row = colors.surfaceContainer.toArgb()
     val background = colors.background.toArgb()
     val density = LocalDensity.current.density
-    val bodySize = with(LocalDensity.current) { 16.sp.toPx() }
+    val bodySize = with(LocalDensity.current) { LocalNoteFontSize.current.sp.toPx() }
     val renderer = remember(context, color, link, code, line, row, background, density) {
         Markwon.builder(context)
             .usePlugin(TablePlugin.create { builder -> builder.tableBorderColor(line).tableBorderWidth(maxOf(1, (density * 0.5f).toInt())).tableCellPadding((8 * density).toInt()).tableHeaderRowBackgroundColor(code).tableOddRowBackgroundColor(row).tableEvenRowBackgroundColor(background) })
@@ -197,7 +200,11 @@ class MainActivity : ComponentActivity() {
     val formatted by produceState<Pair<String, android.text.Spanned>?>(null, text, renderer, density, dark) { value = withContext(Dispatchers.Default) { text to renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(text)), density, dark) } }
     val selectionController = LocalNoteSelection.current
     val personalMarks = LocalNoteAnnotations.current
-    val decorated = remember(formatted, text, sourceOffset, personalMarks) { formatted?.takeIf { it.first == text }?.second?.let { renderPersonalAnnotations(it, text, sourceOffset, personalMarks) } }
+    val searchQuery = LocalNoteSearchQuery.current
+    val searchTarget = LocalNoteSearchTarget.current
+    val revealSearch = LocalNoteSearchReveal.current
+    val renderReady = LocalNoteRenderReady.current
+    val decorated = remember(formatted, text, sourceOffset, personalMarks, searchQuery) { formatted?.takeIf { it.first == text }?.second?.let { searchHighlight(renderPersonalAnnotations(it, text, sourceOffset, personalMarks), searchQuery) as android.text.Spanned } }
     AndroidView(factory = { NoteSelectableTextView(it).apply { textSize = 16f; setTextIsSelectable(true); setLineSpacing(0f, 1.3f) } }, modifier = Modifier.fillMaxWidth(), update = {
         if (it.currentTextColor != color) it.setTextColor(color)
         if (kotlin.math.abs(it.textSize - bodySize) > 0.1f) it.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, bodySize)
@@ -206,6 +213,18 @@ class MainActivity : ComponentActivity() {
         if (selectionController != null) it.useApplicationMenu() else it.customSelectionActionModeCallback = null
         val parsed = decorated
         if (parsed != null && it.tag !== parsed) { renderer.setParsedMarkdown(it, parsed); it.tag = parsed }
+        if (parsed != null) it.post { renderReady?.invoke() }
+        val target = searchTarget
+        if (target != null && sourceOffset != null && target.offset in sourceOffset until sourceOffset + text.length && parsed != null) {
+            val key = "${target.revision}:${target.offset}:${target.query}"
+            if (it.searchRevealKey != key) {
+                it.searchRevealKey = key
+                val ordinal = searchNoteContent(text.take((target.offset - sourceOffset).coerceAtLeast(0)), target.query).size
+                var found = -target.query.length
+                repeat(ordinal + 1) { _ -> found = parsed.toString().indexOf(target.query, (found + target.query.length).coerceAtLeast(0), true) }
+                if (found >= 0) { val view = it; val offset = found; view.post { revealSearch?.invoke(view, offset) } }
+            }
+        }
     })
 }
 
@@ -248,7 +267,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
     val keyboardBeside = inlineHeader && WindowInsets.ime.getBottom(LocalDensity.current) > 0
     ReadingChatLayout(keyboardBeside, Modifier.fillMaxSize().padding(horizontal = 14.dp), toolbar = {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("学习工具栏"), verticalAlignment = Alignment.CenterVertically) {
-            Box { IconButton(onClick = { history = true }) { Icon(Icons.Outlined.Forum, "会话") }; DropdownMenu(expanded = history, onDismissRequest = { history = false }) {
+            Box { IconButton(onClick = { history = true }) { Icon(Icons.Outlined.Forum, "会话") }; if (history) ReadingActionSheet("会话", { history = false }) {
                 ClassManagerMenuItem { history = false }
                 ui.data.conversations.forEach { c -> DropdownMenuItem(text = { Text(c.title) }, onClick = { vm.selectChat(c.id); history = false }, trailingIcon = { IconButton(onClick = { vm.deleteChat(c.id); history = false }, enabled = !ui.locked) { Icon(Icons.Default.DeleteOutline, "删除对话") } }) }
             } }
@@ -259,7 +278,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             else IconButton(onClick = vm::notes, enabled = !ui.locked && (chat.messages.isNotEmpty() || ui.pending != null), unavailableReason = if (chat.messages.isEmpty() && ui.pending == null) "先选择一页课件或进行对话，再生成笔记。" else null) { Icon(Icons.Outlined.NoteAdd, "生成笔记") }
             if (chat.messages.isNotEmpty()) Box {
                 IconButton(onClick = { navigation = true }) { Icon(Icons.Outlined.SwapVert, "消息跳转") }
-                DropdownMenu(expanded = navigation, onDismissRequest = { navigation = false }) {
+                if (navigation) ReadingActionSheet("消息跳转", { navigation = false }) {
                     DropdownMenuItem(text = { Text("顶部") }, onClick = { navigation = false; scope.launch { listState.scrollToItem(0) } })
                     DropdownMenuItem(text = { Text("底部") }, onClick = { navigation = false; scope.launch { listState.scrollToItem(chat.messages.lastIndex); listState.scrollBy(1_000_000f) } })
                     DropdownMenuItem(text = { Text("跳转消息") }, onClick = { navigation = false; jump = true })
@@ -332,6 +351,8 @@ private fun preview(bytes: ByteArray): Bitmap? {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Icon(Icons.Outlined.School, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(RAIN_NAMES[ui.data.region] ?: "雨课堂", style = MaterialTheme.typography.titleMedium); Text(loginStatusText(ui.data, ui.loginActive, ui.loginStage), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        ClassManagerButton()
+                        IconButton(onClick = { vm.tab(3) }) { Icon(Icons.Outlined.Settings, "设置") }
                         if (ui.data.session.isNotBlank()) IconButton(onClick = { accountExpanded = !accountExpanded }) { Icon(if (accountExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, "管理雨课堂账号", Modifier.size(22.dp)) }
                     }
                     if (ui.data.session.isBlank() || accountExpanded) {
@@ -350,6 +371,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 }
             }
         }
+        if (ui.data.session.isNotBlank() || ui.hasClassSession()) item { ClassModePanel(ui, vm) }
         if (ui.data.session.isNotBlank()) {
             item { Row(verticalAlignment = Alignment.CenterVertically) { Text(if (ui.course == null) "我的课程" else ui.course.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f)); if (ui.course != null) TextButton(onClick = vm::allCourses, enabled = !ui.locked) { Text("返回课程") } else TextButton(onClick = vm::loadCourses, enabled = !ui.locked && !ui.loginActive) { Text("刷新") } } }
             if (ui.courses.isEmpty() && ui.course == null) item { StudyEmpty(Icons.Outlined.MenuBook, "还没有读取课程", "点击右上方刷新，读取你已加入的课程。") }
@@ -457,8 +479,9 @@ private fun preview(bytes: ByteArray): Bitmap? {
         }, confirmButton = { TextButton(onClick = { if (vm.renameNote(note.id, titleDraft)) renaming = false }, enabled = writable && titleDraft.isNotBlank()) { Text("保存标题") } }, dismissButton = { TextButton(onClick = { renaming = false }) { Text("取消") } })
         val actions: @Composable () -> Unit = {
             Box {
-                IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreHoriz, "笔记选项", Modifier.size(22.dp)) }
-                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                if (reader.editing) IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreHoriz, "笔记选项", Modifier.size(22.dp)) }
+                if (menu) ReadingActionSheet("笔记选项", { menu = false }) {
+                    ReadingActionGroup("整理与编辑")
                     ClassManagerMenuItem { menu = false }
                     DropdownMenuItem(text = { Text("标签与复习") }, enabled = writable, onClick = { menu = false; libraryPane = "details" })
                     DropdownMenuItem(text = { Text("关联笔记") }, enabled = !reader.editing || reader.draft == note.content, onClick = { menu = false; libraryPane = "links" })
@@ -467,6 +490,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                     DropdownMenuItem(text = { Text("重命名笔记") }, enabled = writable, onClick = { menu = false; titleDraft = note.title; renaming = true })
                     DropdownMenuItem(text = { Text("移动到分类") }, enabled = !ui.locked, onClick = { menu = false; initialListAction = "move"; actionNoteId = note.id })
                     if (!reader.editing) DropdownMenuItem(text = { Text("编辑笔记") }, enabled = writable, onClick = { menu = false; reader.beginEditing(note) })
+                    ReadingActionGroup("导出与讲解")
                     DropdownMenuItem(text = { Text("导出 Markdown") }, enabled = !ui.locked, onClick = {
                         menu = false
                         val text = if (reader.editing) reader.draft else note.content
@@ -474,6 +498,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                     })
                     DropdownMenuItem(text = { Text("AI 讲解") }, enabled = !ui.locked && (!reader.editing || reader.draft == note.content), onClick = { menu = false; vm.explainNote(note) })
                     DropdownMenuItem(text = { Text("导出 PDF") }, enabled = !ui.locked, onClick = { menu = false; exportPdf(note.copy(content = if (reader.editing) reader.draft else note.content)) })
+                    ReadingActionGroup("标记与资料")
                     DropdownMenuItem(text = { Text("我的标记与备注") }, onClick = { menu = false; remarks = true })
                     DropdownMenuItem(text = { Text("标记说明") }, onClick = { menu = false; markLegend = true })
                     DropdownMenuItem(text = { Text("来源与模型") }, onClick = { menu = false; details = true })
@@ -492,6 +517,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             Text("来源：${note.source}\n\n模型：${note.model}", Modifier.verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodyMedium)
         }, confirmButton = { TextButton(onClick = { details = false }) { Text("关闭") } })
         Column(Modifier.fillMaxSize().testTag("笔记阅读页").padding(horizontal = 20.dp, vertical = 8.dp)) {
+            if (!reader.editing) actions()
             val heading: @Composable () -> Unit = {
                 Text(note.title, style = MaterialTheme.typography.titleLarge)
                 OriginalNotePages(note, ui, vm)
@@ -510,7 +536,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                     NoteImageEditor(reader.draft, { reader.draft = it }, vm.sourceImages, writable, vm::notice)
                     NoteEditor(reader.draft, { reader.draft = it }, writable)
                 }
-            } else NoteReadingSelection(note, vm, Modifier.weight(1f)) { readingModifier -> PagedNoteContent(note, readingModifier, independentScroll = true, header = heading, trailingActions = actions, titleAlreadyShown = true, onBack = { requestClose() }, onSettings = { vm.tab(3) }, bookmark = vm.readingMemory.position(note.id), onReadingPosition = vm.readingMemory::remember, sourceImages = vm.sourceImages) }
+            } else NoteReadingSelection(note, vm, Modifier.weight(1f)) { readingModifier -> NotebookReader(note, ui, vm, readingModifier, extraHeader = { OriginalNotePages(note, ui, vm); HorizontalDivider() }, onOptions = { menu = true }, onBack = { requestClose() }) }
         }
     } else LazyColumn(Modifier.fillMaxSize().testTag("笔记列表").padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)) {
         item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -518,9 +544,11 @@ private fun preview(bytes: ByteArray): Bitmap? {
             IconButton(onClick = { vm.createManualNote(selectedFolder ?: "") }, enabled = !ui.locked) { Icon(Icons.Outlined.Add, "新建笔记") }
             TextButton(onClick = vm::notes, enabled = !ui.locked) { Text("生成笔记") }
             NotebookTools(ui, vm, selectedFolder, tagFilter, reviewFilter) { tag, review -> tagFilter = tag; reviewFilter = review }
+            IconButton(onClick = { vm.tab(3) }) { Icon(Icons.Outlined.Settings, "设置") }
         } }
         item { OutlinedTextField(query, { query = it.take(200) }, Modifier.fillMaxWidth(), label = { Text("搜索笔记") }, placeholder = { Text("标题、正文或来源") }, singleLine = true, leadingIcon = { Icon(Icons.Outlined.Search, null) }, trailingIcon = if (query.isNotBlank()) ({ IconButton(onClick = { query = "" }) { Icon(Icons.Outlined.Close, "清除笔记搜索") } }) else null) }
         item { NoteFolderBar(ui, vm, selectedFolder) { selectedFolder = it } }
+        if (ui.data.session.isNotBlank() || ui.hasClassSession()) item { ClassModePanel(ui, vm) }
         if (tagFilter != null || reviewFilter != null) item { TextButton(onClick = { tagFilter = null; reviewFilter = null }) { Text("清除筛选：" + listOfNotNull(tagFilter?.let { "#$it" }, reviewFilter?.let { NOTE_REVIEW_STATES[it] }).joinToString(" · ")) } }
         if (selectedFolder != null && query.isBlank() && visibleNotes.isEmpty() && ui.data.notes.isNotEmpty()) item { StudyEmpty(Icons.Outlined.FolderOpen, "这个分类还没有笔记", "长按笔记选择移动分类，或在当前分类中新建笔记。") }
         if (query.isNotBlank() && visibleNotes.isEmpty()) item { StudyEmpty(Icons.Outlined.Search, "没有找到相关笔记", "试试正文中的关键词或课件名称。") }

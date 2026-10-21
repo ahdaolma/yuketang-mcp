@@ -50,8 +50,8 @@ class ClassNoteEditingTest {
         compose.waitUntil(5000) { requested.count == 0L || vm.ui.value.classUi.paused }
         assertEquals(vm.ui.value.classUi.status, 0L, requested.count)
         render(vm)
-        compose.onNodeWithContentDescription("笔记选项").performClick()
-        compose.onNodeWithText("编辑笔记", useUnmergedTree = true).performClick()
+        compose.openNoteTool("笔记选项")
+        compose.onNodeWithText("编辑笔记", useUnmergedTree = true).performScrollTo().performClick()
         compose.onNodeWithText("Markdown 笔记").assertIsEnabled().performTextReplacement("# 并行编辑\n\n我修正后的定义。\n\n")
         compose.runOnIdle { release.countDown() }
         compose.waitUntil(10000) { vm.ui.value.data.classRun?.completed?.contains(page.key) == true }
@@ -102,8 +102,8 @@ class ClassNoteEditingTest {
         compose.onNodeWithText("写下自己的理解或疑问").performTextInput("我需要再确认模板链的方向。")
         compose.onNodeWithText("保存备注").performClick()
         compose.waitUntil(5000) { vm.ui.value.data.notes.single().annotations.size == 1 }
-        compose.onNodeWithContentDescription("笔记选项").performClick()
-        compose.onNodeWithText("我的标记与备注").performClick()
+        compose.openNoteTool("笔记选项")
+        compose.onNodeWithText("我的标记与备注").performScrollTo().performClick()
         compose.onNodeWithText("我需要再确认模板链的方向。").assertExists().performClick()
         compose.onNodeWithText("我的备注").performTextReplacement("已经弄明白了。")
         compose.onNodeWithText("保存备注").performClick()
@@ -116,19 +116,20 @@ class ClassNoteEditingTest {
 
     @Test fun searchJumpsToMatchingPageAndSuperFocusSettingSurvivesReload() {
         val app = noteTestApplication(compose.activity.applicationContext)
-        val note = Note(title = "查找测试", content = "## 第 1 页\n\n首页原文。\n\n## 第 2 页\n\n复制起点在这一页。", source = "测试", model = "测试")
+        val note = Note(title = "查找测试", content = "## 第 1 页\n\n" + "首页原文，先理解基本定义。\n\n".repeat(40) + "## 第 2 页\n\n复制起点在这一页。\n\n" + "继续说明模板链与复制方向。\n\n".repeat(40), source = "测试", model = "测试")
         Vault(app).save(Saved(notes = listOf(note)))
         val store = ViewModelStore(); lateinit var vm: StudyViewModel
         compose.runOnUiThread { vm = noteTestViewModel(app, store) }
         compose.waitUntil(5000) { vm.ui.value.ready }
         compose.runOnIdle { vm.noteReader.open(note); vm.superFocusNotes(true) }
         render(vm)
-        compose.onNodeWithContentDescription("阅读跳转").performClick()
-        compose.onNodeWithText("笔记内查找").performClick()
+        compose.openNoteTool("阅读跳转")
+        compose.onNodeWithText("笔记内查找").performScrollTo().performClick()
         compose.onNodeWithText("查找完整正文").performTextInput("复制起点")
         compose.waitUntil(5000) { compose.onAllNodesWithText("找到 1 处").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("第 2 段").performClick()
-        compose.onNodeWithContentDescription("目录跳转").assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription, "阅读分段 2 / 2 · 完整笔记已保留"))
+        compose.onNodeWithContentDescription("当前阅读页码").assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription, "阅读分段 2 / 2 · 完整笔记已保留"))
+        compose.onNodeWithTag("查找命中导航").assertIsDisplayed()
         advancedUiShot(compose.activity, "sample-note-search-result")
         compose.waitUntil(5000) { Vault(app).load().superFocusNotes }
         compose.runOnIdle { store.clear() }

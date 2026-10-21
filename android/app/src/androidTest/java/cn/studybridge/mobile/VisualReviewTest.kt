@@ -62,7 +62,7 @@ class VisualReviewTest {
         bitmap.recycle()
     }
     private fun verifyTableRows() {
-        compose.onNodeWithContentDescription("目录跳转").performClick()
+        compose.openNoteTool("目录跳转")
         compose.onNodeWithText("2. 对照理解").performClick()
         // A plain TextView.text assignment bypasses Markwon's table invalidation hooks.
         // Check the final Android layout, not just that table words exist in a string.
@@ -97,8 +97,13 @@ class VisualReviewTest {
         val page = compose.onNodeWithTag("笔记阅读页").getUnclippedBoundsInRoot()
         val body = compose.onNodeWithTag("笔记正文").getUnclippedBoundsInRoot()
         assertTrue("Body should occupy at least 80% of the note reader: $body / $page", (body.bottom - body.top).value >= (page.bottom - page.top).value * 0.80f)
-        compose.onNodeWithContentDescription("目录跳转").assertIsDisplayed()
-        compose.onNodeWithContentDescription("阅读跳转").assertIsDisplayed()
+        compose.onNodeWithTag("应用顶部栏").assertDoesNotExist()
+        compose.onNodeWithTag("应用底部导航").assertDoesNotExist()
+        compose.onNodeWithTag("按屏翻页栏").assertDoesNotExist()
+        compose.onNodeWithContentDescription("悬浮阅读工具").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithContentDescription("目录跳转").assertDoesNotExist()
+        compose.onNodeWithContentDescription("阅读跳转").assertDoesNotExist()
+        compose.onNodeWithTag("阅读操作面板").assertDoesNotExist()
         compose.onNodeWithText("编辑笔记").assertDoesNotExist()
         compose.onNodeWithText("导出 Markdown").assertDoesNotExist()
     }
@@ -106,19 +111,17 @@ class VisualReviewTest {
         val state = mutableStateOf(sample().copy(tab = 2)); render(state, scale = 1.5f, width = 320)
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).performClick()
         assertReadingArea()
-        compose.onNodeWithText(firstNote.title).assertIsDisplayed()
-        if (compose.onAllNodesWithContentDescription("下一段").fetchSemanticsNodes().isEmpty()) {
-            compose.onNodeWithContentDescription("阅读跳转").performClick()
-            compose.onNodeWithText("下一段").performClick()
-        } else compose.onNodeWithContentDescription("下一段").performClick()
+        compose.onNodeWithTag("笔记原始标题").assertIsDisplayed()
+        compose.openNoteTool("阅读跳转")
+        compose.onNodeWithText("下一段").performScrollTo().performClick()
         assertReadingArea()
-        compose.onNodeWithText(firstNote.title).assertIsDisplayed()
+        compose.onNodeWithTag("笔记吸顶标题").assertIsDisplayed()
         shot("sample-note-reading-compact")
-        compose.onNodeWithContentDescription("笔记选项").performClick()
-        compose.onNodeWithText("编辑笔记").assertIsEnabled()
-        compose.onNodeWithText("导出 Markdown").assertIsEnabled()
-        compose.onNodeWithText("AI 讲解").assertIsEnabled()
-        compose.onNodeWithText("来源与模型").performClick()
+        compose.openNoteTool("笔记选项")
+        compose.onNodeWithText("编辑笔记").performScrollTo().assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("导出 Markdown").performScrollTo().assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("AI 讲解").performScrollTo().assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("来源与模型").performScrollTo().performClick()
         compose.onNodeWithText("关闭").performClick()
         assertReadingArea()
     }
@@ -128,9 +131,9 @@ class VisualReviewTest {
         compose.onNodeWithText("笔记").performClick()
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).assertIsDisplayed(); shot("sample-notes-light")
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).performClick()
-        compose.onNodeWithContentDescription("笔记选项").assertIsDisplayed(); verifyTableRows(); shot("sample-note-reading")
-        compose.onNodeWithContentDescription("笔记选项").performClick()
-        compose.onNodeWithText("编辑笔记").performClick()
+        compose.onNodeWithContentDescription("悬浮阅读工具").assertIsDisplayed(); verifyTableRows(); shot("sample-note-reading")
+        compose.openNoteTool("笔记选项")
+        compose.onNodeWithText("编辑笔记").performScrollTo().performClick()
         compose.onNode(hasSetTextAction()).performTextInput("\n新增草稿内容")
         compose.runOnIdle { state.value = state.value.copy(tab = 1) }
         compose.waitUntil(5000) { androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) != true }
@@ -148,14 +151,15 @@ class VisualReviewTest {
         val run = ClassRun(LiveLesson("7", courseTitle, "1"), providerId = "fixture", completed = listOf("1:1", "1:2"), pending = listOf(LivePage("1", 3)))
         val state = mutableStateOf(base.copy(tab = 2, data = base.data.copy(classRun = run), classUi = ClassUi(running = true, paused = true, status = "已暂停，完成的讲解已保存，回到学习页后可继续。")))
         render(state, scale = 1.5f)
-        compose.onNodeWithTag("上课控制面板").assertDoesNotExist()
+        compose.onNodeWithTag("笔记列表").performScrollToNode(hasTestTag("上课控制面板"))
+        compose.onNodeWithTag("上课控制面板").assertIsDisplayed()
         compose.onNodeWithContentDescription("上课管理").performClick()
-        compose.onNodeWithText("继续", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("结束", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithTag("上课控制面板").captureToImage()
+        compose.onAllNodesWithText("继续", useUnmergedTree = true).onLast().performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithText("结束", useUnmergedTree = true).onLast().performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithTag("上课控制面板").onLast().captureToImage()
         advancedUiShot(compose.activity, "sample-class-large-text")
         compose.runOnIdle { state.value = state.value.copy(classUi = ClassUi(running = true, paused = false, status = "正在重新连接课堂…")) }
-        compose.onNodeWithText("连接中").performScrollTo().assertIsDisplayed()
+        compose.onAllNodesWithText("连接中").onLast().performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("关闭上课管理").performClick()
         compose.runOnIdle { state.value = base.copy(tab = 3) }
         compose.onNodeWithText("模型与账号").assertIsDisplayed(); shot("sample-settings-large-text")
@@ -168,8 +172,8 @@ class VisualReviewTest {
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).performClick()
         assertReadingArea()
         shot("sample-note-reading-large-text")
-        compose.onNodeWithContentDescription("笔记选项").performClick()
-        compose.onNodeWithText("导出 Markdown").assertIsDisplayed()
+        compose.openNoteTool("笔记选项")
+        compose.onNodeWithText("导出 Markdown").performScrollTo().assertIsDisplayed()
     }
     @Test fun darkScreensUseTheSameReadingAndSettingsHierarchy() {
         val state = mutableStateOf(sample().copy(tab = 2)); render(state, mutableStateOf(true))

@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 
 val LocalClassManager = staticCompositionLocalOf<(() -> Unit)?> { null }
 fun UiState.hasClassSession() = classUi.running || data.classRun?.let { !it.ended || it.pending.isNotEmpty() } == true
+fun showClassControl(ui: UiState, serviceRunning: Boolean) = serviceRunning && ui.classUi.running && ui.data.session.isNotBlank() && ui.data.classRun?.let { !it.ended || it.pending.isNotEmpty() } == true
 
 @Composable fun ClassManagerButton() {
     LocalClassManager.current?.let { open ->

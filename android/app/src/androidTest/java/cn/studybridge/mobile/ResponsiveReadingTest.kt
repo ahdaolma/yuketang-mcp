@@ -57,6 +57,19 @@ class ResponsiveReadingTest {
         resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
         image.recycle()
     }
+    private fun assertNotebookToolSheet() {
+        compose.ensureNoteTools()
+        val panel = compose.onNodeWithTag("阅读操作面板").getUnclippedBoundsInRoot()
+        val maximum = minOf(480f, compose.activity.resources.configuration.screenHeightDp * .64f)
+        assertTrue("Notebook tools must fit the bounded sheet", (panel.bottom - panel.top).value <= maximum + 2f)
+        val first = compose.onNodeWithContentDescription("返回笔记列表").getUnclippedBoundsInRoot()
+        val second = compose.onNodeWithContentDescription("目录跳转").getUnclippedBoundsInRoot()
+        assertTrue("Notebook actions must be a vertical list", second.top >= first.bottom)
+        assertEquals(first.left.value, second.left.value, 1f)
+        listOf("返回笔记列表", "目录跳转", "阅读跳转", "阅读设置", "笔记选项", "设置").forEach {
+            compose.onNodeWithContentDescription(it).performScrollTo().assertIsDisplayed().assertIsEnabled()
+        }
+    }
     @Test fun scrollNarrowsBarsWithoutRemovingActionsAndReverseRestoresThem() {
         val state = mutableStateOf(sample()); render(state)
         val before = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
@@ -87,17 +100,24 @@ class ResponsiveReadingTest {
         compose.onNodeWithText("课程导航已到达").assertIsDisplayed()
         compose.runOnIdle { vm.noteReader.open(note.copy(content = note.content.repeat(8))); state.value = state.value.copy(tab = 2, data = state.value.data.copy(notes = listOf(note.copy(content = note.content.repeat(8))))) }
         compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记正文").fetchSemanticsNodes().isNotEmpty() }
-        val noteBefore = compose.onNodeWithTag("笔记正文").getUnclippedBoundsInRoot()
+        compose.onNodeWithTag("应用顶部栏").assertDoesNotExist()
+        compose.onNodeWithContentDescription("悬浮阅读工具").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithContentDescription("目录跳转").assertDoesNotExist()
+        compose.onNodeWithTag("应用底部导航").assertDoesNotExist()
+        compose.onNodeWithTag("按屏翻页栏").assertDoesNotExist()
         compose.onNodeWithTag("笔记正文").performTouchInput { swipeUp(durationMillis = 500) }
-        compose.waitForIdle()
-        val noteCompact = compose.onNodeWithTag("笔记正文").getUnclippedBoundsInRoot()
-        assertTrue("Notes must reclaim height too", (noteCompact.bottom - noteCompact.top).value > (noteBefore.bottom - noteBefore.top).value + 60f)
-        compose.onNodeWithContentDescription("悬浮阅读工具").performClick()
-        listOf("返回笔记列表", "目录跳转", "阅读跳转", "笔记选项", "设置").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
+        compose.onNodeWithTag("应用顶部栏").assertDoesNotExist()
+        compose.onNodeWithContentDescription("悬浮阅读工具").assertIsDisplayed()
+        val sourcePage = compose.onNodeWithContentDescription("当前阅读页码").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.StateDescription].substringAfter("阅读分段 ").substringBefore(" / ").toInt()
+        assertNotebookToolSheet()
         shot("sample-note-floating-controls", system = true)
-        compose.onNodeWithContentDescription("阅读跳转").performClick()
-        compose.onNodeWithText("下一段").assertIsDisplayed().performClick()
-        compose.onNodeWithContentDescription("目录跳转").assertIsDisplayed()
+        compose.openNoteTool("阅读跳转")
+        compose.onNodeWithText("下一段").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithTag("阅读操作面板").assertDoesNotExist()
+        compose.onNodeWithContentDescription("悬浮阅读工具").assertIsDisplayed()
+        compose.onNodeWithContentDescription("当前阅读页码").assert(
+            SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription, "阅读分段 ${sourcePage + 1} / ${noteReadingSegments(note.content.repeat(8)).size} · 完整笔记已保留")
+        )
     }
     @Test fun narrowLargeTextKeepsToolsReachableAndReferenceCanExpandWithoutChangingStoredText() {
         val state = mutableStateOf(sample()); render(state, width = 320, scale = 1.5f, dark = true)
@@ -183,10 +203,14 @@ class ResponsiveReadingTest {
             compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记正文").fetchSemanticsNodes().isNotEmpty() }
             val noteBody = compose.onNodeWithTag("笔记正文").getUnclippedBoundsInRoot()
             assertTrue((noteBody.bottom - noteBody.top).value >= (screen.bottom - screen.top).value * 0.65f)
-            listOf("返回笔记列表", "目录跳转", "阅读跳转", "笔记选项", "设置").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed() }
+            compose.onNodeWithTag("应用顶部栏").assertDoesNotExist()
+            compose.onNodeWithContentDescription("悬浮阅读工具").assertIsDisplayed()
+            compose.onNodeWithTag("应用底部导航").assertDoesNotExist()
+            compose.onNodeWithTag("按屏翻页栏").assertDoesNotExist()
             shot("sample-note-landscape")
-            compose.onNodeWithContentDescription("笔记选项").performClick()
-            compose.onNodeWithText("编辑笔记").assertIsDisplayed()
+            assertNotebookToolSheet()
+            compose.openNoteTool("笔记选项")
+            compose.onNodeWithText("编辑笔记").performScrollTo().assertIsDisplayed()
         } finally {
             compose.activityRule.scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
         }

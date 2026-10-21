@@ -89,6 +89,8 @@ class MaterialPreviews(context: Context) {
             if (raw.bitmap != null && raw.imageId.isNotBlank()) raw.copy(bitmap = markup.render(raw.imageId, raw.bitmap)) else raw
         }) } catch (e: CancellationException) { throw e } catch (_: Exception) { VisualLoad(key, retry, null, "预览暂不可用") }
     }
+    val renderReady = LocalNoteRenderReady.current
+    LaunchedEffect(result) { if (result?.visual != null) renderReady?.invoke() }
     Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val current = result?.takeIf { it.key == key && it.attempt == retry }
