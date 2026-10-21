@@ -53,7 +53,7 @@ class ReaderExperienceTest {
             compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(note.title))
             compose.onNodeWithText(note.title).performClick()
             compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记正文").fetchSemanticsNodes().isNotEmpty() }
-            compose.waitUntil(5000) { nativeSnapshot { views -> views.any { it.layout != null && it.text.isNotBlank() } } }
+            compose.waitUntil(5000) { nativeSnapshot { views -> views.any { it.alpha >= .99f && it.layout != null && it.text.isNotBlank() } } }
             block(app, vm)
         } finally { compose.runOnIdle { store.clear() } }
     }
@@ -80,7 +80,7 @@ class ReaderExperienceTest {
     // A whole paragraph can exist in a TextView while its lines are below the
     // viewport. Count a marker only after its actual native line was visible.
     private fun lineVisible(view: NoteSelectableTextView, offset: Int): Boolean {
-        if (!view.isShown || !view.isAttachedToWindow) return false
+        if (!view.isShown || !view.isAttachedToWindow || view.alpha < .99f) return false
         val layout = view.layout ?: return false
         val visible = Rect()
         if (!view.getGlobalVisibleRect(visible) || !visible.intersect(readingViewport)) return false
