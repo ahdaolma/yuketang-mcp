@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import cn.studybridge.mobile.StudyModalBottomSheet as ModalBottomSheet
+import cn.studybridge.mobile.StudyDropdownMenu as DropdownMenu
 import cn.studybridge.mobile.FeedbackButton as Button
 import cn.studybridge.mobile.FeedbackOutlinedButton as OutlinedButton
 import cn.studybridge.mobile.FeedbackTextButton as TextButton
@@ -230,7 +231,7 @@ class MainActivity : ComponentActivity() {
                 val ordinal = searchNoteContent(text.take((target.offset - sourceOffset).coerceAtLeast(0)), target.query).size
                 var found = -target.query.length
                 repeat(ordinal + 1) { _ -> found = parsed.toString().indexOf(target.query, (found + target.query.length).coerceAtLeast(0), true) }
-                if (found >= 0) { val view = it; val offset = found; view.post { revealSearch?.invoke(view, offset) } }
+                if (found >= 0) { val view = it; val offset = found; view.post { revealSearch?.invoke(view, offset, target.revision) } }
             }
         }
     })
@@ -690,6 +691,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             Button(onClick = { vm.startChatGptLogin() }, enabled = !ui.locked, colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White), modifier = Modifier.fillMaxWidth()) { Text("Continue with ChatGPT") }
             if (ui.chatgptLoginActive) { LinearProgressIndicator(Modifier.fillMaxWidth()); TextButton(onClick = vm::cancelChatGptLogin) { Text("取消本次授权") } }
             if (ui.chatgptStage.isNotBlank()) Text(ui.chatgptStage, style = MaterialTheme.typography.bodySmall)
+            if (ui.data.chatgptAccounts.isNotEmpty() || ui.data.chatgptDraftClients.isNotEmpty()) Column(Modifier.fillMaxWidth().heightIn(max = expandedListHeight(240.dp)).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             ui.data.chatgptAccounts.forEach { account ->
                 HorizontalDivider()
                 Text(account.label, style = MaterialTheme.typography.titleSmall)
@@ -702,6 +704,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 if (account.connected && !account.planGranted) OutlinedButton(onClick = { vm.startChatGptLogin(accountId = account.id, forceConsent = true) }, enabled = !ui.locked) { Text("授权使用套餐") }
             }
             ui.data.chatgptDraftClients.forEach { id -> TextButton(onClick = { vm.startChatGptLogin(draftClientId = id) }, enabled = !ui.locked) { Text("继续未完成的授权 · ${id.takeLast(6)}") } }
+            }
             TextButton(onClick = { vm.openLink(CHATGPT_USAGE) }, enabled = !ui.chatgptLoginActive) { Text("管理 ChatGPT 用量") }
             Text("授权会打开本机系统浏览器，完成后点击返回雨课伴学。登录资料加密保存在本机。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -780,11 +783,14 @@ private fun preview(bytes: ByteArray): Bitmap? {
             }
             if (!usingChatGpt) TextButton(onClick = { manualModel = !manualModel }, enabled = !ui.locked) { Text(if (manualModel) "返回列表选择" else "手动填写模型 ID") }
             if (chooseModel && hasCatalog) ModalBottomSheet(onDismissRequest = { chooseModel = false }) {
-                Text("选择可用模型", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp))
+                Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("选择可用模型", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    IconButton(onClick = { chooseModel = false }) { Icon(Icons.Default.Close, "关闭模型列表") }
+                }
                 OutlinedTextField(modelQuery, { modelQuery = it }, label = { Text("搜索模型") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
                 val candidates = remember(ui.modelList, modelQuery, ui.modelNames) { ui.modelList.filter { it.contains(modelQuery, ignoreCase = true) || ui.modelNames[it]?.contains(modelQuery, ignoreCase = true) == true } }
                 if (candidates.isEmpty()) Text("没有匹配的模型", Modifier.padding(20.dp), style = MaterialTheme.typography.bodyMedium)
-                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp), contentPadding = PaddingValues(vertical = 12.dp)) { items(candidates, key = { it }) { id -> TextButton(onClick = { model = id; chooseModel = false; focus.clearFocus(); keyboard?.hide() }, modifier = Modifier.fillMaxWidth()) { Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { Text(ui.modelNames[id] ?: id); if (ui.modelNames[id]?.let { it != id } == true) Text(id, style = MaterialTheme.typography.labelSmall) } } } }
+                LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = expandedListHeight(420.dp)).testTag("模型选择列表"), contentPadding = PaddingValues(vertical = 12.dp)) { items(candidates, key = { it }) { id -> TextButton(onClick = { model = id; chooseModel = false; focus.clearFocus(); keyboard?.hide() }, modifier = Modifier.fillMaxWidth()) { Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { Text(ui.modelNames[id] ?: id, maxLines = 2, overflow = TextOverflow.Ellipsis); if (ui.modelNames[id]?.let { it != id } == true) Text(id, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) } } } }
             }
             Row(verticalAlignment = Alignment.CenterVertically) { Text("所选模型支持图片输入", Modifier.weight(1f)); Switch(images, { images = it }, enabled = !ui.locked) }
             Text("课件图片需要支持图片的模型。列表可见不等于已验证图片权限，实际以请求结果为准。", style = MaterialTheme.typography.bodySmall)

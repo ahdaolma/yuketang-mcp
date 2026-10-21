@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -19,7 +20,7 @@ import androidx.compose.ui.graphics.Color
 val LocalNoteSearchQuery = staticCompositionLocalOf { "" }
 data class NoteSearchTarget(val offset: Int, val query: String, val revision: Int)
 val LocalNoteSearchTarget = staticCompositionLocalOf<NoteSearchTarget?> { null }
-val LocalNoteSearchReveal = staticCompositionLocalOf<((android.widget.TextView, Int) -> Unit)?> { null }
+val LocalNoteSearchReveal = staticCompositionLocalOf<((android.widget.TextView, Int, Int) -> Unit)?> { null }
 fun searchHighlight(text: CharSequence, query: String): CharSequence {
     if (query.isBlank()) return text
     val result = SpannableStringBuilder(text)
@@ -58,10 +59,10 @@ fun searchNoteContent(content: String, query: String, segments: List<NoteReading
         value = withContext(Dispatchers.Default) { searchNoteContent(note.content, query) }
     }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("笔记内查找") }, text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.heightIn(max = expandedListHeight(360.dp)), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(query, { query = it.take(120) }, Modifier.fillMaxWidth(), label = { Text("查找完整正文") }, singleLine = true)
             Text(when { query.isBlank() -> "输入关键词，点击结果跳转到所在阅读分段。"; results == null -> "正在查找…"; results!!.isEmpty() -> "没有匹配的内容"; else -> "找到 ${results!!.size} 处${if (results!!.size == 100) "（最多显示 100 处）" else ""}" }, style = MaterialTheme.typography.bodySmall)
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 340.dp)) {
+            LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).testTag("查找结果列表")) {
                 items(results.orEmpty(), key = { it.offset }) { hit ->
                     FeedbackTextButton(onClick = { if (onHit == null) onSelect(hit.segment) else onHit(hit, query.trim()) }, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.fillMaxWidth()) { Text("第 ${hit.segment + 1} 段", fontWeight = FontWeight.SemiBold); Text(searchSnippet(hit.snippet, query.trim()), style = MaterialTheme.typography.bodySmall, maxLines = 3) }

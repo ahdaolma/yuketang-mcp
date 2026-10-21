@@ -8,6 +8,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.MoreHoriz
 import androidx.compose.material3.*
+import cn.studybridge.mobile.StudyDropdownMenu as DropdownMenu
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -90,7 +91,7 @@ private val notebookBackupExplanation = "备份只包含笔记、分类、标签
 
 @Composable private fun NotebookDialog(title: String, tag: String, onClose: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
     AlertDialog(onDismissRequest = onClose, title = { Text(title) }, text = {
-        Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()).testTag(tag), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+        Column(Modifier.fillMaxWidth().heightIn(max = expandedListHeight(360.dp)).verticalScroll(rememberScrollState()).testTag(tag), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
     }, confirmButton = { FeedbackTextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) { Text("关闭") } })
 }
 
@@ -104,7 +105,7 @@ private val notebookBackupExplanation = "备份只包含笔记、分类、标签
     val keyboard = LocalSoftwareKeyboardController.current
     fun finishInput() { focus.clearFocus(); keyboard?.hide() }
     AlertDialog(onDismissRequest = onClose, modifier = Modifier.imePadding(), title = { Text("标签与复习") }, text = {
-        Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()).testTag("笔记详情面板"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.fillMaxWidth().heightIn(max = expandedListHeight(360.dp)).verticalScroll(rememberScrollState()).testTag("笔记详情面板"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(note.title, style = MaterialTheme.typography.titleSmall)
             OutlinedTextField(tags, { tags = it.take(600) }, label = { Text("标签，用逗号分隔") }, supportingText = { Text("最多 12 个标签，每个最多 32 个字。") }, modifier = Modifier.fillMaxWidth(), enabled = editable)
             Text("复习状态", style = MaterialTheme.typography.titleSmall)

@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import cn.studybridge.mobile.FeedbackTextButton as TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
 @Composable fun SlidePageControls(slides: List<Slide>, selected: Int, onSelected: (Int) -> Unit) {
@@ -22,10 +23,10 @@ import androidx.compose.ui.unit.dp
 @Composable fun JumpDialog(title: String, labels: List<String>, onDismiss: () -> Unit, onSelect: (Int) -> Unit) {
     var query by remember { mutableStateOf("") }
     AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.heightIn(max = expandedListHeight(360.dp)), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(query, { query = it.take(120) }, label = { Text("输入序号或关键词") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             val choices = remember(labels, query) { labels.withIndex().filter { query.isBlank() || "${it.index + 1}" == query.trim() || it.value.contains(query.trim(), true) } }
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+            LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).testTag("跳转选择列表")) {
                 if (choices.isEmpty()) item { Text("没有匹配的内容") }
                 itemsIndexed(choices, key = { _, item -> item.index }) { _, item -> TextButton(onClick = { onSelect(item.index) }, modifier = Modifier.fillMaxWidth()) { Text("${item.index + 1}. ${item.value}", Modifier.fillMaxWidth(), maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) } }
             }

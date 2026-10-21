@@ -44,6 +44,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.collect
@@ -97,6 +98,9 @@ import kotlin.math.abs
     val selected = if (continuous && restored) (list.firstVisibleItemIndex - 1).coerceIn(segments.indices) else index.coerceIn(segments.indices)
     val readyPages = remember(note.id, hash, mode) { mutableStateMapOf<Int, Boolean>() }
     val renderReady = readyPages[selected] == true
+    var jumpGeneration by remember(note.id) { mutableIntStateOf(0) }
+    var settledJump by remember(note.id) { mutableIntStateOf(0) }
+    var jumpJob by remember(note.id) { mutableStateOf<Job?>(null) }
     val latestSelected by rememberUpdatedState(selected)
     val latestLabels by rememberUpdatedState(labels)
     val latestContinuous by rememberUpdatedState(continuous)
@@ -105,6 +109,7 @@ import kotlin.math.abs
         if (latestRestored) vm.readingMemory.remember(NoteReadingPosition(note.id, latestSelected, if (latestContinuous) (if (list.firstVisibleItemIndex == 0) 0 else list.firstVisibleItemScrollOffset) else scroll.value, latestLabels[latestSelected], hash))
     }
     LaunchedEffect(note.id, mode, hash) {
+        jumpJob?.cancel(); jumpGeneration++; settledJump = jumpGeneration
         restored = false
         val position = if (readyMode.isEmpty()) initial else vm.readingMemory.position(note.id)
         index = restoredNoteIndex(position, hash, labels)
@@ -137,7 +142,10 @@ import kotlin.math.abs
     val offsets = remember(note.id, hash) { mutableMapOf<Int, Int>() }
     fun goTo(segment: Int, offset: Int = 0) {
         val target = segment.coerceIn(segments.indices)
-        scope.launch {
+        val generation = ++jumpGeneration
+        jumpJob?.cancel()
+        jumpJob = scope.launch {
+            try {
             if (continuous) {
                 list.scrollToItem(target + 1, offset)
                 withTimeoutOrNull(1800) { snapshotFlow { readyPages[target] == true }.first { it } }
@@ -150,10 +158,11 @@ import kotlin.math.abs
                 if (offset > 0) withTimeoutOrNull(1800) { snapshotFlow { scroll.maxValue }.first { it >= offset } }
                 scroll.scrollTo(offset.coerceAtMost(scroll.maxValue))
             }
+            } finally { if (generation == jumpGeneration) settledJump = generation }
         }
     }
     fun turn(direction: Int) {
-        if (turning || !restored || !renderReady) return
+        if (turning || !restored || !renderReady || settledJump != jumpGeneration) return
         turning = true
         scope.launch {
             try {
@@ -179,8 +188,14 @@ import kotlin.math.abs
     SideEffect { reportProgress(progress) }
     DisposableEffect(reportProgress) { onDispose { reportProgress(null) } }
     val revealInset = with(density) { 24.dp.toPx() + if (continuous) MaterialTheme.typography.titleSmall.lineHeight.toPx() else 0f }
-    val reveal: (android.widget.TextView, Int) -> Unit = { view, offset -> scope.launch {
+    val reveal: (android.widget.TextView, Int, Int) -> Unit = { view, offset, revision ->
+        val generation = jumpGeneration
+        scope.launch {
+        // The segment's final placement owns the first jump. Exact hit reveal
+        // follows it, so the segment restore cannot reset the hit back to top.
+        snapshotFlow { settledJump == generation || jumpGeneration != generation }.first { it }
         withFrameNanos { }; withFrameNanos { }
+        if (generation != jumpGeneration || revision != searchRevision || !view.isAttachedToWindow) return@launch
         view.layout?.let { layout ->
             val position = IntArray(2); view.getLocationInWindow(position)
             val delta = position[1] + layout.getLineTop(layout.getLineForOffset(offset.coerceAtMost(view.text.length))) - bodyTop - revealInset

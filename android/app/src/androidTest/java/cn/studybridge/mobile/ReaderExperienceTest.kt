@@ -255,7 +255,7 @@ class ReaderExperienceTest {
             fun assertHit(index: Int) {
                 compose.waitUntil(5000) { compose.onAllNodesWithText("$query · ${index + 1}/3").fetchSemanticsNodes().isNotEmpty() }
                 compose.onNodeWithText("$query · ${index + 1}/3").assertIsDisplayed()
-                compose.waitUntil(5000) { nativeSnapshot { views -> views.any { view ->
+                try { compose.waitUntil(5000) { nativeSnapshot { views -> views.any { view ->
                     val text = view.text as? Spanned
                     val markerOffset = view.text.toString().indexOf(hits[index])
                     val wordOffset = if (markerOffset < 0) -1 else view.text.toString().indexOf(query, markerOffset)
@@ -263,7 +263,11 @@ class ReaderExperienceTest {
                         text.getSpans(wordOffset, wordOffset + query.length, BackgroundColorSpan::class.java).any { span ->
                             text.getSpanStart(span) == wordOffset && text.getSpanEnd(span) == wordOffset + query.length
                         }
-                } } }
+                } } } } catch (failure: Throwable) {
+                    advancedUiShot(compose.activity, "reader-search-failure-$index")
+                    android.util.Log.e("ReaderRegression", "search hit=$index " + nativeSnapshot { views -> views.map { "${it.width}x${it.height} layout=${it.layout?.width}x${it.layout?.height} text=${it.text.toString().take(24)}" } })
+                    throw failure
+                }
                 compose.onNodeWithContentDescription("当前阅读页码").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "阅读分段 ${index + 1} / 3 · 完整笔记已保留"))
             }
             assertHit(0)

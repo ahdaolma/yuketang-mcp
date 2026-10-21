@@ -39,10 +39,10 @@ fun removeNotePages(text: String, selected: Set<Int>): String {
     var selected by remember(note.id) { mutableStateOf(setOf<Int>()) }
     var confirming by remember(note.id) { mutableStateOf(false) }
     if (confirming) AlertDialog(onDismissRequest = { confirming = false }, title = { Text("确认删除所选内容？") }, text = {
-        Text("将删除“${note.title}”中的：\n${selected.sorted().joinToString("\n") { pages[it].title }}\n\n这些页的正文和图片引用会一起删除，其余内容保留。此操作无法撤销。", Modifier.heightIn(max = 300.dp).verticalScroll(rememberScrollState()))
+        Text("将删除“${note.title}”中的：\n${selected.sorted().joinToString("\n") { pages[it].title }}\n\n这些页的正文和图片引用会一起删除，其余内容保留。此操作无法撤销。", Modifier.heightIn(max = expandedListHeight(300.dp)).verticalScroll(rememberScrollState()))
     }, confirmButton = { FeedbackTextButton(onClick = { if (vm.deleteNotePages(note.id, snapshot, selected)) onDismiss() }, enabled = enabled && currentVersion && selected.isNotEmpty(), colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("确认删除所选页") } }, dismissButton = { FeedbackTextButton(onClick = { confirming = false }) { Text("返回选择") } })
     else AlertDialog(onDismissRequest = onDismiss, title = { Text("选择要删除的页") }, text = {
-        Column(Modifier.heightIn(max = 360.dp)) {
+        Column(Modifier.heightIn(max = expandedListHeight(360.dp))) {
             Text(if (currentVersion) "按课件页标题识别；没有页码的笔记按完整章节选择。" else "笔记已更新，请取消后重新选择页面。", style = MaterialTheme.typography.bodySmall)
             LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false)) {
                 itemsIndexed(pages) { index, page -> Row(Modifier.fillMaxWidth().clickable(enabled = enabled) { selected = if (index in selected) selected - index else selected + index }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {

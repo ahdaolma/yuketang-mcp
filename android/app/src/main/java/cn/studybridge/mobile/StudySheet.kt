@@ -3,6 +3,9 @@ package cn.studybridge.mobile
 import android.view.View
 import android.view.ViewTreeObserver
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -39,8 +42,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun StudyModalBottomSheet(onDismissRequest: () -> Unit, sheetState: SheetState = rememberModalBottomSheetState(), content: @Composable ColumnScope.() -> Unit) {
-    NativeModalBottomSheet(onDismissRequest = onDismissRequest, sheetState = sheetState) {
+@Composable fun StudyModalBottomSheet(onDismissRequest: () -> Unit, sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), content: @Composable ColumnScope.() -> Unit) {
+    NativeModalBottomSheet(onDismissRequest = onDismissRequest, sheetState = sheetState, dragHandle = null, modifier = Modifier.heightIn(max = expandedPanelHeight()).testTag("展开面板容器")) {
         SheetWindowChrome()
         content()
     }

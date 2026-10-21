@@ -7,6 +7,8 @@ import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.LineBackgroundSpan
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -114,7 +116,7 @@ class StudyMarkerSpan(val kind: StudyMark, private val density: Float, private v
 
 @Composable fun StudyMarkLegend(onDismiss: () -> Unit) {
     AlertDialog(onDismissRequest = onDismiss, title = { Text("阅读标记") }, text = {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.heightIn(max = expandedListHeight()).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             StudyMark.entries.forEach { mark -> Markdown("${mark.marker}${mark.label}${mark.marker}") }
             Text("记号只标在关键短句上。除非资料明确给出考纲或老师强调，否则代表 AI 建议的学习顺序，不代表考试范围。", style = MaterialTheme.typography.bodySmall)
         }

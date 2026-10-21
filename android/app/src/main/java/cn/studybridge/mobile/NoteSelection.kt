@@ -127,7 +127,7 @@ fun renderPersonalAnnotations(parsed: Spanned, source: String, sourceStart: Int?
     var text by remember(item?.id) { mutableStateOf(item?.comment.orEmpty()) }
     val ui by vm.ui.collectAsState()
     AlertDialog(onDismissRequest = onDismiss, title = { Text(if (item == null) "我的标记与备注" else "编辑备注") }, text = {
-        Column(Modifier.fillMaxWidth().heightIn(max = 400.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxWidth().heightIn(max = expandedListHeight(400.dp)).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (item != null) {
                 Text(item.quote, style = MaterialTheme.typography.bodyMedium)
                 if (!item.isAttached(note.content)) Text("原文已变化，位置待核对。备注仍完整保留。", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)

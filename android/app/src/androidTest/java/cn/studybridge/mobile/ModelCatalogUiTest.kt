@@ -20,7 +20,7 @@ class ModelCatalogUiTest {
     @Test fun choosesFromActualCatalogAndCannotReuseItAfterEditingTheDestination() {
         val p = Provider(id = "catalog-fixture", name = "测试服务", baseUrl = "https://provider.example/v1", key = "fixture-key")
         val state = mutableStateOf(UiState(ready = true, tab = 3, settingsPage = "models", data = Saved(providers = listOf(p), selectedProvider = p.id),
-            modelListFor = p.id, modelListRequest = modelCatalogKey(p), modelList = listOf("text-model", "vision-model"), modelNames = mapOf("text-model" to "文字讲解", "vision-model" to "视觉讲解")))
+            modelListFor = p.id, modelListRequest = modelCatalogKey(p), modelList = listOf("text-model", "vision-model") + (1..80).map { "extra-model-$it" }, modelNames = mapOf("text-model" to "文字讲解", "vision-model" to "视觉讲解")))
         lateinit var vm: StudyViewModel
         // The displayed fixture and the real ViewModel must use the same saved
         // configuration; another test's live class/recovery state is unrelated.
@@ -41,6 +41,11 @@ class ModelCatalogUiTest {
         val beforeDialog = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
         compose.onNodeWithText("选择模型").performClick()
         compose.onNodeWithText("视觉讲解").assertIsDisplayed()
+        val panel = compose.onNodeWithTag("展开面板容器").getUnclippedBoundsInRoot()
+        assertTrue((panel.bottom - panel.top).value <= minOf(440f, compose.activity.resources.configuration.screenHeightDp * .60f) + 2f)
+        compose.onNodeWithTag("模型选择列表").performScrollToIndex(81)
+        compose.onNodeWithText("extra-model-80").assertIsDisplayed()
+        compose.onNodeWithContentDescription("关闭模型列表").assertIsDisplayed()
         compose.waitUntil(5000) { focusedAppStatusBarsHidden() }
         val bitmap = dialogScreenshot(compose, beforeDialog)
         try {
@@ -52,7 +57,7 @@ class ModelCatalogUiTest {
         } finally { bitmap.recycle() }
         compose.onNodeWithText("搜索模型").performTextInput("vision")
         compose.onNodeWithText("文字讲解").assertDoesNotExist()
-        compose.onNodeWithText("视觉讲解").assertIsDisplayed().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
+        compose.onNodeWithText("视觉讲解").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithText("vision-model").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("保存并使用").performScrollTo().assertIsEnabled().performClick()
         compose.waitUntil(5000) { vm.ui.value.data.provider().model == "vision-model" }

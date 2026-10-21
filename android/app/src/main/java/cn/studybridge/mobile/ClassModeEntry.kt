@@ -74,7 +74,9 @@ fun showClassControl(ui: UiState, serviceRunning: Boolean) = serviceRunning && u
                 }
             } else {
                 FeedbackFilledTonalButton(colors = classButtonColors, onClick = vm::discoverClasses, enabled = !ui.locked && ui.data.session.isNotBlank()) { Icon(Icons.Outlined.PlayCircleOutline, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (ui.data.session.isBlank()) "登录后开启上课模式" else "查找正在上的课") }
-                ui.liveLessons.forEach { lesson -> FeedbackFilledTonalButton(colors = classButtonColors, onClick = { vm.startClass(lesson); onClose() }, enabled = !ui.locked, modifier = Modifier.fillMaxWidth()) { Text("进入：${lesson.title}") } }
+                if (ui.liveLessons.isNotEmpty()) Column(Modifier.fillMaxWidth().heightIn(max = expandedListHeight(240.dp)).verticalScroll(rememberScrollState()).testTag("课堂选择列表")) {
+                    ui.liveLessons.forEach { lesson -> FeedbackFilledTonalButton(colors = classButtonColors, onClick = { vm.startClass(lesson); onClose() }, enabled = !ui.locked, modifier = Modifier.fillMaxWidth()) { Text("进入：${lesson.title}", maxLines = 2, overflow = TextOverflow.Ellipsis) } }
+                }
             }
             Text("进入会登记入课 · 离开 App 后继续整理", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.*
 import cn.studybridge.mobile.StudyModalBottomSheet as ModalBottomSheet
 import cn.studybridge.mobile.FeedbackOutlinedButton as OutlinedButton
@@ -36,10 +37,14 @@ import androidx.compose.ui.unit.dp
     if (!ui.materialsOpen) return
     BackHandler { vm.closeMaterials() }
     ModalBottomSheet(onDismissRequest = vm::closeMaterials, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.heightIn(max = 720.dp)) {
+        Column(Modifier.fillMaxWidth().heightIn(max = expandedPanelHeight())) {
+        Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("学习资料", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+            if (ui.materialPane != "home") TextButton(onClick = { vm.materialPane("home") }, enabled = !ui.locked) { Text("返回资料") }
+            IconButton(onClick = vm::closeMaterials) { Icon(Icons.Outlined.Close, "关闭学习资料") }
+        }
         if (ui.materialPane in listOf("pages", "rain")) SlidePageControls(ui.slides, focusedPage) { focusedPage = it }
-        LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth().heightIn(max = 680.dp), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("学习资料", style = MaterialTheme.typography.titleLarge); if (ui.materialPane != "home") TextButton(onClick = { vm.materialPane("home") }, enabled = !ui.locked) { Text("返回资料") } } }
+        LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth().heightIn(max = expandedListHeight(680.dp)), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (ui.busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()); Row { Text(ui.operation, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); TextButton(onClick = vm::stop) { Text("停止") } } }
             if (ui.notice.isNotBlank()) item { Text(ui.notice, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
             if (ui.materialPane == "home") {

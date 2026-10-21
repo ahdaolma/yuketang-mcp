@@ -53,7 +53,7 @@ fun Saved.folderName(note: Note) = noteFolders.find { it.id == note.folderId }?.
         FeedbackIconButton(onClick = { manager = true }) { Icon(Icons.Outlined.CreateNewFolder, "管理笔记分类") }
     }
     if (manager && !editing && deleting == null) AlertDialog(onDismissRequest = { manager = false }, title = { Text("笔记分类") }, text = {
-        Column(Modifier.fillMaxWidth().heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+        Column(Modifier.fillMaxWidth().heightIn(max = expandedListHeight(320.dp)).verticalScroll(rememberScrollState())) {
             if (ui.data.noteFolders.isEmpty()) Text("按课程、主题或复习计划建立分类。长按笔记可移动分类。", style = MaterialTheme.typography.bodyMedium)
             ui.data.noteFolders.forEach { folder -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(folder.name, Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -98,7 +98,7 @@ fun Saved.folderName(note: Note) = noteFolders.find { it.id == note.folderId }?.
     val removable = !ui.locked && ui.data.noteWritable(note.id)
     when (action) {
         "options" -> AlertDialog(onDismissRequest = onDismiss, title = { Text(note.title, maxLines = 2, overflow = TextOverflow.Ellipsis) }, text = {
-            Column(Modifier.fillMaxWidth().heightIn(max = 340.dp).verticalScroll(rememberScrollState())) {
+            Column(Modifier.fillMaxWidth().heightIn(max = expandedListHeight(340.dp)).verticalScroll(rememberScrollState())) {
                 FeedbackDropdownMenuItem(text = { Text("编辑笔记") }, enabled = writable, onClick = { vm.noteReader.open(note); vm.noteReader.beginEditing(note); onDismiss() })
                 FeedbackDropdownMenuItem(text = { Text("重命名笔记") }, enabled = writable, onClick = { action = "rename" })
                 FeedbackDropdownMenuItem(text = { Text(if (note.pinned) "取消置顶" else "置顶笔记") }, enabled = !ui.locked, onClick = { vm.toggleNotePin(note.id); onDismiss() })
@@ -113,7 +113,7 @@ fun Saved.folderName(note: Note) = noteFolders.find { it.id == note.folderId }?.
             OutlinedTextField(title, { title = it.take(120) }, label = { Text("笔记标题") }, singleLine = true)
         }, confirmButton = { FeedbackTextButton(onClick = { if (vm.renameNote(note.id, title)) onDismiss() }, enabled = writable && title.isNotBlank()) { Text("保存标题") } }, dismissButton = { FeedbackTextButton(onClick = onDismiss) { Text("取消") } })
         "move" -> AlertDialog(onDismissRequest = onDismiss, title = { Text("移动到分类") }, text = {
-            Column(Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())) {
+            Column(Modifier.heightIn(max = expandedListHeight(320.dp)).verticalScroll(rememberScrollState())) {
                 Text("当前：${ui.data.folderName(note)}", style = MaterialTheme.typography.bodySmall)
                 FeedbackDropdownMenuItem(text = { Text("未分类") }, enabled = !ui.locked, onClick = { if (vm.moveNote(note.id, "")) onDismiss() })
                 ui.data.noteFolders.forEach { folder -> FeedbackDropdownMenuItem(text = { Text(folder.name) }, enabled = !ui.locked, onClick = { if (vm.moveNote(note.id, folder.id)) onDismiss() }) }
