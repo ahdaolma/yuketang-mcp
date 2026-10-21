@@ -110,7 +110,7 @@ class ControlFeedbackTest {
             compose.onNodeWithText("子操作").performTouchInput { down(center) }
             compose.mainClock.advanceTimeBy(180)
             val held = compose.onNodeWithTag("父卡").getUnclippedBoundsInRoot()
-            assertEquals("Only the actual pressed control may scale", before.width.value, held.width.value, 0.1f)
+            assertEquals("Only the actual pressed control may scale", (before.right - before.left).value, (held.right - held.left).value, 0.1f)
             compose.onNodeWithText("子操作").performTouchInput { up() }
         } finally { compose.mainClock.autoAdvance = true }
         compose.runOnIdle { assertEquals(0, parentClicks.get()); assertEquals(1, childClicks.get()) }
