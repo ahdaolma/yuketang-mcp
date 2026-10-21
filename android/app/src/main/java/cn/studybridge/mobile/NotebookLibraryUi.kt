@@ -13,6 +13,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -98,19 +100,22 @@ private val notebookBackupExplanation = "备份只包含笔记、分类、标签
     var links by rememberSaveable(note.id) { mutableStateOf(note.relatedNoteIds) }
     var query by rememberSaveable(note.id) { mutableStateOf("") }
     val editable = ui.noteEditable(note.id)
-    AlertDialog(onDismissRequest = onClose, title = { Text("标签与复习") }, text = {
+    val focus = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    fun finishInput() { focus.clearFocus(); keyboard?.hide() }
+    AlertDialog(onDismissRequest = onClose, modifier = Modifier.imePadding(), title = { Text("标签与复习") }, text = {
         Column(Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()).testTag("笔记详情面板"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(note.title, style = MaterialTheme.typography.titleSmall)
             OutlinedTextField(tags, { tags = it.take(600) }, label = { Text("标签，用逗号分隔") }, supportingText = { Text("最多 12 个标签，每个最多 32 个字。") }, modifier = Modifier.fillMaxWidth(), enabled = editable)
             Text("复习状态", style = MaterialTheme.typography.titleSmall)
-            NOTE_REVIEW_STATES.forEach { (id, label) -> NotebookChoice(label, review == id, editable) { review = id } }
+            NOTE_REVIEW_STATES.forEach { (id, label) -> NotebookChoice(label, review == id, editable) { finishInput(); review = id } }
             HorizontalDivider()
             Text("关联笔记", style = MaterialTheme.typography.titleSmall)
             Text("选中的笔记会互相显示关联，正文与草稿保持独立。", style = MaterialTheme.typography.bodySmall)
             OutlinedTextField(query, { query = it.take(120) }, label = { Text("查找关联笔记") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             val candidates = ui.data.notes.filter { it.id != note.id && (query.isBlank() || it.title.contains(query, true)) }
             candidates.take(100).forEach { target ->
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("关联选项 ${target.id}").toggleable(target.id in links, enabled = editable, role = Role.Checkbox, onValueChange = { checked -> links = if (checked) (links + target.id).distinct().take(100) else links - target.id }), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("关联选项 ${target.id}").toggleable(target.id in links, enabled = editable, role = Role.Checkbox, onValueChange = { checked -> finishInput(); links = if (checked) (links + target.id).distinct().take(100) else links - target.id }), verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(target.id in links, onCheckedChange = null, enabled = editable)
                     Text(target.title, Modifier.weight(1f).padding(start = 8.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
