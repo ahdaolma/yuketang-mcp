@@ -82,6 +82,7 @@ class ReaderExperienceTest {
     private fun lineVisible(view: NoteSelectableTextView, offset: Int): Boolean {
         if (!view.isShown || !view.isAttachedToWindow || view.alpha < .99f) return false
         val layout = view.layout ?: return false
+        if (layout.width != view.width - view.compoundPaddingLeft - view.compoundPaddingRight) return false
         val visible = Rect()
         if (!view.getGlobalVisibleRect(visible) || !visible.intersect(readingViewport)) return false
         val location = IntArray(2); view.getLocationOnScreen(location)
