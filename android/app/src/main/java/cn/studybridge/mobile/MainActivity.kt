@@ -214,8 +214,11 @@ class MainActivity : ComponentActivity() {
         val parsed = decorated
         // Lazy lists must reserve text height while formatting runs. An empty
         // native view can otherwise let a gesture skip an unloaded source page.
-        if (parsed == null && it.tag != text) { it.text = text; it.tag = text }
-        it.alpha = if (parsed == null) 0f else 1f
+        if (parsed == null && (it.tag == null || it.tag is String)) {
+            if (it.tag != text) { it.text = text; it.tag = text }
+            it.alpha = 0f
+        }
+        if (parsed != null) it.alpha = 1f
         if (parsed != null && it.tag !== parsed) { renderer.setParsedMarkdown(it, parsed); it.tag = parsed }
         if (parsed != null) it.post { renderReady?.invoke() }
         val target = searchTarget
