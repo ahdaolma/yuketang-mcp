@@ -93,6 +93,7 @@ import io.noties.markwon.core.MarkwonTheme
 import androidx.compose.ui.platform.LocalDensity
 import io.noties.markwon.ext.tables.TablePlugin
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.collect
@@ -604,12 +605,16 @@ private fun preview(bytes: ByteArray): Bitmap? {
         onDispose { if (independentScroll && restored) latestPositionCallback(NoteReadingPosition(note.id, latestSelection, scroll.value, latestLabels[latestSelection], hash)) }
     }
     val readingLifecycle = LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(readingLifecycle, note.id, hash, restored) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_STOP && independentScroll && restored) latestPositionCallback(NoteReadingPosition(note.id, latestSelection, scroll.value, latestLabels[latestSelection], hash))
+    LaunchedEffect(readingLifecycle, note.id, hash, restored) {
+        // LifecycleRegistry requires registration and removal on Android's main
+        // thread, including when a test frame resumes from a background snapshot.
+        withContext(Dispatchers.Main.immediate) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_STOP && independentScroll && restored) latestPositionCallback(NoteReadingPosition(note.id, latestSelection, scroll.value, latestLabels[latestSelection], hash))
+            }
+            readingLifecycle.addObserver(observer)
+            try { awaitCancellation() } finally { readingLifecycle.removeObserver(observer) }
         }
-        readingLifecycle.addObserver(observer)
-        onDispose { readingLifecycle.removeObserver(observer) }
     }
     if (searching) NoteSearchDialog(note, { searching = false }) { index = it; searching = false; scope.launch { scroll.scrollTo(0) } }
     if (jump) JumpDialog("笔记目录 / 阅读分段", labels, { jump = false }) { index = it; jump = false }
