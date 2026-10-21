@@ -6,14 +6,8 @@ import android.graphics.BitmapFactory
 import android.os.Build
 import android.app.Activity
 import android.view.WindowManager
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.font.FontWeight
 import android.os.Bundle
@@ -65,6 +59,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.stateDescription
@@ -147,6 +143,7 @@ class MainActivity : ComponentActivity() {
     }
     val controlFeedback = remember(vm, unavailable) { ControlFeedback(vm::notice, unavailable) }
     CompositionLocalProvider(LocalControlFeedback provides controlFeedback) {
+    ClassManagerHost(ui, vm) {
     StudyFrame(ui, onTab = { target -> if (target == 3) previousTab = ui.tab; vm.tab(target) }, onBack = { if (ui.tab == 2) vm.noteReader.closeRequested = true else if (ui.tab == 3 && ui.settingsPage.isNotEmpty()) vm.settingsPage("") else vm.tab(previousTab) }, onStop = vm::stop, snackbar = snackbar, noteOpen = ui.tab == 2 && ui.data.notes.any { it.id == vm.noteReader.id }, onClassToggle = { if (ui.classUi.paused) vm.resumeClass() else vm.pauseClass() }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             if (ui.storageError.isNotBlank()) Text(ui.storageError, Modifier.fillMaxWidth().padding(16.dp), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
@@ -157,19 +154,17 @@ class MainActivity : ComponentActivity() {
     }
     LearningMaterialsHost(ui, vm)
     }
+    }
 }
 
 @Composable fun StudyPageContent(ui: UiState, vm: StudyViewModel) {
-    Box(Modifier.fillMaxSize()) {
-        AnimatedContent(targetState = ui.tab, modifier = Modifier.fillMaxSize(), transitionSpec = {
-            val direction = if (targetState > initialState) 1 else -1
-            (slideInHorizontally(tween(240, easing = FastOutSlowInEasing)) { direction * it / 18 } + fadeIn(tween(180))) togetherWith
-                (slideOutHorizontally(tween(220, easing = FastOutSlowInEasing)) { -direction * it / 24 } + fadeOut(tween(130)))
-        }, label = "study-page-slide") { page ->
-            if (page >= 0) Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                val screen = ui.copy(tab = page)
-                when (page) { 0 -> ChatScreen(screen, vm); 1 -> RainScreen(screen, vm); 2 -> NotesScreen(screen, vm); else -> ModelScreen(screen, vm) }
-            }
+    // Keep a single live page. Retaining the outgoing page while StudyFrame
+    // already uses the destination's chrome causes overlap and stale controls.
+    val opacity = remember(ui.tab) { Animatable(0f) }
+    LaunchedEffect(opacity) { opacity.animateTo(1f, tween(160)) }
+    Box(Modifier.fillMaxSize().clipToBounds().graphicsLayer { alpha = opacity.value }) {
+        key(ui.tab) {
+            when (ui.tab) { 0 -> ChatScreen(ui, vm); 1 -> RainScreen(ui, vm); 2 -> NotesScreen(ui, vm); else -> ModelScreen(ui, vm) }
         }
     }
 }
@@ -250,6 +245,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
     ReadingChatLayout(keyboardBeside, Modifier.fillMaxSize().padding(horizontal = 14.dp), toolbar = {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("学习工具栏"), verticalAlignment = Alignment.CenterVertically) {
             Box { IconButton(onClick = { history = true }) { Icon(Icons.Outlined.Forum, "会话") }; DropdownMenu(expanded = history, onDismissRequest = { history = false }) {
+                ClassManagerMenuItem { history = false }
                 ui.data.conversations.forEach { c -> DropdownMenuItem(text = { Text(c.title) }, onClick = { vm.selectChat(c.id); history = false }, trailingIcon = { IconButton(onClick = { vm.deleteChat(c.id); history = false }, enabled = !ui.locked) { Icon(Icons.Default.DeleteOutline, "删除对话") } }) }
             } }
             MaterialsButton(ui, vm)
@@ -351,7 +347,6 @@ private fun preview(bytes: ByteArray): Bitmap? {
             }
         }
         if (ui.data.session.isNotBlank()) {
-            item { ClassModePanel(ui, vm) }
             item { Row(verticalAlignment = Alignment.CenterVertically) { Text(if (ui.course == null) "我的课程" else ui.course.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f)); if (ui.course != null) TextButton(onClick = vm::allCourses, enabled = !ui.locked) { Text("返回课程") } else TextButton(onClick = vm::loadCourses, enabled = !ui.locked && !ui.loginActive) { Text("刷新") } } }
             if (ui.courses.isEmpty() && ui.course == null) item { StudyEmpty(Icons.Outlined.MenuBook, "还没有读取课程", "点击右上方刷新，读取你已加入的课程。") }
             if (ui.course == null) itemsIndexed(ui.courses, key = { _, it -> it.id }) { index, c ->
@@ -398,36 +393,6 @@ private fun preview(bytes: ByteArray): Bitmap? {
             item { TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "收起高级入口" else "高级：按课件编号读取") }; if (advanced) { OutlinedTextField(manualId, { if (it.length <= 24 && it.all(Char::isDigit)) manualId = it }, label = { Text("课件编号 presentation_id") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth()); TextButton(onClick = { vm.loadSlides(manualId) }, enabled = !ui.locked && manualId.isNotBlank()) { Text("读取课件") } } }
         }
     }
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable fun ClassModePanel(ui: UiState, vm: StudyViewModel) {
-    val classButtonColors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary)
-    val run = ui.data.classRun
-    val resumable = run != null && (!run.ended || run.pending.isNotEmpty())
-    Surface(color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer, shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Icon(Icons.Outlined.AutoStories, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                Text("上课模式", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                Surface(color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.65f), contentColor = MaterialTheme.colorScheme.onPrimaryContainer, shape = RoundedCornerShape(6.dp)) { Text(when { ui.classUi.running && !ui.classUi.paused -> if (run?.ended == true) "整理中" else if (ui.classUi.connected) "跟随中" else "连接中"; resumable -> "已暂停"; else -> "未开始" }, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium) }
-            }
-            Text(if (resumable) run!!.lesson.title else "老师翻到新一页，笔记就跟着补充。", style = if (resumable) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
-            if (resumable) {
-                Text("已整理 ${run!!.completed.size} 页 · 待处理 ${run.pending.size} 页", style = MaterialTheme.typography.labelLarge)
-                Text(ui.classUi.status.ifBlank { "本节记录已保留，点击继续恢复。" }, style = MaterialTheme.typography.bodySmall)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalButton(colors = classButtonColors, onClick = { if (ui.classUi.running && !ui.classUi.paused) vm.pauseClass() else vm.resumeClass() }, enabled = !ui.busy && !ui.chatgptLoginActive) { Text(if (ui.classUi.running && !ui.classUi.paused) "暂停" else "继续") }
-                    TextButton(onClick = { vm.tab(2) }) { Text("查看笔记") }
-                    TextButton(onClick = vm::endClass, colors = ButtonDefaults.textButtonColors(), enabled = !ui.busy) { Text("结束") }
-                }
-            } else {
-                FilledTonalButton(colors = classButtonColors, onClick = vm::discoverClasses, enabled = !ui.locked && ui.data.session.isNotBlank()) { Icon(Icons.Outlined.PlayCircleOutline, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(if (ui.data.session.isBlank()) "登录后开启上课模式" else "查找正在上的课") }
-                ui.liveLessons.forEach { lesson -> FilledTonalButton(colors = classButtonColors, onClick = { vm.startClass(lesson) }, enabled = !ui.locked, modifier = Modifier.fillMaxWidth()) { Text("进入：${lesson.title}") } }
-            }
-            Text("进入会登记入课 · 保持 App 前台", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
     }
 }
 
@@ -486,6 +451,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             Box {
                 IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreHoriz, "笔记选项", Modifier.size(22.dp)) }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    ClassManagerMenuItem { menu = false }
                     DropdownMenuItem(text = { Text(if (note.pinned) "取消置顶" else "置顶笔记") }, enabled = !ui.locked, onClick = { menu = false; vm.toggleNotePin(note.id) })
                     DropdownMenuItem(text = { Text("重命名笔记") }, enabled = writable, onClick = { menu = false; titleDraft = note.title; renaming = true })
                     DropdownMenuItem(text = { Text("移动到分类") }, enabled = !ui.locked, onClick = { menu = false; initialListAction = "move"; actionNoteId = note.id })
@@ -541,7 +507,6 @@ private fun preview(bytes: ByteArray): Bitmap? {
         item { NoteFolderBar(ui, vm, selectedFolder) { selectedFolder = it } }
         if (selectedFolder != null && query.isBlank() && visibleNotes.isEmpty() && ui.data.notes.isNotEmpty()) item { StudyEmpty(Icons.Outlined.FolderOpen, "这个分类还没有笔记", "长按笔记选择移动分类，或在当前分类中新建笔记。") }
         if (query.isNotBlank() && visibleNotes.isEmpty()) item { StudyEmpty(Icons.Outlined.Search, "没有找到相关笔记", "试试正文中的关键词或课件名称。") }
-        if (ui.classUi.running || ui.data.classRun?.let { !it.ended || it.pending.isNotEmpty() } == true) item { ClassModePanel(ui, vm) }
         if (ui.noteDraft.isNotBlank()) item { StudyPanel { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("正在整理", style = MaterialTheme.typography.titleSmall); Text(ui.noteDraft.takeLast(1600), maxLines = 8, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } } }
         if (ui.data.notes.isEmpty() && query.isBlank()) item { StudyEmpty(Icons.Outlined.AutoStories, "还没有笔记", "新建自己的笔记，或从学习页保存回答，随时回看、编辑或导出。") { Spacer(Modifier.height(4.dp)); OutlinedButton(onClick = { vm.tab(0) }) { Text("去学习") } } }
         items(visibleNotes, key = { it.id }) { n -> NoteListCard(n, onOpen = { reader.open(n); details = false }, onActions = { initialListAction = "options"; actionNoteId = n.id }) {

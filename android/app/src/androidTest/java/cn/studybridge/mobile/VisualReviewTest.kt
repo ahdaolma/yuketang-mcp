@@ -38,10 +38,12 @@ class VisualReviewTest {
             CompositionLocalProvider(LocalDensity provides Density(density.density, scale)) {
                 StudyTheme(dark.value) {
                     Box(if (width == null) Modifier.fillMaxSize() else Modifier.width(width.dp).fillMaxHeight()) {
+                    ClassManagerHost(state.value, vm) {
                     StudyFrame(state.value, onTab = { state.value = state.value.copy(tab = it) }, onBack = { if (state.value.tab == 2) vm.noteReader.closeRequested = true else state.value = state.value.copy(tab = 2) }, onStop = {}, noteOpen = state.value.tab == 2 && state.value.data.notes.any { it.id == vm.noteReader.id }) { padding ->
                         Box(Modifier.fillMaxSize().padding(padding).imePadding()) {
                             when (state.value.tab) { 1 -> RainScreen(state.value, vm); 2 -> NotesScreen(state.value, vm); else -> ModelScreen(state.value, vm) }
                         }
+                    }
                     }
                     }
                 }
@@ -146,10 +148,15 @@ class VisualReviewTest {
         val run = ClassRun(LiveLesson("7", courseTitle, "1"), providerId = "fixture", completed = listOf("1:1", "1:2"), pending = listOf(LivePage("1", 3)))
         val state = mutableStateOf(base.copy(tab = 2, data = base.data.copy(classRun = run), classUi = ClassUi(running = true, paused = true, status = "已暂停，完成的讲解已保存，回到学习页后可继续。")))
         render(state, scale = 1.5f)
-        compose.onNodeWithText("继续").assertIsDisplayed()
-        compose.onNodeWithText("结束").assertIsDisplayed(); shot("sample-class-large-text")
+        compose.onNodeWithTag("上课控制面板").assertDoesNotExist()
+        compose.onNodeWithContentDescription("上课管理").performClick()
+        compose.onNodeWithText("继续", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("结束", useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("上课控制面板").captureToImage()
+        advancedUiShot(compose.activity, "sample-class-large-text")
         compose.runOnIdle { state.value = state.value.copy(classUi = ClassUi(running = true, paused = false, status = "正在重新连接课堂…")) }
-        compose.onNodeWithText("连接中").assertIsDisplayed()
+        compose.onNodeWithText("连接中").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("关闭上课管理").performClick()
         compose.runOnIdle { state.value = base.copy(tab = 3) }
         compose.onNodeWithText("模型与账号").assertIsDisplayed(); shot("sample-settings-large-text")
         compose.runOnIdle { state.value = state.value.copy(settingsPage = "learning") }

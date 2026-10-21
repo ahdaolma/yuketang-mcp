@@ -124,7 +124,7 @@ import androidx.compose.ui.unit.dp
             modifier = Modifier.testTag("应用顶部栏"), expandedHeight = 56.dp, windowInsets = WindowInsets(0, 0, 0, 0),
             title = { Text(if (ui.tab == 3) settingsPageTitle(ui.settingsPage) else labels.getOrElse(ui.tab) { "学习" }, style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp), maxLines = 1) },
             navigationIcon = { if (ui.tab == 3 || noteOpen) FeedbackIconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, if (noteOpen) "返回笔记列表" else if (ui.tab == 3 && ui.settingsPage.isNotEmpty()) "返回设置" else "返回学习", Modifier.size(22.dp)) } },
-            actions = { if (ui.busy) FeedbackTextButton(onClick = onStop) { Text("停止") }; if (ui.tab != 3) FeedbackIconButton(onClick = { onTab(3) }) { Icon(Icons.Outlined.Settings, "设置", Modifier.size(22.dp)) } },
+            actions = { if (ui.busy) FeedbackTextButton(onClick = onStop) { Text("停止") }; ClassManagerButton(); if (ui.tab != 3) FeedbackIconButton(onClick = { onTab(3) }) { Icon(Icons.Outlined.Settings, "设置", Modifier.size(22.dp)) } },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
         ) } },
         bottomBar = { if (ui.tab != 3 && !wide) Column {
@@ -168,7 +168,7 @@ import androidx.compose.ui.unit.dp
             Box(Modifier.weight(1f).fillMaxHeight()) { content(PaddingValues(0.dp)) }
         } else content(padding)
     }
-    if (ui.classUi.running && ui.data.classRun != null) ClassFloatingControl(ui.classUi.paused, ui.data.classRun.noteId, onClassToggle)
+    if (ui.hasClassSession() && ui.data.classRun != null) ClassFloatingControl(!ui.classUi.running || ui.classUi.paused, ui.data.classRun.noteId, onClassToggle)
     }
     }
 }
