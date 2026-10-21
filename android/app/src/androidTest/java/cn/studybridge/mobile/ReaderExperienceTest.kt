@@ -128,7 +128,10 @@ class ReaderExperienceTest {
         val seen = mutableSetOf<String>()
         for (attempt in 0 until 45) {
             seen += visibleMarkers(markers)
-            if (attempt % 5 == 0) android.util.Log.i("ReaderRegression", "continuous step=$attempt seen=${seen.size} axis=" + compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value())
+            if (attempt % 5 == 0) {
+                val nativeLayouts = nativeSnapshot { views -> views.filter { it.isShown }.map { "view=${it.width}x${it.height}, textLayout=${it.layout?.width}x${it.layout?.height}, alpha=${it.alpha}" } }
+                android.util.Log.i("ReaderRegression", "continuous step=$attempt seen=${seen.size} axis=" + compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value() + " layouts=$nativeLayouts")
+            }
             if (seen.size == markers.size) break
             compose.onNodeWithTag("笔记正文").performTouchInput {
                 down(Offset(center.x, height * .8f))

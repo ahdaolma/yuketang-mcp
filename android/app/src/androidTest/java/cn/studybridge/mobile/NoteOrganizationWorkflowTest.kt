@@ -109,7 +109,8 @@ class NoteOrganizationWorkflowTest {
             compose.onNodeWithContentDescription("笔记操作 遗传学第一讲").performClick()
             compose.onNodeWithText("删除笔记…").performClick()
             compose.onNodeWithText("删除笔记").performClick()
-            compose.waitUntil(5000) { vault.load().notes == listOf(other) && vault.load().noteFolders.isEmpty() }
+            compose.runOnIdle { assertEquals("Confirmed deletion must update the notebook immediately", listOf(other), vm.ui.value.data.notes) }
+            compose.waitUntil(10000) { val persisted = vault.load(); persisted.notes == listOf(other) && persisted.noteFolders.isEmpty() }
             compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记卡片 organize").fetchSemanticsNodes().isEmpty() }
             compose.onNodeWithTag("笔记卡片 untouched").assertIsDisplayed()
         } finally { compose.runOnIdle { store.clear() } }

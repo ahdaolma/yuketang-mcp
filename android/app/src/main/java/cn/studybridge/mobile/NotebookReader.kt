@@ -219,7 +219,10 @@ import kotlin.math.abs
                 FeedbackIconButton(onClick = { selectHit(hits[(hitIndex + 1).coerceAtMost(hits.lastIndex)], query) }, enabled = hits.isNotEmpty() && hitIndex < hits.lastIndex) { Icon(Icons.Default.ChevronRight, "下一处") }
                 FeedbackIconButton(onClick = { query = ""; searchOffset = -1 }) { Icon(Icons.Default.Close, "结束查找") }
             }
-            Box(Modifier.weight(1f).fillMaxWidth().onSizeChanged { viewport = it.height }.onGloballyPositioned { bodyTop = it.positionInWindow().y }) {
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().onSizeChanged { viewport = it.height }.onGloballyPositioned { bodyTop = it.positionInWindow().y }) {
+                // Native text keeps the actual reader width during lazy item
+                // premeasurement as well as its later placement on screen.
+                val contentWidth = maxWidth
                 val bodyModifier = Modifier.fillMaxSize().testTag("笔记正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier)
                 val heading: @Composable () -> Unit = {
                     Text(note.title, Modifier.onSizeChanged { titleHeight = it.height }.testTag("笔记原始标题"), style = MaterialTheme.typography.titleLarge)
@@ -228,7 +231,7 @@ import kotlin.math.abs
                 val segment: @Composable (Int) -> Unit = { page ->
                     val part = segments[page]; val raw = part.display(note.content)
                     val shown = if (page == 0) noteTextForDisplay(raw, note.title) else raw
-                    CompositionLocalProvider(LocalNoteRenderReady provides { readyPages[page] = true }) {
+                    CompositionLocalProvider(LocalNoteRenderReady provides { readyPages[page] = true }, LocalNoteContentWidth provides contentWidth) {
                         IllustratedMarkdown(shown, vm.sourceImages, part.start - part.prefix.length + raw.length - shown.length)
                     }
                 }
