@@ -151,11 +151,12 @@ import kotlin.math.abs
     val progress = ReaderProgress(pageLabels[selected], "阅读分段 ${selected + 1} / ${segments.size} · 完整笔记已保留")
     SideEffect { reportProgress(progress) }
     DisposableEffect(reportProgress) { onDispose { reportProgress(null) } }
+    val revealInset = with(density) { 24.dp.toPx() + if (continuous) MaterialTheme.typography.titleSmall.lineHeight.toPx() else 0f }
     val reveal: (android.widget.TextView, Int) -> Unit = { view, offset -> scope.launch {
         withFrameNanos { }; withFrameNanos { }
         view.layout?.let { layout ->
             val position = IntArray(2); view.getLocationInWindow(position)
-            val delta = position[1] + layout.getLineTop(layout.getLineForOffset(offset.coerceAtMost(view.text.length))) - bodyTop - with(density) { 24.dp.toPx() }
+            val delta = position[1] + layout.getLineTop(layout.getLineForOffset(offset.coerceAtMost(view.text.length))) - bodyTop - revealInset
             if (continuous) list.scrollBy(delta) else scroll.scrollTo((scroll.value + delta.toInt()).coerceIn(0, scroll.maxValue))
         }
     } }

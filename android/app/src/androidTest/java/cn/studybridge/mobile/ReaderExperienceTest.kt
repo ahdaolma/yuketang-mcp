@@ -62,13 +62,14 @@ class ReaderExperienceTest {
     private val readingViewport = Rect()
     private fun <T> nativeSnapshot(read: (List<NoteSelectableTextView>) -> T): T {
         val bounds = compose.onAllNodesWithTag("笔记正文").fetchSemanticsNodes().firstOrNull()?.boundsInWindow
+        val stickyBottom = compose.onAllNodesWithTag("笔记吸顶标题").fetchSemanticsNodes().firstOrNull()?.boundsInWindow?.bottom
         var result: T? = null
         compose.runOnIdle {
             val decor = compose.activity.window.decorView
             if (bounds != null) {
                 val screen = IntArray(2); decor.getLocationOnScreen(screen)
                 val window = IntArray(2); decor.getLocationInWindow(window)
-                readingViewport.set((bounds.left + screen[0] - window[0]).toInt(), (bounds.top + screen[1] - window[1]).toInt(), (bounds.right + screen[0] - window[0]).toInt(), (bounds.bottom + screen[1] - window[1]).toInt())
+                readingViewport.set((bounds.left + screen[0] - window[0]).toInt(), (maxOf(bounds.top, stickyBottom ?: bounds.top) + screen[1] - window[1]).toInt(), (bounds.right + screen[0] - window[0]).toInt(), (bounds.bottom + screen[1] - window[1]).toInt())
             }
             result = read(descendants(decor).filterIsInstance<NoteSelectableTextView>())
         }
@@ -229,6 +230,8 @@ class ReaderExperienceTest {
         assertEquals("Horizontal turns must not skip source content", markers.toSet(), seen)
         compose.onNodeWithTag("笔记吸顶标题").assertDoesNotExist()
         assertReaderChrome()
+        compose.openNoteTool("阅读设置")
+        compose.onNodeWithText("横向滑屏").assertIsSelected()
         advancedUiShot(compose.activity, "sample-reader-swipe-pages")
     }
 
