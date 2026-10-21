@@ -67,7 +67,7 @@ class NoteLibraryTest {
         assertEquals(listOf("pinned", "original", "fresh", "other"), libraryNotes(saved, "", null, null, null).map { it.id })
         assertEquals(listOf("pinned", "fresh", "other", "original"), libraryNotes(saved.copy(noteSort = "created"), "", null, null, null).map { it.id })
         assertEquals(listOf("pinned", "fresh", "original", "other"), libraryNotes(saved.copy(noteSort = "title"), "", null, null, null).map { it.id })
-        assertEquals(listOf("pinned", "original", "fresh"), libraryNotes(saved, "DNA 复制", null, "生物", "reviewing").map { it.id })
+        assertEquals(listOf(original), libraryNotes(saved, "DNA 复制", null, "生物", "reviewing"))
         assertTrue(libraryNotes(saved, "", null, "生物", "mastered").isEmpty())
         assertEquals(listOf(original), linkedNotes(saved.copy(notes = listOf(original, other)), other))
         val many = normalizedNoteTags((0..20).map { " #tag$it " } + listOf("#TAG0"))
