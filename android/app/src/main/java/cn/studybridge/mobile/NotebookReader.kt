@@ -20,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -226,9 +227,7 @@ import kotlin.math.abs
                 // Overlay the title so its entrance never resizes or shifts the
                 // reading viewport. Clip the upward emergence to this header.
                 Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().clipToBounds()) {
-                    AnimatedVisibility(continuous && restored && sticky, enter = fadeIn(tween(240)) + slideInVertically(tween(260)) { it }, exit = fadeOut(tween(200)) + slideOutVertically(tween(240)) { it }) {
-                        Surface(Modifier.fillMaxWidth().testTag("笔记吸顶标题"), tonalElevation = 2.dp) { Text(note.title, Modifier.padding(vertical = 6.dp), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                    }
+                    ReaderStickyTitle(continuous && restored && sticky, note.title)
                 }
                 Surface(Modifier.align(Alignment.BottomEnd).padding(8.dp), shape = MaterialTheme.shapes.medium, shadowElevation = 4.dp, color = MaterialTheme.colorScheme.primaryContainer) {
                     FeedbackIconButton(onClick = { tools = true }, modifier = Modifier.size(48.dp).testTag("笔记悬浮工具")) { Icon(Icons.Outlined.Tune, "悬浮阅读工具") }
@@ -238,7 +237,15 @@ import kotlin.math.abs
     }
 }
 
-private fun Modifier.noteScreenSwipe(mode: String, slop: Float, longPress: Long, distance: Float, onTurn: (Int) -> Unit): Modifier = pointerInput(mode, slop, longPress, distance) {
+@Composable private fun ReaderStickyTitle(visible: Boolean, title: String) {
+    AnimatedVisibility(visible, enter = fadeIn(tween(240)) + slideInVertically(tween(260)) { it }, exit = fadeOut(tween(200)) + slideOutVertically(tween(240)) { it }) {
+        Surface(Modifier.fillMaxWidth().testTag("笔记吸顶标题"), tonalElevation = 2.dp) { Text(title, Modifier.padding(vertical = 6.dp), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+    }
+}
+
+private fun Modifier.noteScreenSwipe(mode: String, slop: Float, longPress: Long, distance: Float, onTurn: (Int) -> Unit): Modifier = composed {
+    val currentOnTurn by rememberUpdatedState(onTurn)
+    pointerInput(mode, slop, longPress, distance) {
     awaitEachGesture {
         val down = awaitFirstDown(false, PointerEventPass.Initial)
         var horizontal = false; var canceled = false; var dx = 0f
@@ -252,13 +259,14 @@ private fun Modifier.noteScreenSwipe(mode: String, slop: Float, longPress: Long,
             if (!canceled && abs(dx) > slop && abs(dx) > abs(delta.y) * 1.4f) horizontal = true
             if (horizontal && !canceled) change.consume()
             if (!change.pressed) {
-                if (!canceled && mode == "swipe" && horizontal && abs(dx) >= distance) onTurn(if (dx < 0) 1 else -1)
+                if (!canceled && mode == "swipe" && horizontal && abs(dx) >= distance) currentOnTurn(if (dx < 0) 1 else -1)
                 else if (!canceled && mode == "buttons" && delta.getDistance() < slop && change.uptimeMillis - down.uptimeMillis < longPress) {
-                    if (down.position.x >= size.width * .75f) { change.consume(); onTurn(1) }
-                    else if (down.position.x <= size.width * .25f) { change.consume(); onTurn(-1) }
+                    if (down.position.x >= size.width * .75f) { change.consume(); currentOnTurn(1) }
+                    else if (down.position.x <= size.width * .25f) { change.consume(); currentOnTurn(-1) }
                 }
                 break
             }
         } while (true)
     }
+}
 }

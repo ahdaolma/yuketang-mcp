@@ -11,6 +11,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelStore
@@ -182,6 +184,52 @@ class ReaderExperienceTest {
         assertEquals(19, Vault(app).load().noteFontSize)
         assertReaderChrome()
         assertSingleVerticalTools()
+    }
+
+    @Test fun longStickyTitleUsesEllipsisAndNeverMovesTheReadingViewport() {
+        val title = "遗传学课堂笔记与染色体结构的详细复习整理".repeat(4)
+        withReader(fullNote().copy(title = title)) { _, vm ->
+            val before = compose.onNodeWithTag("笔记正文").getUnclippedBoundsInRoot()
+            compose.onNodeWithTag("笔记正文").performScrollToIndex(1)
+            compose.onNodeWithTag("笔记吸顶标题").assertIsDisplayed()
+            val layouts = mutableListOf<TextLayoutResult>()
+            compose.onNode(hasText(title) and hasAnyAncestor(hasTestTag("笔记吸顶标题")))
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            assertEquals(1, layouts.single().lineCount)
+            assertTrue("The overflowing title must visibly end with ellipsis", layouts.single().isLineEllipsized(0))
+            val after = compose.onNodeWithTag("笔记正文").getUnclippedBoundsInRoot()
+            assertEquals("Title entrance must not push the body down", before.top.value, after.top.value, .1f)
+            assertEquals(before.bottom.value, after.bottom.value, .1f)
+            advancedUiShot(compose.activity, "sample-reader-sticky-title")
+            compose.onNodeWithTag("笔记正文").performScrollToIndex(0)
+            compose.onNodeWithTag("笔记吸顶标题").assertDoesNotExist()
+            compose.onNodeWithTag("笔记原始标题").assertTextEquals(title)
+            compose.openNoteTool("阅读设置")
+            compose.onNodeWithText("点击翻页").performScrollTo().performClick()
+            compose.waitUntil(5000) { vm.ui.value.data.noteReadMode == "buttons" }
+            compose.onNodeWithContentDescription("关闭阅读方式与字号").performClick()
+            compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * .92f, height * .5f)) }
+            compose.onNodeWithTag("笔记吸顶标题").assertDoesNotExist()
+        }
+    }
+
+    @Test fun horizontalGesturesAlsoVisitEveryScreenBeforeChangingSourcePage() = withReader(fullNote()) { _, vm ->
+        compose.openNoteTool("阅读设置")
+        compose.onNodeWithText("横向滑屏").performScrollTo().performClick()
+        compose.waitUntil(5000) { vm.ui.value.data.noteReadMode == "swipe" }
+        compose.onNodeWithContentDescription("关闭阅读方式与字号").performClick()
+        compose.waitUntil(5000) { visibleMarkers(listOf(markers.first())).isNotEmpty() }
+        val seen = mutableSetOf<String>()
+        for (attempt in 0 until 35) {
+            seen += visibleMarkers(markers)
+            if (seen.size == markers.size) break
+            compose.onNodeWithTag("笔记正文").performTouchInput { swipeLeft(durationMillis = 180) }
+            compose.waitForIdle()
+        }
+        assertEquals("Horizontal turns must not skip source content", markers.toSet(), seen)
+        compose.onNodeWithTag("笔记吸顶标题").assertDoesNotExist()
+        assertReaderChrome()
+        advancedUiShot(compose.activity, "sample-reader-swipe-pages")
     }
 
     @Test fun searchHighlightsNativeTextAndPreviousNextRevealTheActualHitLines() {
