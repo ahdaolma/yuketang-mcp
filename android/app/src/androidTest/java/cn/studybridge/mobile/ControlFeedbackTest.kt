@@ -13,6 +13,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.InputModeManager
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -119,8 +122,10 @@ class ControlFeedbackTest {
     @Test fun nativeScrollingCancelsActionAndKeyboardActivationRunsOnce() {
         val clicks = AtomicInteger()
         lateinit var scroll: ScrollState
+        lateinit var inputMode: InputModeManager
         compose.setContent {
             MaterialTheme {
+                inputMode = LocalInputModeManager.current
                 scroll = rememberScrollState()
                 Column(Modifier.systemBarsPadding().height(260.dp).verticalScroll(scroll)) {
                     FeedbackButton(onClick = { clicks.incrementAndGet() }, modifier = Modifier.fillMaxWidth().height(160.dp)) { Text("滚动中的入口") }
@@ -130,7 +135,9 @@ class ControlFeedbackTest {
         }
         compose.onNodeWithText("滚动中的入口").performTouchInput { swipeUp(durationMillis = 400) }
         compose.runOnIdle { assertEquals(0, clicks.get()); assertTrue(scroll.value > 0) }
+        compose.runOnIdle { assertTrue(inputMode.requestInputMode(InputMode.Keyboard)) }
         compose.onNodeWithText("滚动中的入口").performScrollTo().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.RequestFocus) { it() }
+        compose.onNodeWithText("滚动中的入口").assertIsFocused()
         compose.onNodeWithText("滚动中的入口").performKeyInput { keyDown(Key.Enter); keyUp(Key.Enter) }
         compose.runOnIdle { assertEquals(1, clicks.get()) }
     }

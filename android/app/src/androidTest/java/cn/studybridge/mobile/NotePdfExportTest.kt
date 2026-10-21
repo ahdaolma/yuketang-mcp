@@ -57,8 +57,17 @@ class NotePdfExportTest {
                 quote = "原来的重点", kind = "remark", comment = "个人备注 **保留字面输入** PDF_REMARK_TAIL")))
         try {
             file.outputStream().use { writeNotePdf(context, note, images(directory), it) }
+            val resolver = context.contentResolver
+            val uri = requireNotNull(resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, "sample-note-export.pdf")
+                put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
+                put(MediaStore.Downloads.RELATIVE_PATH, "Download/StudyUiReview")
+            }))
+            requireNotNull(resolver.openOutputStream(uri)).use { out -> file.inputStream().use { it.copyTo(out) } }
             render(file) { pdf ->
                 assertTrue("Long notes must paginate instead of being truncated", pdf.pageCount >= 5)
+                pdf.openPage(0).use { screenshot(it, "sample-note-pdf-first").recycle() }
+                pdf.openPage(pdf.pageCount - 1).use { screenshot(it, "sample-note-pdf-last").recycle() }
                 val text = buildString {
                     repeat(pdf.pageCount) { index ->
                         pdf.openPage(index).use { page ->
@@ -68,21 +77,12 @@ class NotePdfExportTest {
                     }
                 }.filterNot(Char::isWhitespace)
                 repeat(paragraphCount) { assertTrue("Paragraph $it is missing", text.contains("PARA_${it.toString().padStart(4, '0')}")) }
-                listOf("BOLD_CONTENT", "TABLE_CELL_ALPHA", "TABLE_CELL_BETA", "PDF_BODY_TAIL", "PDF_REMARK_TAIL", "原文位置待核对").forEach { assertTrue("Missing PDF content: $it", text.contains(it)) }
+                listOf("BOLD_CONTENT", "TABLE_CELL_ALPHA", "TABLE_CELL_BETA", "PDF_BODY_TAIL", "PDF_REMARK_TAIL", "原文位置待核对").forEach { assertTrue("Missing PDF content: $it; extracted tail=${text.takeLast(1200)}", text.contains(it)) }
                 assertFalse("Markdown formatting must render rather than leak into prose", text.contains("**BOLD_CONTENT**"))
-                pdf.openPage(0).use { screenshot(it, "sample-note-pdf-first").recycle() }
                 pdf.openPage(pdf.pageCount - 1).use { page ->
                     assertTrue(page.textContents.joinToString("") { it.text }.filterNot(Char::isWhitespace).contains("PDF_REMARK_TAIL"))
-                    screenshot(page, "sample-note-pdf-last").recycle()
                 }
             }
-            val resolver = context.contentResolver
-            val uri = requireNotNull(resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, "sample-note-export.pdf")
-                put(MediaStore.Downloads.MIME_TYPE, "application/pdf")
-                put(MediaStore.Downloads.RELATIVE_PATH, "Download/StudyUiReview")
-            }))
-            requireNotNull(resolver.openOutputStream(uri)).use { out -> file.inputStream().use { it.copyTo(out) } }
         } finally { directory.deleteRecursively() }
     }
 

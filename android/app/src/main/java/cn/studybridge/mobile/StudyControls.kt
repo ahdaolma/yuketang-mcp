@@ -67,7 +67,7 @@ private fun Modifier.pressFeedback(enabled: Boolean, interactionSource: MutableI
             while (true) {
                 val event = awaitPointerEvent(PointerEventPass.Initial)
                 val change = event.changes.find { it.id == down.id } ?: break
-                if ((change.position - down.position).getDistance() > slop || event.changes.count { it.pressed } > 1 ||
+                if (change.isConsumed || (change.position - down.position).getDistance() > slop || event.changes.count { it.pressed } > 1 ||
                     change.position.x < 0f || change.position.x > size.width || change.position.y < 0f || change.position.y > size.height) tap = false
                 if (!change.pressed) {
                     if (tap && change.uptimeMillis - down.uptimeMillis < longPressTimeout) feedback.explain(reason)

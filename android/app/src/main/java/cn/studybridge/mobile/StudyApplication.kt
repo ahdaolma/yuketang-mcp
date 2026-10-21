@@ -53,6 +53,7 @@ class StudyApplication : Application() {
     internal suspend fun awaitClassFollowService() {
         if (followStatus.value.serviceRunning) return
         val pending = serviceReady ?: CompletableDeferred<Unit>().also {
+            updateClassFollowStatus { current -> current.copy(error = "") }
             serviceReady = it
             try {
                 startForegroundService(Intent(this, ClassFollowService::class.java))

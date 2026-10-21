@@ -114,6 +114,7 @@ class ClassFollowServiceTest {
         val fixture = fixture()
         try {
             overlayPermission("allow")
+            main { app.updateClassFollowStatus { it.copy(error = "上次服务已中断，等待手动继续。") } }
             start(fixture)
             assertFalse("the in-app control must not be duplicated", app.classFollowStatus.value.overlayVisible)
             home(scenario)
