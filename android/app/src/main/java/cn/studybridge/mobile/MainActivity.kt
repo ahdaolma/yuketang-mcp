@@ -14,8 +14,6 @@ import android.os.Bundle
 import android.provider.MediaStore
 import android.util.Base64
 import android.widget.TextView
-import androidx.core.view.doOnLayout
-import androidx.core.view.doOnNextLayout
 import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -208,12 +206,7 @@ class MainActivity : ComponentActivity() {
     val renderReady = LocalNoteRenderReady.current
     val contentWidth = LocalNoteContentWidth.current
     val decorated = remember(formatted, text, sourceOffset, personalMarks, searchQuery) { formatted?.takeIf { it.first == text }?.second?.let { searchHighlight(renderPersonalAnnotations(it, text, sourceOffset, personalMarks), searchQuery) as android.text.Spanned } }
-    val initialText = text
-    AndroidView(factory = { NoteSelectableTextView(it).apply { layoutParams = android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT); textSize = 16f; setTextIsSelectable(true); setLineSpacing(0f, 1.3f); this.text = initialText; tag = initialText; alpha = 0f } }, modifier = Modifier.fillMaxWidth().then(if (contentWidth != null) Modifier.requiredWidth(contentWidth) else Modifier), update = { native ->
-        val generation = native.renderGeneration.incrementAndGet()
-        val updateNative: () -> Unit = updateNative@{
-        if (native.renderGeneration.get() != generation) return@updateNative
-        val it = native
+    AndroidView(factory = { NoteSelectableTextView(it).apply { layoutParams = android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT); textSize = 16f; setTextIsSelectable(true); setLineSpacing(0f, 1.3f) } }, modifier = Modifier.fillMaxWidth().then(if (contentWidth != null) Modifier.requiredWidth(contentWidth) else Modifier), update = {
         if (it.currentTextColor != color) it.setTextColor(color)
         if (kotlin.math.abs(it.textSize - bodySize) > 0.1f) it.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, bodySize)
         it.controller = if (decorated != null) selectionController else null
@@ -228,19 +221,7 @@ class MainActivity : ComponentActivity() {
         }
         if (parsed != null) it.alpha = 1f
         if (parsed != null && it.tag !== parsed) { renderer.setParsedMarkdown(it, parsed); it.tag = parsed }
-        if (parsed != null) it.post {
-            if (it.tag === parsed) it.doOnLayout { _ ->
-                val expectedWidth = it.width - it.compoundPaddingLeft - it.compoundPaddingRight
-                // A prefetched native view can have the correct outer width
-                // while retaining a zero-width text layout. Reflow only that
-                // stale layout after placement, on the native UI thread.
-                if (expectedWidth > 0 && it.layout?.width != expectedWidth) {
-                    renderer.setParsedMarkdown(it, parsed)
-                    it.requestLayout()
-                    it.doOnNextLayout { _ -> if (it.tag === parsed) renderReady?.invoke() }
-                } else renderReady?.invoke()
-            }
-        }
+        if (parsed != null) it.post { renderReady?.invoke() }
         val target = searchTarget
         if (target != null && sourceOffset != null && target.offset in sourceOffset until sourceOffset + text.length && parsed != null) {
             val key = "${target.revision}:${target.offset}:${target.query}"
@@ -252,8 +233,6 @@ class MainActivity : ComponentActivity() {
                 if (found >= 0) { val view = it; val offset = found; view.post { revealSearch?.invoke(view, offset) } }
             }
         }
-        }
-        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) updateNative() else native.post { updateNative() }
     })
 }
 

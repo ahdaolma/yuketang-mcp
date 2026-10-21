@@ -9,6 +9,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.lazy.LazyListLayoutInfo
+import androidx.compose.foundation.lazy.LazyListPrefetchScope
+import androidx.compose.foundation.lazy.LazyListPrefetchStrategy
+import androidx.compose.foundation.lazy.layout.NestedPrefetchScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
@@ -48,7 +53,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 
-@OptIn(kotlinx.coroutines.FlowPreview::class)
+@OptIn(kotlinx.coroutines.FlowPreview::class, ExperimentalFoundationApi::class)
 @Composable fun NotebookReader(note: Note, ui: UiState, vm: StudyViewModel, modifier: Modifier = Modifier, extraHeader: @Composable () -> Unit = {}, onOptions: () -> Unit, onBack: () -> Unit) {
     val prepared by produceState<Pair<String, List<NoteReadingSegment>>?>(null, note.content) { value = withContext(Dispatchers.Default) { note.content to noteReadingSegments(note.content) } }
     val segments = prepared?.takeIf { it.first == note.content }?.second ?: run { CircularProgressIndicator(Modifier.size(24.dp)); return }
@@ -59,7 +64,16 @@ import kotlin.math.abs
     val mode = validNoteReadingMode(ui.data.noteReadMode)
     val continuous = mode == "continuous"
     var index by rememberSaveable(note.id) { mutableIntStateOf(restoredNoteIndex(initial, hash, labels)) }
-    val list = rememberLazyListState()
+    // Offscreen native TextViews must not be premeasured at zero width: their
+    // cached text layouts can outlive the later full-width Compose placement.
+    // Keep virtualization, but create native page content only when measured
+    // for the viewport rather than through speculative prefetch.
+    val prefetch = remember { object : LazyListPrefetchStrategy {
+        override fun LazyListPrefetchScope.onScroll(delta: Float, layoutInfo: LazyListLayoutInfo) = Unit
+        override fun LazyListPrefetchScope.onVisibleItemsUpdated(layoutInfo: LazyListLayoutInfo) = Unit
+        override fun NestedPrefetchScope.onNestedPrefetch(firstVisibleItemIndex: Int) = Unit
+    } }
+    val list = rememberLazyListState(prefetchStrategy = prefetch)
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
