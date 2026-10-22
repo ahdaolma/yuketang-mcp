@@ -40,6 +40,9 @@ jobs:
       - name: Test and build internal debug APK
         working-directory: android
         run: gradle --no-daemon testDebugUnitTest assembleDebug assembleDebugAndroidTest
+      - name: Audit release sources with Android Lint
+        working-directory: android
+        run: gradle --no-daemon lintRelease
       - name: Build and verify fixed-signature release
         if: env.RAIN_SIGNING_CONFIGURED == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         working-directory: android
@@ -74,6 +77,7 @@ jobs:
           path: |
             android/app/build/reports/tests/
             android/app/build/reports/androidTests/
+            android/app/build/reports/lint-results-release.*
             android/app/build/outputs/androidTest-results/
             android/smoke-artifacts/
             android/ui-review-artifacts/
