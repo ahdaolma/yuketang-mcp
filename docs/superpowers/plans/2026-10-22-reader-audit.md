@@ -11,3 +11,5 @@
 涉及文件：NotebookReader.kt（阅读状态、跳转与手势）、NoteReaderPreferences.kt（按屏计算）、MaterialPreviews.kt（图片/文字就绪）、ReaderExperienceTest.kt（真实操作）、ReaderLayoutTest.kt（屏边界）。
 
 当前观察：切换至分页时 readyMode 非空会将 offset 清零；turn 跨页只等待两帧，没有等待目标页最终内容；反向跨页在无临时缓存时使用 0；nextReadingScreen 用固定步长回退，末尾被截短后的边界无法原路返回。上述观察待新增云端复现确认。
+
+云端 39759930886 已由新增 screenBoundariesAreReversibleIncludingTheLastPartialScreen 在原实现上复现失败：不足一屏的末尾前进后，退回边界不一致。按统一屏网格前进/后退，保留 12% 阅读重叠。继续运行设备复现，模式切换及跨页返回逻辑尚未改动。

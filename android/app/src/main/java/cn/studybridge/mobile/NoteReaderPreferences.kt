@@ -12,8 +12,18 @@ fun validNoteReadingMode(value: String) = value.takeIf { it in NOTE_READING_MODE
 
 // A small overlap makes line wraps visible on both screens. The final advance
 // always reaches the exact end of the current segment before changing segments.
-fun nextReadingScreen(offset: Int, maximum: Int, viewport: Int, direction: Int): Int =
-    (offset.toLong() + direction * (viewport * .88f).toInt().coerceAtLeast(1)).coerceIn(0L, maximum.toLong().coerceAtLeast(0)).toInt()
+fun nextReadingScreen(offset: Int, maximum: Int, viewport: Int, direction: Int): Int {
+    val end = maximum.toLong().coerceAtLeast(0)
+    val current = offset.toLong().coerceIn(0, end)
+    val step = (viewport * .88f).toInt().coerceAtLeast(1).toLong()
+    // The last screen can be shorter than step. Return to the previous screen
+    // boundary instead of subtracting a full step from this shortened advance.
+    return when {
+        direction > 0 -> ((current / step + 1) * step).coerceAtMost(end)
+        direction < 0 -> ((current - 1).coerceAtLeast(0) / step) * step
+        else -> current
+    }.toInt()
+}
 
 fun readerPageLabels(content: String, segments: List<NoteReadingSegment>): List<String> {
     val pattern = Regex("第\\s*(\\d+)\\s*页")

@@ -56,7 +56,7 @@ class ReaderLayoutTest {
         assertEquals(176, nextReadingScreen(88, 250, 100, 1))
         assertEquals(250, nextReadingScreen(176, 250, 100, 1))
         assertEquals(250, nextReadingScreen(250, 250, 100, 1))
-        assertEquals(162, nextReadingScreen(250, 250, 100, -1))
+        assertEquals(176, nextReadingScreen(250, 250, 100, -1))
         assertEquals(0, nextReadingScreen(42, 250, 100, -1))
     }
 
