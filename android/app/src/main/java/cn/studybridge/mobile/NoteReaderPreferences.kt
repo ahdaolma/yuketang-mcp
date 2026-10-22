@@ -6,7 +6,7 @@ val NOTE_READING_MODES = linkedMapOf("continuous" to "连续滚动", "buttons" t
 val LocalNoteFontSize = staticCompositionLocalOf { 16 }
 val LocalNoteRenderReady = staticCompositionLocalOf<(() -> Unit)?> { null }
 val LocalNoteContentWidth = staticCompositionLocalOf<androidx.compose.ui.unit.Dp?> { null }
-data class ReaderProgress(val text: String, val description: String)
+data class ReaderProgress(val text: String, val description: String, val title: String? = null, val titleVisible: Boolean = false)
 val LocalReaderProgress = staticCompositionLocalOf<(ReaderProgress?) -> Unit> { {} }
 fun validNoteReadingMode(value: String) = value.takeIf { it in NOTE_READING_MODES } ?: "continuous"
 

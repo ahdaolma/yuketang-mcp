@@ -18,12 +18,11 @@ import androidx.compose.ui.unit.dp
     val maximum = expandedPanelHeight()
     StudyModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().heightIn(max = maximum).testTag("阅读操作面板")) {
-            Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                 FeedbackIconButton(onClick = onDismiss) { Icon(Icons.Outlined.Close, "关闭$title") }
             }
-            HorizontalDivider()
-            Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).testTag("阅读操作列表").padding(horizontal = 8.dp, vertical = 8.dp), content = content)
+            Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).testTag("阅读操作列表").padding(horizontal = 16.dp, vertical = 8.dp), content = content)
         }
     }
 }

@@ -31,7 +31,7 @@ private val notebookBackupExplanation = "备份只包含笔记、分类、标签
     val writable = !ui.locked && ui.ready && ui.storageError.isBlank() && !files.busy
     Box {
         FeedbackIconButton(onClick = { menu = true }, modifier = Modifier.size(48.dp)) { Icon(Icons.Outlined.MoreHoriz, "笔记工具") }
-        DropdownMenu(menu, { menu = false }) {
+        DropdownMenu(menu, { menu = false }, title = "笔记工具") {
             FeedbackDropdownMenuItem(text = { Text("筛选与排序") }, onClick = { menu = false; page = "filter" })
             FeedbackDropdownMenuItem(text = { Text("从模板新建") }, enabled = writable, onClick = { menu = false; page = "template" })
             FeedbackDropdownMenuItem(text = { Text("导入Markdown") }, enabled = writable, onClick = { menu = false; files.markdown() })

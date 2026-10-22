@@ -26,7 +26,7 @@ class TimeBarLayoutTest {
                 }
             }
         } }
-        for ((height, expected) in listOf(0.dp to 32.dp, 18.dp to 32.dp, 40.dp to 44.dp)) {
+        for ((height, expected) in listOf(0.dp to 36.dp, 18.dp to 36.dp, 40.dp to 48.dp)) {
             compose.runOnIdle { cutout.value = height }
             compose.onNodeWithTag("应用时间栏").assertHeightIsEqualTo(expected)
             val bar = compose.onNodeWithTag("应用时间栏").getUnclippedBoundsInRoot()

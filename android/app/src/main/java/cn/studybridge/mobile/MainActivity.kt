@@ -309,7 +309,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             OutlinedTextField(input, { if (it.length <= 20000) input = it }, Modifier.weight(1f).onFocusChanged { chrome?.locked = it.isFocused }, placeholder = { Text("问问这页课件…", style = MaterialTheme.typography.bodyMedium) }, textStyle = MaterialTheme.typography.bodyMedium, shape = RoundedCornerShape(14.dp), singleLine = landscapeInput, maxLines = if (inlineHeader) 2 else 4, enabled = !ui.locked, trailingIcon = if (inlineHeader && (ui.pending != null || ui.data.provider().chatgptAccountId.isNotBlank())) ({
                 Box {
                     IconButton(onClick = { composerDetails = true }) { Icon(Icons.Outlined.MoreHoriz, "附件与用量") }
-                    DropdownMenu(expanded = composerDetails, onDismissRequest = { composerDetails = false }, properties = androidx.compose.ui.window.PopupProperties(focusable = false)) {
+                    DropdownMenu(expanded = composerDetails, onDismissRequest = { composerDetails = false }, title = "附件与用量") {
                         ui.pending?.let { attachment ->
                             DropdownMenuItem(text = { Text(attachment.label) }, onClick = { composerDetails = false })
                             DropdownMenuItem(text = { Text("移除课件附件") }, enabled = !ui.locked, onClick = { composerDetails = false; vm.clearAttachment() })
@@ -652,7 +652,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             if (segments.size > 1 && showArrows) IconButton(onClick = { index = selected + 1 }, enabled = selected < segments.lastIndex) { Icon(Icons.Default.ChevronRight, "下一段") }
             if (independentScroll) Box {
                 IconButton(onClick = { navigation = true }) { Icon(Icons.Default.SwapVert, "阅读跳转") }
-                DropdownMenu(expanded = navigation, onDismissRequest = { navigation = false }) {
+                DropdownMenu(expanded = navigation, onDismissRequest = { navigation = false }, title = "阅读跳转") {
                     DropdownMenuItem(text = { Text("笔记内查找") }, onClick = { navigation = false; searching = true })
                     if (initialBookmark != null) DropdownMenuItem(text = { Text("回到上次阅读") }, onClick = {
                         navigation = false; index = restoredNoteIndex(initialBookmark, hash, labels)

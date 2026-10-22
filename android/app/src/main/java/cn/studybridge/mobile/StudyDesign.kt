@@ -39,6 +39,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
@@ -48,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 @Composable fun StudyTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
@@ -196,7 +203,7 @@ fun studyClockText(now: Long = System.currentTimeMillis()): String =
     val density = LocalDensity.current
     val view = LocalView.current
     val cutoutTop = WindowInsets.displayCutout.getTop(density)
-    val barHeight = maxOf(32.dp, (clockCutoutHeight ?: with(density) { cutoutTop.toDp() }) + 4.dp)
+    val barHeight = maxOf(36.dp, (clockCutoutHeight ?: with(density) { cutoutTop.toDp() }) + 8.dp)
     // The clock shares the safe cutout row; it is not placed below a second
     // full-width cutout spacer. Move it sideways if a left camera occupies it.
     val defaultStart = with(density) { 20.dp.roundToPx() }
@@ -206,10 +213,22 @@ fun studyClockText(now: Long = System.currentTimeMillis()): String =
     if (Build.VERSION.SDK_INT >= 28) view.rootWindowInsets?.displayCutout?.boundingRects.orEmpty().sortedBy { it.left }.forEach { rect ->
         if (rect.top < with(density) { barHeight.roundToPx() } && rect.left < start + clockWidth && rect.right > start) start = rect.right + gap
     }
-    Box(Modifier.fillMaxWidth().height(barHeight).testTag("应用时间栏").padding(start = with(density) { start.toDp() }, end = 20.dp), contentAlignment = Alignment.CenterStart) {
+    Row(Modifier.fillMaxWidth().height(barHeight).testTag("应用时间栏").padding(start = with(density) { start.toDp() }, end = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(clock, style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, lineHeight = 16.sp), maxLines = 1,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { contentDescription = "当前时间 $clock" })
-        if (readingProgress != null) Text(readingProgress.text, Modifier.align(Alignment.CenterEnd).testTag("阅读页码").semantics { contentDescription = "当前阅读页码"; stateDescription = readingProgress.description }, style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, lineHeight = 16.sp), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        // Reserve the middle slot even while hidden. Animation never changes
+        // the row height or moves the body, clock, or page counter.
+        Box(Modifier.weight(1f).fillMaxHeight().clipToBounds(), contentAlignment = Alignment.Center) {
+            if (readingProgress?.title != null) AnimatedVisibility(
+                readingProgress.titleVisible,
+                enter = fadeIn(tween(320)) + slideInVertically(tween(360)) { it },
+                exit = fadeOut(tween(280)) + slideOutVertically(tween(320)) { it }
+            ) {
+                Text(readingProgress.title, Modifier.testTag("笔记吸顶标题"), style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        if (readingProgress != null) Text(readingProgress.text, Modifier.testTag("阅读页码").semantics { contentDescription = "当前阅读页码"; stateDescription = readingProgress.description }, style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, lineHeight = 16.sp), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
     }
 }
 

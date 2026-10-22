@@ -37,6 +37,7 @@ class ExpandedListsTest {
         } }
         assertBounded("展开菜单容器", .45f, 320f)
         compose.onNodeWithText("操作 60").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithContentDescription("关闭选择操作").assertIsDisplayed()
         advancedUiShot(compose.activity, "sample-expanded-dropdown")
         compose.onNodeWithText("操作 60").performClick()
         compose.runOnIdle { assertEquals(60, selected) }

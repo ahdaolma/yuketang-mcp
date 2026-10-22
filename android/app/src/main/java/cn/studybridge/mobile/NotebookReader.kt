@@ -184,10 +184,11 @@ import kotlin.math.abs
     fun selectHit(hit: NoteSearchHit, word: String) { query = word; searchOffset = hit.offset; searchRevision++; searching = false; goTo(hit.segment) }
     val target = if (searchOffset >= 0 && query.isNotBlank()) NoteSearchTarget(searchOffset, query, searchRevision) else null
     val reportProgress = LocalReaderProgress.current
-    val progress = ReaderProgress(pageLabels[selected], "阅读分段 ${selected + 1} / ${segments.size} · 完整笔记已保留")
+    val sticky by remember { derivedStateOf { list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > titleHeight } }
+    val progress = ReaderProgress(pageLabels[selected], "阅读分段 ${selected + 1} / ${segments.size} · 完整笔记已保留", note.title.takeIf { continuous }, continuous && restored && sticky)
     SideEffect { reportProgress(progress) }
     DisposableEffect(reportProgress) { onDispose { reportProgress(null) } }
-    val revealInset = with(density) { 24.dp.toPx() + if (continuous) MaterialTheme.typography.titleSmall.lineHeight.toPx() else 0f }
+    val revealInset = with(density) { 24.dp.toPx() }
     val reveal: (android.widget.TextView, Int, Int) -> Unit = { view, offset, revision ->
         val generation = jumpGeneration
         scope.launch {
@@ -240,7 +241,6 @@ import kotlin.math.abs
     }
     CompositionLocalProvider(LocalNoteFontSize provides fontSize, LocalNoteSearchQuery provides query, LocalNoteSearchTarget provides target, LocalNoteSearchReveal provides reveal) {
         Column(modifier.fillMaxSize()) {
-            val sticky by remember { derivedStateOf { list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > titleHeight } }
             if (query.isNotBlank()) Row(Modifier.fillMaxWidth().testTag("查找命中导航"), verticalAlignment = Alignment.CenterVertically) {
                 val hitIndex = hits.indexOfFirst { it.offset == searchOffset }.coerceAtLeast(0)
                 Text("$query · ${if (hits.isEmpty()) 0 else hitIndex + 1}/${hits.size}", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -272,22 +272,11 @@ import kotlin.math.abs
                     key(selected) { segment(selected) }
                     Spacer(Modifier.height(72.dp))
                 }
-                // Overlay the title so its entrance never resizes or shifts the
-                // reading viewport. Clip the upward emergence to this header.
-                Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().clipToBounds()) {
-                    ReaderStickyTitle(continuous && restored && sticky, note.title)
-                }
                 Surface(Modifier.align(Alignment.BottomEnd).padding(8.dp), shape = MaterialTheme.shapes.medium, shadowElevation = 4.dp, color = MaterialTheme.colorScheme.primaryContainer) {
                     FeedbackIconButton(onClick = { tools = true }, modifier = Modifier.size(48.dp).testTag("笔记悬浮工具")) { Icon(Icons.Outlined.Tune, "悬浮阅读工具") }
                 }
             }
         }
-    }
-}
-
-@Composable private fun ReaderStickyTitle(visible: Boolean, title: String) {
-    AnimatedVisibility(visible, enter = fadeIn(tween(240)) + slideInVertically(tween(260)) { it }, exit = fadeOut(tween(200)) + slideOutVertically(tween(240)) { it }) {
-        Surface(Modifier.fillMaxWidth().testTag("笔记吸顶标题"), tonalElevation = 2.dp) { Text(title, Modifier.padding(vertical = 6.dp), style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
     }
 }
 

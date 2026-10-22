@@ -1,10 +1,13 @@
 package cn.studybridge.mobile
 
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.DropdownMenu as NativeDropdownMenu
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
@@ -20,15 +23,25 @@ import androidx.compose.ui.window.PopupProperties
 @Composable fun expandedPanelHeight(): Dp =
     minOf(440.dp, (LocalConfiguration.current.screenHeightDp * .60f).dp)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable fun StudyDropdownMenu(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     properties: PopupProperties = PopupProperties(focusable = true),
+    title: String = "选择操作",
     content: @Composable ColumnScope.() -> Unit
 ) {
-    val width = minOf(336.dp, (LocalConfiguration.current.screenWidthDp - 32).coerceAtLeast(1).dp)
-    NativeDropdownMenu(expanded, onDismissRequest,
-        modifier.heightIn(max = expandedListHeight()).widthIn(max = width).testTag("展开菜单容器"),
-        properties = properties, content = content)
+    if (!expanded) return
+    // Choices share a predictable, wide sheet rather than a narrow popup
+    // whose position and width depend on the triggering label.
+    StudyModalBottomSheet(onDismissRequest = onDismissRequest) {
+        Column(modifier.fillMaxWidth().heightIn(max = expandedListHeight()).testTag("展开菜单容器")) {
+            Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                FeedbackIconButton(onClick = onDismissRequest) { Icon(Icons.Outlined.Close, "关闭$title") }
+            }
+            Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), content = content)
+        }
+    }
 }

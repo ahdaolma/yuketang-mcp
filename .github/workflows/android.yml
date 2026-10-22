@@ -1,4 +1,4 @@
-name: Android preview
+name: Android verification
 on:
   push:
     paths: ['android/**', '.github/workflows/android.yml']
@@ -8,7 +8,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: android-preview-${{ github.ref }}
+  group: android-verification-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
@@ -64,7 +64,7 @@ jobs:
         if: env.RAIN_SIGNING_CONFIGURED == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: study-bridge-android-preview
+          name: study-bridge-android-release
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
       - uses: actions/upload-artifact@v4

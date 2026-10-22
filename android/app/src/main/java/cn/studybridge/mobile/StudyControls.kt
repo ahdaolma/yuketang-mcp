@@ -8,6 +8,10 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.RowScope
@@ -117,7 +121,7 @@ private fun Modifier.pressFeedback(enabled: Boolean, interactionSource: MutableI
 }
 @Composable fun FeedbackDropdownMenuItem(text: @Composable () -> Unit, onClick: () -> Unit, modifier: Modifier = Modifier, leadingIcon: @Composable (() -> Unit)? = null, trailingIcon: @Composable (() -> Unit)? = null, enabled: Boolean = true) {
     val interaction = remember { MutableInteractionSource() }
-    NativeDropdownMenuItem(text, feedbackClick(onClick), modifier.pressFeedback(enabled, interaction), leadingIcon = leadingIcon, trailingIcon = trailingIcon, enabled = enabled, interactionSource = interaction)
+    NativeDropdownMenuItem(text, feedbackClick(onClick), modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(14.dp)).background(MaterialTheme.colorScheme.surfaceContainerLow).pressFeedback(enabled, interaction), leadingIcon = leadingIcon, trailingIcon = trailingIcon, enabled = enabled, interactionSource = interaction)
 }
 @Composable fun RowScope.FeedbackNavigationBarItem(selected: Boolean, onClick: () -> Unit, icon: @Composable () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, label: @Composable (() -> Unit)? = null) {
     val interaction = remember { MutableInteractionSource() }

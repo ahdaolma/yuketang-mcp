@@ -1,6 +1,7 @@
 package cn.studybridge.mobile
 
 import android.app.NotificationManager
+import android.app.Notification
 import android.content.Intent
 import android.os.Build
 import android.os.SystemClock
@@ -41,6 +42,19 @@ class ClassFollowServiceTest {
         android.os.ParcelFileDescriptor.AutoCloseInputStream(instrumentation.uiAutomation.executeShellCommand("appops set ${app.packageName} SYSTEM_ALERT_WINDOW $mode")).use { it.readBytes() }
         main { ClassFollowService.refreshPermission(app) }
         waitFor("overlay permission did not become $mode") { ClassFollowService.canDrawOverlays(app) == (mode == "allow") }
+    }
+
+    private fun notificationAction(title: String): Notification.Action {
+        var action: Notification.Action? = null
+        // ViewModel state and NotificationManager publication are asynchronous.
+        // Wait for the actual system notification, not just the writer state.
+        waitFor("notification action '$title' was not published") {
+            action = app.getSystemService(NotificationManager::class.java).activeNotifications
+                .firstOrNull { it.notification.channelId == "class-follow" }
+                ?.notification?.actions?.firstOrNull { it.title.toString() == title }
+            action != null
+        }
+        return requireNotNull(action)
     }
 
     private class Fixture(val vm: StudyViewModel, val store: ViewModelStore, val page: LivePage, val requested: CountDownLatch, val release: CountDownLatch, val original: Saved)
@@ -174,14 +188,13 @@ class ClassFollowServiceTest {
             waitFor("revoked window was not removed") { !app.classFollowStatus.value.overlayVisible }
             assertTrue(app.classFollowStatus.value.serviceRunning)
             assertFalse("overlay revocation must not lose classroom work", fixture.vm.ui.value.classUi.paused)
-            val notification = app.getSystemService(NotificationManager::class.java).activeNotifications.single { it.notification.channelId == "class-follow" }.notification
-            notification.actions.single { it.title.toString() == "暂停" }.actionIntent.send()
+            notificationAction("暂停").actionIntent.send()
             waitFor("notification pause was not applied") { fixture.vm.ui.value.classUi.paused }
             assertEquals(listOf(fixture.page), Vault(app).load().classRun!!.pending)
             waitFor("paused notification was not updated") {
                 app.getSystemService(NotificationManager::class.java).activeNotifications.any { item -> item.notification.channelId == "class-follow" && item.notification.actions.any { it.title.toString() == "继续" } }
             }
-            app.getSystemService(NotificationManager::class.java).activeNotifications.single { it.notification.channelId == "class-follow" }.notification.actions.single { it.title.toString() == "继续" }.actionIntent.send()
+            notificationAction("继续").actionIntent.send()
             waitFor("notification resume was not applied") { !fixture.vm.ui.value.classUi.paused }
             main { app.stopService(Intent(app, ClassFollowService::class.java)) }
             waitFor("unexpected service termination did not become paused/stopped") { !app.classFollowStatus.value.serviceRunning && fixture.vm.ui.value.classUi.paused }
@@ -196,7 +209,7 @@ class ClassFollowServiceTest {
         try {
             start(fixture)
             home(scenario)
-            app.getSystemService(NotificationManager::class.java).activeNotifications.single { it.notification.channelId == "class-follow" }.notification.actions.single { it.title.toString() == "结束本节" }.actionIntent.send()
+            notificationAction("结束本节").actionIntent.send()
             waitFor("notification end did not stop the runtime") { !app.classFollowStatus.value.serviceRunning && !fixture.vm.ui.value.classUi.running }
             assertTrue(fixture.vm.ui.value.data.classRun!!.ended)
             assertTrue(fixture.vm.ui.value.data.classRun!!.pending.isEmpty())
