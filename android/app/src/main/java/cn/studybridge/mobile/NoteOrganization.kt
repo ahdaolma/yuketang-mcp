@@ -14,8 +14,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -75,9 +73,8 @@ fun Saved.folderName(note: Note) = noteFolders.find { it.id == note.folderId }?.
 // and accessibility. A destructive action always opens a separate confirmation.
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable fun NoteListCard(note: Note, onOpen: () -> Unit, onActions: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    val haptic = LocalHapticFeedback.current
     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainer, border = androidx.compose.foundation.BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant)) {
-        Column(Modifier.fillMaxWidth().testTag("笔记卡片 ${note.id}").combinedClickable(onClick = onOpen, onLongClickLabel = "笔记操作", onLongClick = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); onActions() }).padding(16.dp)) {
+        Column(Modifier.fillMaxWidth().testTag("笔记卡片 ${note.id}").combinedClickable(onClick = onOpen, onLongClickLabel = "笔记操作", onLongClick = onActions).padding(16.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 if (note.pinned) Icon(Icons.Outlined.PushPin, "已置顶", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                 Text(note.title, Modifier.weight(1f).padding(start = if (note.pinned) 6.dp else 0.dp), style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)

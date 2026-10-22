@@ -41,6 +41,7 @@ val LocalNoteAnnotations = staticCompositionLocalOf { emptyList<NoteAnnotation>(
 // Native text layout and drag handles remain accurate across fonts and line
 // wraps; all visible selection actions belong to the application's Compose UI.
 class NoteSelectableTextView(context: Context) : TextView(context) {
+    init { isHapticFeedbackEnabled = false }
     var searchRevealKey: String? = null
     var block: NoteSelectionBlock? = null
     var controller: NoteSelectionController? = null

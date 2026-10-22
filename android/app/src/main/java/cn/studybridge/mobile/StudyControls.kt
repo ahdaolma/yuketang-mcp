@@ -1,6 +1,5 @@
 package cn.studybridge.mobile
 
-import android.view.HapticFeedbackConstants
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -37,7 +36,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -46,9 +44,8 @@ data class ControlFeedback(val explain: (String) -> Unit, val unavailable: Strin
 val LocalControlFeedback = staticCompositionLocalOf { ControlFeedback({}, "此操作暂时不可用，请先准备所需资料。") }
 
 @Composable private fun feedbackClick(action: () -> Unit): () -> Unit {
-    val view = LocalView.current
     val current by rememberUpdatedState(action)
-    return remember(view) { { view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); current() } }
+    return remember { { current() } }
 }
 
 // Use the native control's press lifecycle so child actions, scroll cancellation,
@@ -112,9 +109,8 @@ private fun Modifier.pressFeedback(enabled: Boolean, interactionSource: MutableI
     NativeFilterChip(selected, feedbackClick(onClick), label, modifier.pressFeedback(enabled, interaction), enabled = enabled, interactionSource = interaction)
 }
 @Composable fun FeedbackSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, unavailableReason: String? = null) {
-    val view = LocalView.current
     val interaction = remember { MutableInteractionSource() }
-    NativeSwitch(checked, { view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY); onCheckedChange(it) }, modifier.pressFeedback(enabled, interaction, unavailableReason), enabled = enabled, interactionSource = interaction, colors = SwitchDefaults.colors(
+    NativeSwitch(checked, onCheckedChange, modifier.pressFeedback(enabled, interaction, unavailableReason), enabled = enabled, interactionSource = interaction, colors = SwitchDefaults.colors(
         checkedThumbColor = MaterialTheme.colorScheme.onPrimary, checkedTrackColor = MaterialTheme.colorScheme.primary,
         uncheckedThumbColor = MaterialTheme.colorScheme.outline, uncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHigh, uncheckedBorderColor = MaterialTheme.colorScheme.outline,
         disabledUncheckedThumbColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.45f), disabledUncheckedTrackColor = MaterialTheme.colorScheme.surfaceContainerHigh, disabledUncheckedBorderColor = MaterialTheme.colorScheme.outlineVariant

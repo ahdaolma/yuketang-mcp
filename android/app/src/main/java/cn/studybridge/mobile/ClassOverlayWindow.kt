@@ -93,7 +93,7 @@ internal class ClassOverlayView(
     private var downX = 0f; private var downY = 0f
     private var lastX = 0f; private var lastY = 0f
     private var pressedAt = 0L; private var dragging = false
-    init { isClickable = true; isLongClickable = false; importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES; setLayerType(LAYER_TYPE_SOFTWARE, null) }
+    init { isClickable = true; isLongClickable = false; isHapticFeedbackEnabled = false; importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES; setLayerType(LAYER_TYPE_SOFTWARE, null) }
     override fun onDraw(canvas: Canvas) {
         val cx = width / 2f; val cy = height / 2f; val r = width * .44f
         paint.color = Color.rgb(249, 248, 245); paint.setShadowLayer(width * .035f, 0f, width * .02f, 0x40000000)

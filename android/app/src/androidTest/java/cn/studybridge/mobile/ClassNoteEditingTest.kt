@@ -87,6 +87,7 @@ class ClassNoteEditingTest {
         var x = 0f; var y = 0f
         compose.runOnIdle {
             textView = android.view.inspector.WindowInspector.getGlobalWindowViews().flatMap(::descendants).filterIsInstance<NoteSelectableTextView>().first { it.text.toString().startsWith("DNA复制") }
+            assertFalse("Long-press selection must remain silent", textView.isHapticFeedbackEnabled)
             val location = IntArray(2); textView.getLocationOnScreen(location)
             x = location[0] + textView.totalPaddingLeft + textView.layout.getPrimaryHorizontal(1)
             y = location[1] + textView.totalPaddingTop + textView.layout.getLineBottom(0) / 2f

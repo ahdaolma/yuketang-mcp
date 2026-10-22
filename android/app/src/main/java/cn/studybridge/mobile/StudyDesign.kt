@@ -19,6 +19,9 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -56,6 +59,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+
+// Keep press/ripple/selection feedback visual, including built-in text controls.
+private object SilentHapticFeedback : HapticFeedback {
+    override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) = Unit
+}
 
 @Composable fun StudyTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     val colors = if (dark) darkColorScheme(
@@ -102,7 +110,9 @@ import androidx.compose.ui.unit.dp
         bodyLarge = regular.copy(fontSize = 16.sp, lineHeight = 26.sp), bodyMedium = regular.copy(fontSize = 14.sp, lineHeight = 22.sp),
         bodySmall = regular.copy(fontSize = 13.sp, lineHeight = 20.sp), labelLarge = regular.copy(fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium),
         labelMedium = regular.copy(fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium), labelSmall = regular.copy(fontSize = 11.sp, lineHeight = 16.sp)
-    ), content = content)
+    )) {
+        CompositionLocalProvider(LocalHapticFeedback provides SilentHapticFeedback, content = content)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)

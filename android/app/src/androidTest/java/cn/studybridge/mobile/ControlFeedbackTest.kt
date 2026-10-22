@@ -16,6 +16,9 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.input.InputModeManager
 import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -29,6 +32,44 @@ import java.util.concurrent.atomic.AtomicReference
 @OptIn(ExperimentalTestApi::class)
 class ControlFeedbackTest {
     @get:Rule val compose = createAndroidComposeRule<WebFixtureActivity>()
+    @Test fun interactionsRemainAvailableWithoutRequestingHapticFeedback() {
+        val requests = AtomicInteger()
+        val clicks = AtomicInteger()
+        val actions = AtomicInteger()
+        val checked = mutableStateOf(false)
+        val platformFeedback = object : HapticFeedback {
+            override fun performHapticFeedback(hapticFeedbackType: HapticFeedbackType) { requests.incrementAndGet() }
+        }
+        compose.setContent {
+            CompositionLocalProvider(LocalHapticFeedback provides platformFeedback) {
+                StudyTheme {
+                    val feedback = LocalHapticFeedback.current
+                    Column(Modifier.systemBarsPadding()) {
+                        FeedbackButton(onClick = { clicks.incrementAndGet(); feedback.performHapticFeedback(HapticFeedbackType.LongPress) }) { Text("触感关闭后的按钮") }
+                        FeedbackSwitch(checked.value, { checked.value = it }, Modifier.testTag("触感关闭后的开关"))
+                        NoteListCard(Note(id = "silent", title = "长按笔记", content = "正文", source = "测试", model = "测试"), { clicks.incrementAndGet() }, { actions.incrementAndGet() }) { Text("仍可打开操作") }
+                    }
+                }
+            }
+        }
+        compose.onNodeWithText("触感关闭后的按钮").performTouchInput { click() }
+        compose.onNodeWithTag("触感关闭后的开关").performTouchInput { click() }
+        compose.onNodeWithTag("笔记卡片 silent").performTouchInput { longClick(durationMillis = 900) }
+        compose.runOnIdle {
+            assertEquals(1, clicks.get())
+            assertTrue(checked.value)
+            assertEquals(1, actions.get())
+            assertEquals("Built-in and application haptics must not reach the platform provider", 0, requests.get())
+            val text = NoteSelectableTextView(compose.activity)
+            assertFalse(text.isHapticFeedbackEnabled)
+            assertFalse(text.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS))
+            val overlay = ClassOverlayView(compose.activity, { clicks.incrementAndGet() }, { _, _ -> }, {})
+            assertFalse(overlay.isHapticFeedbackEnabled)
+            overlay.performClick()
+            assertEquals(2, clicks.get())
+        }
+    }
+
     @Test fun physicalTapRunsOnceAndDisabledTapExplainsWithoutRunningAction() {
         val clicks = AtomicInteger()
         val explanation = AtomicReference("")
