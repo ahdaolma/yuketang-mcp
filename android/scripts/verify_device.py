@@ -1,9 +1,9 @@
 """Run release checks and device tests, collecting synthetic UI review screenshots."""
 import pathlib
-import hashlib
 import subprocess
 import sys
 import os
+from ui_review import verify_screenshots
 
 passed = False
 try:
@@ -27,8 +27,4 @@ finally:
         required.update({'sample-expanded-dropdown.png', 'sample-expanded-directory.png', 'sample-expanded-classes.png', 'sample-expanded-landscape.png'})
         required.add('sample-settings-about.png')
         required.add('sample-chat-landscape-busy.png')
-        found = {p.name for p in target.rglob('*.png')}
-        assert required <= found, f'Missing UI review screenshots: {required - found}'
-        screenshots = [p for p in target.rglob('*.png') if p.name in required]
-        digests = {hashlib.sha256(p.read_bytes()).hexdigest() for p in screenshots}
-        assert len(digests) == len(required), 'UI screenshots captured a stale or duplicate frame'
+        verify_screenshots(target, required)
