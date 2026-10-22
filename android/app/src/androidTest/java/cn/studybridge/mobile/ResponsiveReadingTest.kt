@@ -166,6 +166,8 @@ class ResponsiveReadingTest {
             if (compose.onAllNodesWithContentDescription("停止生成").fetchSemanticsNodes().isEmpty()) compose.onNodeWithContentDescription("悬浮阅读工具").performClick()
             compose.onNodeWithContentDescription("停止生成").assertIsDisplayed().assertIsEnabled()
             val busyBody = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
+            android.util.Log.i("ReadingRegression", "landscape generation body=$busyBody ime=" + androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()))
+            shot("sample-chat-landscape-busy", system = true)
             assertTrue("Generation must not reintroduce a stacked landscape header", (busyBody.bottom - busyBody.top).value > 48f)
             if (compose.onAllNodesWithContentDescription("收起悬浮工具").fetchSemanticsNodes().isNotEmpty()) compose.onNodeWithContentDescription("收起悬浮工具").performClick()
             compose.runOnIdle { state.value = state.value.copy(busy = false, operation = "") }

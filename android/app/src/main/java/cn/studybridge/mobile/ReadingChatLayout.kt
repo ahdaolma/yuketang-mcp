@@ -29,7 +29,10 @@ import androidx.compose.ui.window.PopupProperties
     }
     // When even compact rows leave fewer than a few reading lines, let tools
     // float beside the text. Their panel keeps the original actions available.
-    val floating = beside && maxHeight < 190.dp
+    // IME visibility flips to its target before the native closing animation
+    // restores our height. Keep the short-window layout until space actually
+    // returns, including when generation disables the focused input field.
+    val floating = maxHeight < 190.dp
     val compact = if (beside) 0f else LocalReadingCompactFraction.current.coerceIn(0f, 1f)
     val panelWidth = minOf(336.dp, maxWidth - 16.dp)
     val compactTools = compact > 0.5f
