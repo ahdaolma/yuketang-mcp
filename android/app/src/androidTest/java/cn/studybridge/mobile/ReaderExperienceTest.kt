@@ -111,6 +111,71 @@ class ReaderExperienceTest {
         assertTrue("Page number belongs in the time row", page.top >= clock.top && page.bottom <= clock.bottom)
     }
 
+    private fun readingOffset(): Float = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
+    private fun readingMaximum(): Float = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue()
+    private fun setMode(vm: StudyViewModel, mode: String, label: String) {
+        compose.openNoteTool("阅读设置")
+        compose.onNodeWithText(label).performScrollTo().performClick()
+        compose.waitUntil(5000) { vm.ui.value.data.noteReadMode == mode }
+        compose.onNodeWithContentDescription("关闭阅读方式与字号").performClick()
+    }
+    private fun jump(label: String) {
+        compose.openNoteTool("阅读跳转")
+        compose.onNodeWithText(label).performScrollTo().performClick()
+    }
+
+    @Test fun switchingAllReadingModesKeepsTheCurrentParagraphVisible() = withReader(fullNote()) { _, vm ->
+        val marker = "来源2段落3标记"
+        compose.openNoteTool("阅读跳转")
+        compose.onNodeWithText("笔记内查找").performScrollTo().performClick()
+        compose.onNodeWithText("查找完整正文").performTextInput(marker)
+        compose.waitUntil(5000) { compose.onAllNodesWithText("找到 1 处").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("第 2 段").performClick()
+        compose.waitUntil(5000) { marker in visibleMarkers(listOf(marker)) }
+        compose.onNodeWithContentDescription("结束查找").performClick()
+        compose.waitUntil(5000) { marker in visibleMarkers(listOf(marker)) }
+        for ((mode, label) in listOf("buttons" to "点击翻页", "swipe" to "横向滑屏", "continuous" to "连续滚动", "buttons" to "点击翻页")) {
+            setMode(vm, mode, label)
+            try { compose.waitUntil(8000) { marker in visibleMarkers(listOf(marker)) } }
+            catch (failure: Throwable) {
+                advancedUiShot(compose.activity, "reader-audit-switch-$mode")
+                throw AssertionError("Switching to $mode lost the current paragraph; memory=${vm.readingMemory.position(vm.noteReader.id!!)}", failure)
+            }
+        }
+        assertReaderChrome()
+    }
+
+    @Test fun backwardPageCrossingStartsAtThePreviousPagesFinalScreen() = withReader(fullNote()) { _, vm ->
+        for ((mode, label) in listOf("buttons" to "点击翻页", "swipe" to "横向滑屏")) {
+            setMode(vm, mode, label)
+            jump("整本末尾"); jump("本段顶部")
+            compose.waitUntil(5000) { "来源3段落1标记" in visibleMarkers(listOf("来源3段落1标记")) }
+            compose.onNodeWithTag("笔记正文").performTouchInput {
+                if (mode == "buttons") click(Offset(width * .08f, height * .5f)) else swipeRight(durationMillis = 220)
+            }
+            try { compose.waitUntil(8000) { "来源2页尾标记" in visibleMarkers(listOf("来源2页尾标记")) } }
+            catch (failure: Throwable) {
+                advancedUiShot(compose.activity, "reader-audit-backward-$mode")
+                throw AssertionError("Backward crossing in $mode must expose the previous page's last line", failure)
+            }
+        }
+        assertReaderChrome()
+    }
+
+    @Test fun returningFromTheLastPartialScreenRestoresTheScreenJustRead() = withReader(fullNote()) { _, vm ->
+        setMode(vm, "buttons", "点击翻页")
+        var previous = 0f
+        var reachedEnd = false
+        for (attempt in 0 until 40) {
+            if (readingOffset() >= readingMaximum() - 1f) { reachedEnd = true; break }
+            previous = readingOffset()
+            compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * .92f, height * .5f)) }
+        }
+        assertTrue("The current source page must reach its end", reachedEnd)
+        compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * .08f, height * .5f)) }
+        assertEquals("Forward then backward must return to the same screen", previous, readingOffset(), 2f)
+    }
+
     private fun assertSingleVerticalTools() {
         compose.ensureNoteTools()
         compose.onAllNodesWithTag("阅读操作面板").assertCountEquals(1)

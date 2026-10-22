@@ -4,6 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ReaderLayoutTest {
+    @Test fun screenBoundariesAreReversibleIncludingTheLastPartialScreen() {
+        val forward = mutableListOf(0)
+        while (forward.last() < 250) forward += nextReadingScreen(forward.last(), 250, 100, 1)
+        var offset = forward.last()
+        for (expected in forward.dropLast(1).asReversed()) {
+            offset = nextReadingScreen(offset, 250, 100, -1)
+            assertEquals("Backward must visit the same screen boundaries", expected, offset)
+        }
+    }
     @Test fun sourcePageCounterDoesNotCountLongPageSplitsAsNewSourcePages() {
         val content = "## 第一讲 · 第 5 页\n\n" + "同一来源页的长正文。".repeat(2500) + "\n\n## 第一讲 · 第 6 页\n\n最后一页。"
         val segments = noteReadingSegments(content)
