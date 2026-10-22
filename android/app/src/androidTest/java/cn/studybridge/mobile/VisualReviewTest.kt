@@ -40,7 +40,7 @@ class VisualReviewTest {
                     Box(if (width == null) Modifier.fillMaxSize() else Modifier.width(width.dp).fillMaxHeight()) {
                     ClassManagerHost(state.value, vm) {
                     StudyFrame(state.value, onTab = { state.value = state.value.copy(tab = it) }, onBack = { if (state.value.tab == 2) vm.noteReader.closeRequested = true else state.value = state.value.copy(tab = 2) }, onStop = {}, noteOpen = state.value.tab == 2 && state.value.data.notes.any { it.id == vm.noteReader.id }) { padding ->
-                        Box(Modifier.fillMaxSize().padding(padding).imePadding()) {
+                        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
                             when (state.value.tab) { 1 -> RainScreen(state.value, vm); 2 -> NotesScreen(state.value, vm); else -> ModelScreen(state.value, vm) }
                         }
                     }
@@ -128,6 +128,7 @@ class VisualReviewTest {
     @Test fun populatedScreensAndDraftSurviveTabChanges() {
         val state = mutableStateOf(sample()); render(state)
         compose.onNodeWithText(courseTitle).assertIsDisplayed(); shot("sample-courses-light")
+        val initialCourseHeight = compose.onNodeWithTag("课程列表").getUnclippedBoundsInRoot().height
         compose.onNodeWithText("笔记").performClick()
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).assertIsDisplayed(); shot("sample-notes-light")
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).performClick()
@@ -136,8 +137,14 @@ class VisualReviewTest {
         compose.onNodeWithText("编辑笔记").performScrollTo().performClick()
         compose.onNode(hasSetTextAction()).performTextInput("\n新增草稿内容")
         compose.runOnIdle { state.value = state.value.copy(tab = 1) }
-        compose.waitUntil(5000) { androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) != true }
-        compose.onNodeWithText(courseTitle).performScrollTo().assertIsDisplayed()
+        compose.waitUntil(5000) {
+            androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) != true &&
+                compose.onNodeWithTag("课程列表").getUnclippedBoundsInRoot().height >= initialCourseHeight - 2.dp
+        }
+        // Restore a virtualized item through its scrolling container before
+        // checking the actual title, including text merged into a course card.
+        compose.onNodeWithTag("课程列表").performScrollToNode(hasText(courseTitle))
+        compose.onNodeWithText(courseTitle, useUnmergedTree = true).assertIsDisplayed()
         compose.runOnIdle { state.value = state.value.copy(tab = 2) }
         compose.onNodeWithText("保存修改").assertIsDisplayed()
         compose.runOnIdle { assertTrue(vm.noteReader.draft.contains("新增草稿内容")); assertTrue(vm.noteReader.editing) }

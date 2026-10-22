@@ -353,7 +353,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
     var focusedPage by rememberSaveable(ui.presentationId, ui.slideTitle) { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize()) {
     SlidePageControls(ui.slides, focusedPage) { focusedPage = it }
-    LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
+    LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp).testTag("课程列表"), verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
         item {
             StudyPanel {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
