@@ -16,6 +16,30 @@ import org.junit.Test
 class TimeBarLayoutTest {
     @get:Rule val compose = createAndroidComposeRule<WebFixtureActivity>()
 
+    @Test fun readerTitleStaysBelowCameraRowWithoutMovingBodyWhenRevealed() {
+        val visible = mutableStateOf(false)
+        compose.setContent { StudyTheme(false) {
+            Column {
+                StudyTimeBar(40.dp, ReaderProgress("2 / 3", "第 2 页", "这是需要避开摄像头的课堂笔记标题", visible.value))
+                Text("正文", Modifier.testTag("标题下方正文"))
+            }
+        } }
+        compose.onNodeWithTag("应用时间行").assertHeightIsEqualTo(48.dp)
+        compose.onNodeWithTag("应用时间栏").assertHeightIsEqualTo(80.dp)
+        val before = compose.onNodeWithTag("标题下方正文").getUnclippedBoundsInRoot()
+        compose.runOnIdle { visible.value = true }
+        val row = compose.onNodeWithTag("应用时间行").getUnclippedBoundsInRoot()
+        val title = compose.onNodeWithTag("笔记吸顶标题").getUnclippedBoundsInRoot()
+        val page = compose.onNodeWithTag("阅读页码").getUnclippedBoundsInRoot()
+        assertTrue("title clears the entire camera row", title.top >= row.bottom)
+        assertTrue("page number remains in the clock row", page.top >= row.top && page.bottom <= row.bottom)
+        assertEquals(before, compose.onNodeWithTag("标题下方正文").getUnclippedBoundsInRoot())
+        advancedUiShot(compose.activity, "sample-reader-title-below-camera")
+        compose.runOnIdle { visible.value = false }
+        compose.onNodeWithTag("笔记吸顶标题").assertDoesNotExist()
+        assertEquals(before, compose.onNodeWithTag("标题下方正文").getUnclippedBoundsInRoot())
+    }
+
     @Test fun clockSharesCutoutRowRatherThanAddingAnotherTimeRowBelowIt() {
         val cutout = mutableStateOf(0.dp)
         compose.setContent { StudyTheme(false) {

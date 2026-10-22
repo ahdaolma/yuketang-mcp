@@ -53,7 +53,7 @@ private fun backupDataJson(data: Saved) = JSONObject().apply {
     put("noteHistory", JSONArray(data.noteHistory.map { JSONObject().put("id", it.id).put("note", it.note.portableJson()).put("savedAt", it.savedAt) }))
     put("noteModifiedTimes", JSONObject(data.noteModifiedTimes)); put("noteSort", data.noteSort)
     put("noteDrafts", JSONArray(data.noteDrafts.map { JSONObject().put("noteId", it.noteId).put("content", it.content).put("updatedAt", it.updatedAt).put("baseContent", it.baseContent ?: JSONObject.NULL) }))
-    put("noteReadingPositions", JSONArray(data.noteReadingPositions.map { JSONObject().put("noteId", it.noteId).put("index", it.index).put("scroll", it.scroll).put("anchor", it.anchor).put("contentHash", it.contentHash) }))
+    put("noteReadingPositions", JSONArray(data.noteReadingPositions.map { JSONObject().put("noteId", it.noteId).put("index", it.index).put("scroll", it.scroll).put("anchor", it.anchor).put("contentHash", it.contentHash).put("textAnchor", it.textAnchor?.toJson()) }))
 }
 
 // Scan before invoking JSONObject: expanded byte limits alone do not stop a deeply
@@ -116,7 +116,7 @@ private fun readBackupData(json: JSONObject): Saved {
         noteModifiedTimes = json.getJSONObject("noteModifiedTimes").let { times -> times.keys().asSequence().associateWith { times.getLong(it) } },
         noteSort = json.getString("noteSort"),
         noteDrafts = json.getJSONArray("noteDrafts").backupObjects().map { it.requireKeys(setOf("noteId", "content", "updatedAt", "baseContent")); NoteDraft(it.getString("noteId"), it.getString("content"), it.getLong("updatedAt"), if (it.isNull("baseContent")) null else it.getString("baseContent")) },
-        noteReadingPositions = json.getJSONArray("noteReadingPositions").backupObjects().map { it.requireKeys(setOf("noteId", "index", "scroll", "anchor", "contentHash")); NoteReadingPosition(it.getString("noteId"), it.getInt("index"), it.getInt("scroll"), it.getString("anchor"), it.getString("contentHash")) }
+        noteReadingPositions = json.getJSONArray("noteReadingPositions").backupObjects().map { it.requireKeys(setOf("noteId", "index", "scroll", "anchor", "contentHash", "textAnchor")); it.optJSONObject("textAnchor")?.requireKeys(setOf("sourceStart", "offset", "inset")); NoteReadingPosition(it.getString("noteId"), it.getInt("index"), it.getInt("scroll"), it.getString("anchor"), it.getString("contentHash"), noteTextAnchorFromJson(it.optJSONObject("textAnchor"))) }
     )
     validateBackupData(data)
     return data

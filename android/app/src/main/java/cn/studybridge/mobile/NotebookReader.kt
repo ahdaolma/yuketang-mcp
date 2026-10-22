@@ -56,7 +56,10 @@ import kotlin.math.abs
 
 @OptIn(kotlinx.coroutines.FlowPreview::class, ExperimentalFoundationApi::class)
 @Composable fun NotebookReader(note: Note, ui: UiState, vm: StudyViewModel, modifier: Modifier = Modifier, extraHeader: @Composable () -> Unit = {}, onOptions: () -> Unit, onBack: () -> Unit) {
-    val prepared by produceState<Pair<String, List<NoteReadingSegment>>?>(null, note.content) { value = withContext(Dispatchers.Default) { note.content to noteReadingSegments(note.content) } }
+    val prepared by produceState<Pair<String, List<NoteReadingSegment>>?>(null, note.content) {
+        val result = withContext(Dispatchers.Default) { note.content to noteReadingSegments(note.content) }
+        withContext(Dispatchers.Main.immediate) { value = result }
+    }
     val segments = prepared?.takeIf { it.first == note.content }?.second ?: run { CircularProgressIndicator(Modifier.size(24.dp)); return }
     val labels = remember(note.content, segments) { segments.mapIndexed { i, part -> readingHeadings(note.content.substring(part.start, minOf(part.end, part.start + 300))).firstOrNull()?.second ?: "第 ${i + 1} 段" } }
     val pageLabels = remember(note.content, segments) { readerPageLabels(note.content, segments) }
@@ -80,7 +83,9 @@ import kotlin.math.abs
     val density = LocalDensity.current
     val configuration = LocalViewConfiguration.current
     val chrome = LocalReadingChrome.current
-    var restored by remember(note.id, mode) { mutableStateOf(false) }
+    var fontSize by remember { mutableIntStateOf(ui.data.noteFontSize) }
+    var bodyWidth by remember { mutableIntStateOf(0) }
+    var restored by remember(note.id, mode, hash, fontSize, bodyWidth) { mutableStateOf(false) }
     var readyMode by remember(note.id) { mutableStateOf("") }
     var viewport by remember { mutableIntStateOf(1) }
     var bodyTop by remember { mutableFloatStateOf(0f) }
@@ -90,14 +95,19 @@ import kotlin.math.abs
     var directory by remember { mutableStateOf(false) }
     var preferences by remember { mutableStateOf(false) }
     var searching by remember { mutableStateOf(false) }
-    var fontSize by remember { mutableIntStateOf(ui.data.noteFontSize) }
     var query by remember(note.id) { mutableStateOf("") }
     var searchOffset by remember(note.id) { mutableIntStateOf(-1) }
     var searchRevision by remember(note.id) { mutableIntStateOf(0) }
-    val hits by produceState(emptyList<NoteSearchHit>(), query, note.content) { value = withContext(Dispatchers.Default) { searchNoteContent(note.content, query, segments) } }
+    val hits by produceState(emptyList<NoteSearchHit>(), query, note.content) {
+        val result = withContext(Dispatchers.Default) { searchNoteContent(note.content, query, segments) }
+        withContext(Dispatchers.Main.immediate) { value = result }
+    }
     val selected by remember(continuous, restored, segments) { derivedStateOf { if (continuous && restored) (list.firstVisibleItemIndex - 1).coerceIn(segments.indices) else index.coerceIn(segments.indices) } }
-    val readyPages = remember(note.id, hash, mode) { mutableStateMapOf<Int, Boolean>() }
-    val renderReady = readyPages[selected] == true
+    val readyPages = remember(note.id, hash, mode) { mutableStateMapOf<Int, Int>() }
+    var renderEpoch by remember(note.id) { mutableIntStateOf(0) }
+    val renderReady = readyPages[selected] == renderEpoch
+    val textViews = remember(note.id, hash) { ReaderTextRegistry() }
+    var turning by remember { mutableStateOf(false) }
     var jumpGeneration by remember(note.id) { mutableIntStateOf(0) }
     var settledJump by remember(note.id) { mutableIntStateOf(0) }
     var jumpJob by remember(note.id) { mutableStateOf<Job?>(null) }
@@ -105,30 +115,51 @@ import kotlin.math.abs
     val latestLabels by rememberUpdatedState(labels)
     val latestContinuous by rememberUpdatedState(continuous)
     val latestRestored by rememberUpdatedState(restored)
+    val latestSettled by rememberUpdatedState(settledJump == jumpGeneration && !turning)
     fun rememberPosition() {
-        if (latestRestored) vm.readingMemory.remember(NoteReadingPosition(note.id, latestSelected, if (latestContinuous) (if (list.firstVisibleItemIndex == 0) 0 else list.firstVisibleItemScrollOffset) else scroll.value, latestLabels[latestSelected], hash))
+        if (latestRestored && latestSettled) {
+            val anchor = textViews.capture(bodyTop, bodyTop + viewport)
+            val page = anchor?.first ?: latestSelected
+            vm.readingMemory.remember(NoteReadingPosition(note.id, page,
+                if (latestContinuous) (if (list.firstVisibleItemIndex == 0) 0 else list.firstVisibleItemScrollOffset) else scroll.value,
+                latestLabels[page], hash, anchor?.second))
+        }
     }
-    LaunchedEffect(note.id, mode, hash) {
+    suspend fun placePage(page: Int, offset: Int = 0, end: Boolean = false, anchor: NoteTextAnchor? = null, title: Boolean = false) {
+        if (continuous && title && anchor == null && offset == 0 && !end) {
+            list.scrollToItem(0)
+            return
+        }
+        if (continuous) list.scrollToItem(page + 1) else index = page
+        // Every visual block reports readiness, including an image's terminal
+        // error. Never use an arbitrary delay as a substitute for page layout.
+        snapshotFlow { readyPages[page] == renderEpoch }.first { it }
+        withFrameNanos { }; withFrameNanos { }
+        val view = anchor?.let { textViews.find(page, it.sourceStart) }
+        if (view != null && anchor != null) {
+            val location = IntArray(2); view.getLocationInWindow(location)
+            val line = view.layout.getLineForOffset(anchor.offset.coerceIn(0, view.text.length))
+            val delta = location[1] + view.totalPaddingTop - view.scrollY + view.layout.getLineTop(line) - bodyTop - anchor.inset
+            if (continuous) list.scrollBy(delta) else scroll.scrollTo((scroll.value + delta.toInt()).coerceIn(0, scroll.maxValue))
+        } else if (continuous) {
+            val size = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == page + 1 }?.size ?: 0
+            val bottomSpace = if (page == segments.lastIndex) with(density) { 72.dp.roundToPx() } else 0
+            val targetOffset = if (end) (size - viewport + bottomSpace).coerceAtLeast(0) else offset.coerceAtMost((size - 1).coerceAtLeast(0))
+            list.scrollToItem(if (title) 0 else page + 1, targetOffset)
+        } else scroll.scrollTo(if (end) scroll.maxValue else offset.coerceIn(0, scroll.maxValue))
+    }
+    LaunchedEffect(note.id, mode, hash, fontSize, bodyWidth) {
         jumpJob?.cancel(); jumpGeneration++; settledJump = jumpGeneration
         restored = false
         val position = if (readyMode.isEmpty()) initial else vm.readingMemory.position(note.id)
         index = restoredNoteIndex(position, hash, labels)
-        if (continuous) {
-            val item = if (index == 0 && (position == null || position.scroll == 0)) 0 else index + 1
-            val offset = if (position?.contentHash == hash) position.scroll else 0
-            list.scrollToItem(item, offset)
-            withTimeoutOrNull(1800) { snapshotFlow { readyPages[index] == true }.first { it } }
-            withFrameNanos { }; withFrameNanos { }
-            list.scrollToItem(item, offset)
-        }
-        else {
-            val offset = if (position?.contentHash == hash && readyMode.isEmpty()) position.scroll else 0
-            if (offset > 0) withTimeoutOrNull(1800) { snapshotFlow { scroll.maxValue }.first { it >= offset } }
-            scroll.scrollTo(offset.coerceAtMost(scroll.maxValue))
-        }
+        renderEpoch++
+        val sameContent = position?.contentHash == hash
+        placePage(index, if (sameContent) position!!.scroll else 0, anchor = position?.textAnchor?.takeIf { sameContent },
+            title = continuous && index == 0 && (position == null || position.scroll == 0))
         readyMode = mode; restored = true
     }
-    LaunchedEffect(selected, restored, hash, mode) {
+    LaunchedEffect(selected, restored, hash, mode, settledJump, turning) {
         if (restored) snapshotFlow { if (continuous) list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset else selected to scroll.value }.debounce(180).collect { rememberPosition() }
     }
     DisposableEffect(note.id, hash, mode) { onDispose { rememberPosition() } }
@@ -138,57 +169,39 @@ import kotlin.math.abs
         lifecycle.addObserver(observer); try { awaitCancellation() } finally { lifecycle.removeObserver(observer) }
     } }
     LaunchedEffect(ui.data.noteFontSize) { fontSize = ui.data.noteFontSize }
-    var turning by remember { mutableStateOf(false) }
-    val offsets = remember(note.id, hash) { mutableMapOf<Int, Int>() }
-    fun goTo(segment: Int, offset: Int = 0, end: Boolean = false) {
+    fun goTo(segment: Int, offset: Int = 0, end: Boolean = false, anchor: NoteTextAnchor? = null, title: Boolean = false) {
         val target = segment.coerceIn(segments.indices)
         val generation = ++jumpGeneration
         jumpJob?.cancel()
         jumpJob = scope.launch {
             try {
-            if (continuous) {
-                list.scrollToItem(target + 1, offset)
-                withTimeoutOrNull(1800) { snapshotFlow { readyPages[target] == true }.first { it } }
-                withFrameNanos { }; withFrameNanos { }
-                val endOffset = if (end) {
-                    val size = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target + 1 }?.size ?: 0
-                    val bottomSpace = if (target == segments.lastIndex) with(density) { 72.dp.roundToPx() } else 0
-                    (size - viewport + bottomSpace).coerceAtLeast(0)
-                } else offset
-                list.scrollToItem(target + 1, endOffset)
-            }
-            else {
-                index = target
-                withTimeoutOrNull(1800) { snapshotFlow { readyPages[target] == true }.first { it } }
-                withFrameNanos { }; withFrameNanos { }
-                if (offset > 0) withTimeoutOrNull(1800) { snapshotFlow { scroll.maxValue }.first { it >= offset } }
-                scroll.scrollTo(if (end) scroll.maxValue else offset.coerceAtMost(scroll.maxValue))
-            }
+            renderEpoch++
+            placePage(target, offset, end, anchor, title)
             } finally { if (generation == jumpGeneration) settledJump = generation }
         }
     }
     fun turn(direction: Int) {
         if (turning || !restored || !renderReady || settledJump != jumpGeneration) return
+        rememberPosition()
         turning = true
-        scope.launch {
+        val generation = ++jumpGeneration
+        jumpJob?.cancel()
+        jumpJob = scope.launch {
             try {
                 if (direction > 0 && scroll.value < scroll.maxValue || direction < 0 && scroll.value > 0) scroll.animateScrollTo(nextReadingScreen(scroll.value, scroll.maxValue, viewport, direction))
                 else {
-                    offsets[selected] = scroll.value
                     val target = (selected + direction).coerceIn(segments.indices)
                     if (target != selected) {
-                        index = target
-                        withFrameNanos { }; withFrameNanos { }
-                        val offset = if (direction < 0) offsets[target] ?: 0 else 0
-                        if (offset > 0) withTimeoutOrNull(1800) { snapshotFlow { scroll.maxValue }.first { it >= offset } }
-                        scroll.scrollTo(offset.coerceAtMost(scroll.maxValue))
+                        renderEpoch++
+                        placePage(target, end = direction < 0)
                     }
                 }
-            } finally { turning = false }
+            } finally { turning = false; if (generation == jumpGeneration) settledJump = generation }
         }
     }
     fun selectHit(hit: NoteSearchHit, word: String) { query = word; searchOffset = hit.offset; searchRevision++; searching = false; goTo(hit.segment) }
-    val target = if (searchOffset >= 0 && query.isNotBlank()) NoteSearchTarget(searchOffset, query, searchRevision) else null
+    var revealedSearchRevision by remember(note.id) { mutableIntStateOf(0) }
+    val target = if (searchOffset >= 0 && query.isNotBlank() && revealedSearchRevision != searchRevision) NoteSearchTarget(searchOffset, query, searchRevision) else null
     val reportProgress = LocalReaderProgress.current
     val sticky by remember { derivedStateOf { list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > titleHeight } }
     val progress = ReaderProgress(pageLabels[selected], "阅读分段 ${selected + 1} / ${segments.size} · 完整笔记已保留", note.title.takeIf { continuous }, continuous && restored && sticky)
@@ -207,6 +220,7 @@ import kotlin.math.abs
             val position = IntArray(2); view.getLocationInWindow(position)
             val delta = position[1] + layout.getLineTop(layout.getLineForOffset(offset.coerceAtMost(view.text.length))) - bodyTop - revealInset
             if (continuous) list.scrollBy(delta) else scroll.scrollTo((scroll.value + delta.toInt()).coerceIn(0, scroll.maxValue))
+            revealedSearchRevision = revision
         }
     } }
     if (searching) NoteSearchDialog(note, { searching = false }, onHit = ::selectHit) { goTo(it); searching = false }
@@ -222,14 +236,14 @@ import kotlin.math.abs
     }
     if (navigation) ReadingActionSheet("阅读跳转", { navigation = false }) {
         FeedbackDropdownMenuItem(text = { Text("笔记内查找") }, onClick = { navigation = false; searching = true })
-        if (initial != null) FeedbackDropdownMenuItem(text = { Text("回到上次阅读") }, onClick = { navigation = false; goTo(restoredNoteIndex(initial, hash, labels), if (initial.contentHash == hash) initial.scroll else 0) })
+        if (initial != null) FeedbackDropdownMenuItem(text = { Text("回到上次阅读") }, onClick = { navigation = false; goTo(restoredNoteIndex(initial, hash, labels), if (initial.contentHash == hash) initial.scroll else 0, anchor = initial.textAnchor?.takeIf { initial.contentHash == hash }) })
         if (segments.size > 1) {
             FeedbackDropdownMenuItem(text = { Text("上一段") }, enabled = selected > 0, onClick = { navigation = false; goTo(selected - 1) })
             FeedbackDropdownMenuItem(text = { Text("下一段") }, enabled = selected < segments.lastIndex, onClick = { navigation = false; goTo(selected + 1) })
         }
         FeedbackDropdownMenuItem(text = { Text("本段顶部") }, onClick = { navigation = false; goTo(selected) })
         FeedbackDropdownMenuItem(text = { Text("本段底部") }, onClick = { navigation = false; goTo(selected, end = true) })
-        FeedbackDropdownMenuItem(text = { Text("整本开头") }, onClick = { navigation = false; if (continuous) scope.launch { list.scrollToItem(0) } else goTo(0) })
+        FeedbackDropdownMenuItem(text = { Text("整本开头") }, onClick = { navigation = false; goTo(0, title = continuous) })
         FeedbackDropdownMenuItem(text = { Text("整本末尾") }, onClick = { navigation = false; goTo(segments.lastIndex, end = true) })
     }
     if (preferences) ReadingActionSheet("阅读方式与字号", { preferences = false }) {
@@ -239,12 +253,12 @@ import kotlin.math.abs
         Text("点击翻页：点正文右侧前进一屏，左侧返回一屏。横滑：向左前进，向右返回。先看完当前页每一屏，再进入下一页。", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
         HorizontalDivider()
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            FeedbackTextButton(onClick = { fontSize = (fontSize - 1).coerceAtLeast(12); vm.updateNotebookState { it.copy(noteFontSize = fontSize) } }, enabled = fontSize > 12) { Text("减小字号") }
+            FeedbackTextButton(onClick = { rememberPosition(); fontSize = (fontSize - 1).coerceAtLeast(12); vm.updateNotebookState { it.copy(noteFontSize = fontSize) } }, enabled = fontSize > 12) { Text("减小字号") }
             Text("$fontSize sp", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-            FeedbackTextButton(onClick = { fontSize = (fontSize + 1).coerceAtMost(28); vm.updateNotebookState { it.copy(noteFontSize = fontSize) } }, enabled = fontSize < 28) { Text("增大字号") }
+            FeedbackTextButton(onClick = { rememberPosition(); fontSize = (fontSize + 1).coerceAtMost(28); vm.updateNotebookState { it.copy(noteFontSize = fontSize) } }, enabled = fontSize < 28) { Text("增大字号") }
         }
         Text("字号预览：理解概念、联系课件、整理重点。", Modifier.padding(12.dp), fontSize = fontSize.sp)
-        FeedbackTextButton(onClick = { fontSize = 16; vm.updateNotebookState { it.copy(noteFontSize = 16) } }) { Text("恢复默认字号") }
+        FeedbackTextButton(onClick = { rememberPosition(); fontSize = 16; vm.updateNotebookState { it.copy(noteFontSize = 16) } }) { Text("恢复默认字号") }
     }
     CompositionLocalProvider(LocalNoteFontSize provides fontSize, LocalNoteSearchQuery provides query, LocalNoteSearchTarget provides target, LocalNoteSearchReveal provides reveal) {
         Column(modifier.fillMaxSize()) {
@@ -255,7 +269,7 @@ import kotlin.math.abs
                 FeedbackIconButton(onClick = { selectHit(hits[(hitIndex + 1).coerceAtMost(hits.lastIndex)], query) }, enabled = hits.isNotEmpty() && hitIndex < hits.lastIndex) { Icon(Icons.Default.ChevronRight, "下一处") }
                 FeedbackIconButton(onClick = { query = ""; searchOffset = -1 }) { Icon(Icons.Default.Close, "结束查找") }
             }
-            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().onSizeChanged { viewport = it.height }.onGloballyPositioned { bodyTop = it.positionInWindow().y }) {
+            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().onSizeChanged { viewport = it.height; bodyWidth = it.width }.onGloballyPositioned { bodyTop = it.positionInWindow().y }) {
                 // Native text keeps the actual reader width during lazy item
                 // premeasurement as well as its later placement on screen.
                 val contentWidth = maxWidth
@@ -267,7 +281,9 @@ import kotlin.math.abs
                 val segment: @Composable (Int) -> Unit = { page ->
                     val part = segments[page]; val raw = part.display(note.content)
                     val shown = if (page == 0) noteTextForDisplay(raw, note.title) else raw
-                    CompositionLocalProvider(LocalNoteRenderReady provides { readyPages[page] = true }, LocalNoteContentWidth provides contentWidth) {
+                    val epoch = renderEpoch
+                    CompositionLocalProvider(LocalNoteRenderReady provides { ready -> if (epoch == renderEpoch) { if (ready) readyPages[page] = epoch else readyPages.remove(page) }; Unit },
+                        LocalNoteTextRegistered provides { view, start -> textViews.register(page, start, view) }, LocalNoteContentWidth provides contentWidth) {
                         IllustratedMarkdown(shown, vm.sourceImages, part.start - part.prefix.length + raw.length - shown.length)
                     }
                 }

@@ -29,7 +29,7 @@ fun Saved.toJson(): JSONObject = JSONObject().apply {
     put("chatgptAccounts", JSONArray(chatgptAccounts.map { it.json() })); put("chatgptHostId", chatgptHostId); put("chatgptDraftClients", JSONArray(chatgptDraftClients)); put("chatgptWelcomeShown", chatgptWelcomeShown)
     put("materials", JSONArray(materials.map { it.json() })); put("downloadTreeUri", downloadTreeUri); put("downloadDirectoryName", downloadDirectoryName); put("learnerProfile", learnerProfile); put("tutorPrompt", tutorPrompt); put("notesPrompt", notesPrompt)
     put("conversations", JSONArray(conversations.map { c -> JSONObject().put("id", c.id).put("title", c.title).put("messages", JSONArray(c.messages.map { m -> JSONObject().put("role", m.role).put("text", m.text).put("image", m.image).put("source", m.source) })) }))
-    put("noteReadingPositions", JSONArray(noteReadingPositions.map { JSONObject().put("noteId", it.noteId).put("index", it.index).put("scroll", it.scroll).put("anchor", it.anchor).put("contentHash", it.contentHash) }))
+    put("noteReadingPositions", JSONArray(noteReadingPositions.map { JSONObject().put("noteId", it.noteId).put("index", it.index).put("scroll", it.scroll).put("anchor", it.anchor).put("contentHash", it.contentHash).put("textAnchor", it.textAnchor?.toJson()) }))
     put("noteDrafts", JSONArray(noteDrafts.map { JSONObject().put("noteId", it.noteId).put("content", it.content).put("updatedAt", it.updatedAt).put("baseContent", it.baseContent) }))
     put("noteFolders", JSONArray(noteFolders.map { JSONObject().put("id", it.id).put("name", it.name) }))
     put("notes", JSONArray(notes.map { it.notebookJson() })); putNotebookLibrary(this, this@toJson)
@@ -41,7 +41,7 @@ fun savedFromJson(o: JSONObject): Saved = Saved(
     superFocusNotes = o.optBoolean("superFocusNotes", false), selectedProvider = o.optString("selectedProvider"),
     conversations = o.getJSONArray("conversations").objects().map { c -> Conversation(c.getString("id"), c.getString("title"), c.getJSONArray("messages").objects().map { Message(it.getString("role"), it.getString("text"), it.optional("image"), it.optional("source")) }) }.ifEmpty { listOf(Conversation()) },
     currentChat = o.optString("currentChat"), notes = (o.optJSONArray("notes") ?: JSONArray()).objects().map(::notebookNoteFromJson),
-    noteReadingPositions = (o.optJSONArray("noteReadingPositions") ?: JSONArray()).objects().map { NoteReadingPosition(it.getString("noteId"), it.optInt("index").coerceAtLeast(0), it.optInt("scroll").coerceAtLeast(0), it.optString("anchor"), it.optString("contentHash")) },
+    noteReadingPositions = (o.optJSONArray("noteReadingPositions") ?: JSONArray()).objects().map { NoteReadingPosition(it.getString("noteId"), it.optInt("index").coerceAtLeast(0), it.optInt("scroll").coerceAtLeast(0), it.optString("anchor"), it.optString("contentHash"), noteTextAnchorFromJson(it.optJSONObject("textAnchor"))) },
     noteDrafts = (o.optJSONArray("noteDrafts") ?: JSONArray()).objects().map { NoteDraft(it.getString("noteId"), it.getString("content"), it.getLong("updatedAt"), if (it.isNull("baseContent")) null else it.getString("baseContent")) },
     noteFolders = (o.optJSONArray("noteFolders") ?: JSONArray()).objects().map { NoteFolder(it.getString("id"), it.getString("name")) }.distinctBy { it.id },
     materials = (o.optJSONArray("materials") ?: JSONArray()).objects().map(::materialFromJson), downloadTreeUri = o.optString("downloadTreeUri"), downloadDirectoryName = o.optString("downloadDirectoryName"),

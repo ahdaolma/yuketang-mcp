@@ -90,7 +90,11 @@ class MaterialPreviews(context: Context) {
         }) } catch (e: CancellationException) { throw e } catch (_: Exception) { VisualLoad(key, retry, null, "预览暂不可用") }
     }
     val renderReady = LocalNoteRenderReady.current
-    LaunchedEffect(result) { if (result?.visual != null) renderReady?.invoke() }
+    LaunchedEffect(result, key, retry, renderReady) {
+        // A visible error is also a finished layout; a missing image must not
+        // prevent the reader from reaching the remaining pages.
+        renderReady?.invoke(result?.let { it.key == key && it.attempt == retry } == true)
+    }
     Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val current = result?.takeIf { it.key == key && it.attempt == retry }
@@ -150,12 +154,37 @@ class MaterialPreviews(context: Context) {
     // Only our private, content-addressed images are loaded. Arbitrary model links
     // remain ordinary Markdown and never trigger file or network image access.
     val matches = remember(text) { sourceImagePattern.findAll(text).toList() }
+    val report = LocalNoteRenderReady.current
+    val ready = remember(text) { mutableStateMapOf<Int, Boolean>() }
+    val count = remember(text) {
+        var position = 0; var total = 0
+        matches.forEach { match -> if (match.range.first > position) total++; total++; position = match.range.last + 1 }
+        total + if (position < text.length || matches.isEmpty()) 1 else 0
+    }
+    val complete = ready.size == count && ready.values.all { it }
+    LaunchedEffect(complete, report) { report?.invoke(complete) }
     var start = 0
+    var block = 0
     matches.forEach { match ->
-        if (match.range.first > start) Markdown(text.substring(start, match.range.first), sourceOffset + start)
+        if (match.range.first > start) {
+            val slot = block++
+            CompositionLocalProvider(LocalNoteRenderReady provides remember(text, slot) { { done: Boolean -> ready[slot] = done } }) {
+                Markdown(text.substring(start, match.range.first), sourceOffset + start)
+            }
+        }
         val id = match.groupValues[2]; val label = match.groupValues[1].ifBlank { "课件原页" }
-        key(id, match.range.first) { PagePreview("note:$id", label, repository, images.markupStore) { withContext(Dispatchers.IO) { Attachment(images.data(id), label, "") } } }
+        val slot = block++
+        key(id, match.range.first) {
+            CompositionLocalProvider(LocalNoteRenderReady provides remember(text, slot) { { done: Boolean -> ready[slot] = done } }) {
+                PagePreview("note:$id", label, repository, images.markupStore) { withContext(Dispatchers.IO) { Attachment(images.data(id), label, "") } }
+            }
+        }
         start = match.range.last + 1
     }
-    if (start < text.length || matches.isEmpty()) Markdown(text.substring(start), sourceOffset + start)
+    if (start < text.length || matches.isEmpty()) {
+        val slot = block
+        CompositionLocalProvider(LocalNoteRenderReady provides remember(text, slot) { { done: Boolean -> ready[slot] = done } }) {
+            Markdown(text.substring(start), sourceOffset + start)
+        }
+    }
 }

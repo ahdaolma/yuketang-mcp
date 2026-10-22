@@ -49,13 +49,14 @@ class NotebookBackupTest {
         val saved = Saved(notes = listOf(active), noteTrash = listOf(TrashedNote(trashed, 10)), noteHistory = listOf(NoteRevision("revision", historical, 9)),
             noteModifiedTimes = mapOf("a" to 20, "trash" to 10, "historical" to 9, "gone" to 1),
             noteDrafts = listOf(NoteDraft("a", "草稿", 30, null), NoteDraft("trash", "不再活动的草稿", 20)),
-            noteReadingPositions = listOf(NoteReadingPosition("a", 1, 2, "页", "hash"), NoteReadingPosition("historical", 0, 0, "", "")))
+            noteReadingPositions = listOf(NoteReadingPosition("a", 1, 2, "页", "hash", NoteTextAnchor(20, 10, 4)), NoteReadingPosition("historical", 0, 0, "", "")))
         val restored = restore(archive(saved)).data
         assertTrue(restored.imageBearingNotes().all { it.folderId.isEmpty() })
         assertEquals(listOf("trash", "historical"), restored.notes.single().relatedNoteIds)
         assertEquals(setOf("a", "trash", "historical"), restored.noteModifiedTimes.keys)
         assertEquals(listOf("a"), restored.noteDrafts.map { it.noteId }); assertNull(restored.noteDrafts.single().baseContent)
         assertEquals(listOf("a"), restored.noteReadingPositions.map { it.noteId })
+        assertEquals(NoteTextAnchor(20, 10, 4), restored.noteReadingPositions.single().textAnchor)
         assertEquals("deleted-folder", saved.notes.single().folderId)
         assertTrue("gone" in saved.noteModifiedTimes)
     }

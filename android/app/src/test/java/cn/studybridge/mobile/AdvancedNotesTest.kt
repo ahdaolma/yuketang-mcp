@@ -31,13 +31,21 @@ class AdvancedNotesTest {
     @Test fun encryptedRecordPayloadKeepsDraftsAndReadingPositionsSeparateFromOriginalNotes() {
         val note = Note("id", "标题", first, "fixture", "手写")
         val draft = NoteDraft(note.id, second, 12)
-        val position = NoteReadingPosition(note.id, 2, 320, "第 8 页", "hash")
+        val position = NoteReadingPosition(note.id, 2, 320, "第 8 页", "hash", NoteTextAnchor(1200, 80, 12))
         val saved = Saved(notes = listOf(note), noteDrafts = listOf(draft), noteReadingPositions = listOf(position))
         assertEquals(saved, savedFromJson(saved.toJson()))
         assertEquals(first, saved.notes.single().content)
         val old = saved.toJson().apply { remove("noteDrafts"); remove("noteReadingPositions") }
         assertTrue(savedFromJson(old).noteDrafts.isEmpty())
         assertTrue(savedFromJson(old).noteReadingPositions.isEmpty())
+    }
+    @Test fun oldReadingRecordsRemainReadableAndInvalidTextAnchorsAreIgnored() {
+        val old = NoteReadingPosition("id", 1, 88, "第 2 页", "hash")
+        val json = Saved(noteReadingPositions = listOf(old)).toJson()
+        json.getJSONArray("noteReadingPositions").getJSONObject(0).remove("textAnchor")
+        assertEquals(old, savedFromJson(json).noteReadingPositions.single())
+        assertNull(noteTextAnchorFromJson(org.json.JSONObject().put("sourceStart", -1).put("offset", 0).put("inset", 0)))
+        assertNull(noteTextAnchorFromJson(org.json.JSONObject()))
     }
     @Test fun rememberedReadingLocationMatchesItsPageAfterReorderingAndClampsAfterDeletion() {
         val position = NoteReadingPosition("id", 1, 300, "第 8 页", "old")

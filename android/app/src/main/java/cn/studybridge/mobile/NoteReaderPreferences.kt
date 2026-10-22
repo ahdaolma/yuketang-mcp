@@ -4,7 +4,8 @@ import androidx.compose.runtime.staticCompositionLocalOf
 
 val NOTE_READING_MODES = linkedMapOf("continuous" to "连续滚动", "buttons" to "点击翻页", "swipe" to "横向滑屏")
 val LocalNoteFontSize = staticCompositionLocalOf { 16 }
-val LocalNoteRenderReady = staticCompositionLocalOf<(() -> Unit)?> { null }
+val LocalNoteRenderReady = staticCompositionLocalOf<((Boolean) -> Unit)?> { null }
+val LocalNoteTextRegistered = staticCompositionLocalOf<((android.widget.TextView, Int) -> Unit)?> { null }
 val LocalNoteContentWidth = staticCompositionLocalOf<androidx.compose.ui.unit.Dp?> { null }
 data class ReaderProgress(val text: String, val description: String, val title: String? = null, val titleVisible: Boolean = false)
 val LocalReaderProgress = staticCompositionLocalOf<(ReaderProgress?) -> Unit> { {} }

@@ -106,7 +106,7 @@ class ReaderExperienceTest {
         compose.onNodeWithTag("应用底部导航").assertDoesNotExist()
         compose.onNodeWithTag("按屏翻页栏").assertDoesNotExist()
         compose.onNodeWithContentDescription("当前阅读页码").assertIsDisplayed()
-        val clock = compose.onNodeWithTag("应用时间栏").getUnclippedBoundsInRoot()
+        val clock = compose.onNodeWithTag("应用时间行").getUnclippedBoundsInRoot()
         val page = compose.onNodeWithContentDescription("当前阅读页码").getUnclippedBoundsInRoot()
         assertTrue("Page number belongs in the time row", page.top >= clock.top && page.bottom <= clock.bottom)
     }
@@ -141,6 +141,10 @@ class ReaderExperienceTest {
                 advancedUiShot(compose.activity, "reader-audit-switch-$mode")
                 throw AssertionError("Switching to $mode lost the current paragraph; memory=${vm.readingMemory.position(vm.noteReader.id!!)}", failure)
             }
+            compose.openNoteTool("阅读设置")
+            compose.onNodeWithText("增大字号").performScrollTo().performClick()
+            compose.onNodeWithContentDescription("关闭阅读方式与字号").performClick()
+            compose.waitUntil(8000) { marker in visibleMarkers(listOf(marker)) }
         }
         assertReaderChrome()
     }
@@ -270,10 +274,10 @@ class ReaderExperienceTest {
             assertTrue("The overflowing title must visibly end with ellipsis", layouts.single().isLineEllipsized(0))
             val bar = compose.onNodeWithTag("应用时间栏").getUnclippedBoundsInRoot()
             val sticky = compose.onNodeWithTag("笔记吸顶标题").getUnclippedBoundsInRoot()
-            val clock = compose.onNode(hasContentDescription("当前时间 ", substring = true)).getUnclippedBoundsInRoot()
+            val clockRow = compose.onNodeWithTag("应用时间行").getUnclippedBoundsInRoot()
             val page = compose.onNodeWithContentDescription("当前阅读页码").getUnclippedBoundsInRoot()
-            assertTrue("Sticky title must share the clock row", sticky.top >= bar.top && sticky.bottom <= bar.bottom)
-            assertTrue("Sticky title must sit between time and page", sticky.left >= clock.right && sticky.right <= page.left)
+            assertTrue("Sticky title must be below the camera and clock row", sticky.top >= clockRow.bottom && sticky.bottom <= bar.bottom)
+            assertTrue("Page counter stays beside the clock", page.top >= clockRow.top && page.bottom <= clockRow.bottom)
             val after = compose.onNodeWithTag("笔记正文").getUnclippedBoundsInRoot()
             assertEquals("Title entrance must not push the body down", before.top.value, after.top.value, .1f)
             assertEquals(before.bottom.value, after.bottom.value, .1f)

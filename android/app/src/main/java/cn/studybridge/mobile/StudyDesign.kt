@@ -223,13 +223,19 @@ fun studyClockText(now: Long = System.currentTimeMillis()): String =
     if (Build.VERSION.SDK_INT >= 28) view.rootWindowInsets?.displayCutout?.boundingRects.orEmpty().sortedBy { it.left }.forEach { rect ->
         if (rect.top < with(density) { barHeight.roundToPx() } && rect.left < start + clockWidth && rect.right > start) start = rect.right + gap
     }
-    Row(Modifier.fillMaxWidth().height(barHeight).testTag("应用时间栏").padding(start = with(density) { start.toDp() }, end = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxWidth().testTag("应用时间栏")) {
+    Row(Modifier.fillMaxWidth().height(barHeight).testTag("应用时间行").padding(start = with(density) { start.toDp() }, end = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(clock, style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, lineHeight = 16.sp), maxLines = 1,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.semantics { contentDescription = "当前时间 $clock" })
-        // Reserve the middle slot even while hidden. Animation never changes
-        // the row height or moves the body, clock, or page counter.
-        Box(Modifier.weight(1f).fillMaxHeight().clipToBounds(), contentAlignment = Alignment.Center) {
-            if (readingProgress?.title != null) androidx.compose.animation.AnimatedVisibility(
+        Spacer(Modifier.weight(1f))
+        if (readingProgress != null) Text(readingProgress.text, Modifier.testTag("阅读页码").semantics { contentDescription = "当前阅读页码"; stateDescription = readingProgress.description }, style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, lineHeight = 16.sp), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    }
+    // The camera can occupy the clock row's center. Keep the title beneath it
+    // and reserve its strip while hidden so revealing it cannot shift the body.
+    if (readingProgress?.title != null) {
+        val titleHeight = with(density) { 20.sp.toDp() } + 12.dp
+        Box(Modifier.fillMaxWidth().height(titleHeight).padding(horizontal = 20.dp).clipToBounds(), contentAlignment = Alignment.Center) {
+            androidx.compose.animation.AnimatedVisibility(
                 readingProgress.titleVisible,
                 enter = fadeIn(tween(320)) + slideInVertically(tween(360)) { it },
                 exit = fadeOut(tween(280)) + slideOutVertically(tween(320)) { it }
@@ -238,7 +244,7 @@ fun studyClockText(now: Long = System.currentTimeMillis()): String =
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        if (readingProgress != null) Text(readingProgress.text, Modifier.testTag("阅读页码").semantics { contentDescription = "当前阅读页码"; stateDescription = readingProgress.description }, style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp, lineHeight = 16.sp), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    }
     }
 }
 

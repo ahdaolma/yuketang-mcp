@@ -210,6 +210,7 @@ class MainActivity : ComponentActivity() {
     val searchTarget = LocalNoteSearchTarget.current
     val revealSearch = LocalNoteSearchReveal.current
     val renderReady = LocalNoteRenderReady.current
+    val registerText = LocalNoteTextRegistered.current
     val contentWidth = LocalNoteContentWidth.current
     val decorated = remember(formatted, text, sourceOffset, personalMarks, searchQuery) { formatted?.takeIf { it.first == text }?.second?.let { searchHighlight(renderPersonalAnnotations(it, text, sourceOffset, personalMarks), searchQuery) as android.text.Spanned } }
     AndroidView(factory = { NoteSelectableTextView(it).apply { layoutParams = android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT); textSize = 16f; setTextIsSelectable(true); setLineSpacing(0f, 1.3f) } }, modifier = Modifier.fillMaxWidth().then(if (contentWidth != null) Modifier.requiredWidth(contentWidth) else Modifier), update = {
@@ -227,7 +228,11 @@ class MainActivity : ComponentActivity() {
         }
         if (parsed != null) it.alpha = 1f
         if (parsed != null && it.tag !== parsed) { renderer.setParsedMarkdown(it, parsed); it.tag = parsed }
-        if (parsed != null) it.post { renderReady?.invoke() }
+        val renderedView = it
+        it.post {
+            if (parsed != null && sourceOffset != null) registerText?.invoke(renderedView, sourceOffset)
+            renderReady?.invoke(parsed != null)
+        }
         val target = searchTarget
         if (target != null && sourceOffset != null && target.offset in sourceOffset until sourceOffset + text.length && parsed != null) {
             val key = "${target.revision}:${target.offset}:${target.query}"

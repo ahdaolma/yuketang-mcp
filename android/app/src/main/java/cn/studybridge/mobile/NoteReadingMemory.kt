@@ -8,7 +8,14 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-data class NoteReadingPosition(val noteId: String, val index: Int, val scroll: Int, val anchor: String, val contentHash: String)
+data class NoteTextAnchor(val sourceStart: Int, val offset: Int, val inset: Int) {
+    fun toJson() = org.json.JSONObject().put("sourceStart", sourceStart).put("offset", offset).put("inset", inset)
+}
+fun noteTextAnchorFromJson(value: org.json.JSONObject?): NoteTextAnchor? = value?.let {
+    val start = it.optInt("sourceStart", -1); val offset = it.optInt("offset", -1); val inset = it.optInt("inset", -1)
+    if (start < 0 || offset < 0 || inset < 0) null else NoteTextAnchor(start, offset, inset)
+}
+data class NoteReadingPosition(val noteId: String, val index: Int, val scroll: Int, val anchor: String, val contentHash: String, val textAnchor: NoteTextAnchor? = null)
 fun noteContentHash(text: String) = java.security.MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 fun restoredNoteIndex(position: NoteReadingPosition?, hash: String, labels: List<String>): Int {
     if (labels.isEmpty()) return 0
