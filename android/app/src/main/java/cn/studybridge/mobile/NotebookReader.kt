@@ -213,11 +213,12 @@ import kotlin.math.abs
     if (directory) JumpDialog("笔记目录 / 阅读分段", labels, { directory = false }) { goTo(it); directory = false }
     if (tools) ReadingActionSheet("阅读工具", { tools = false }) {
         FeedbackDropdownMenuItem(text = { Text("返回笔记列表") }, leadingIcon = { Icon(Icons.Default.ArrowBack, null) }, modifier = Modifier.semantics { contentDescription = "返回笔记列表" }, onClick = { tools = false; onBack() })
-        FeedbackDropdownMenuItem(text = { Text("目录 · ${selected + 1}/${segments.size}") }, modifier = Modifier.semantics { contentDescription = "目录跳转"; stateDescription = "阅读分段 ${selected + 1} / ${segments.size} · 完整笔记已保留" }, onClick = { tools = false; directory = true })
-        FeedbackDropdownMenuItem(text = { Text("阅读跳转") }, modifier = Modifier.semantics { contentDescription = "阅读跳转" }, onClick = { tools = false; navigation = true })
-        FeedbackDropdownMenuItem(text = { Text("阅读方式与字号") }, modifier = Modifier.semantics { contentDescription = "阅读设置" }, onClick = { tools = false; preferences = true })
-        FeedbackDropdownMenuItem(text = { Text("笔记选项") }, modifier = Modifier.semantics { contentDescription = "笔记选项" }, onClick = { tools = false; onOptions() })
-        FeedbackDropdownMenuItem(text = { Text("设置") }, modifier = Modifier.semantics { contentDescription = "设置" }, onClick = { tools = false; vm.tab(3) })
+        FeedbackDropdownMenuItem(text = { Text("目录 · ${selected + 1}/${segments.size}") }, leadingIcon = { Icon(Icons.Outlined.MenuBook, null) }, modifier = Modifier.semantics { contentDescription = "目录跳转"; stateDescription = "阅读分段 ${selected + 1} / ${segments.size} · 完整笔记已保留" }, onClick = { tools = false; directory = true })
+        FeedbackDropdownMenuItem(text = { Text("阅读跳转") }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, modifier = Modifier.semantics { contentDescription = "阅读跳转" }, onClick = { tools = false; navigation = true })
+        ReadingActionGroup("阅读与管理")
+        FeedbackDropdownMenuItem(text = { Text("阅读方式与字号") }, leadingIcon = { Icon(Icons.Outlined.TextFields, null) }, modifier = Modifier.semantics { contentDescription = "阅读设置" }, onClick = { tools = false; preferences = true })
+        FeedbackDropdownMenuItem(text = { Text("笔记选项") }, leadingIcon = { Icon(Icons.Outlined.EditNote, null) }, modifier = Modifier.semantics { contentDescription = "笔记选项" }, onClick = { tools = false; onOptions() })
+        FeedbackDropdownMenuItem(text = { Text("设置") }, leadingIcon = { Icon(Icons.Outlined.Settings, null) }, modifier = Modifier.semantics { contentDescription = "设置" }, onClick = { tools = false; vm.tab(3) })
     }
     if (navigation) ReadingActionSheet("阅读跳转", { navigation = false }) {
         FeedbackDropdownMenuItem(text = { Text("笔记内查找") }, onClick = { navigation = false; searching = true })

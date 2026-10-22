@@ -6,11 +6,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.PopupProperties
@@ -42,6 +48,21 @@ import androidx.compose.ui.window.PopupProperties
                 FeedbackIconButton(onClick = onDismissRequest) { Icon(Icons.Outlined.Close, "关闭$title") }
             }
             Column(Modifier.fillMaxWidth().weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), content = content)
+        }
+    }
+}
+
+@Composable fun StudyChoiceRow(onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean? = null, enabled: Boolean = true, content: @Composable RowScope.() -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    FeedbackCard(onClick = onClick, enabled = enabled,
+        modifier = modifier.fillMaxWidth().padding(vertical = 3.dp).semantics { if (selected != null) this.selected = selected },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = if (selected == true) colors.primaryContainer else colors.surfaceContainerLow),
+        border = BorderStroke(1.dp, if (selected == true) colors.primary.copy(alpha = .35f) else colors.outlineVariant.copy(alpha = .5f))) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, content = content)
+            Icon(if (selected == true) Icons.Outlined.CheckCircle else Icons.Outlined.ChevronRight, null,
+                Modifier.size(20.dp), tint = if (selected == true) colors.primary else colors.onSurfaceVariant)
         }
     }
 }

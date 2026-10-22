@@ -83,10 +83,7 @@ private val notebookBackupExplanation = "备份只包含笔记、分类、标签
 }
 
 @Composable private fun NotebookChoice(label: String, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
-        RadioButton(selected, onClick = null, enabled = enabled)
-        Text(label, Modifier.weight(1f).padding(start = 8.dp))
-    }
+    StudyChoiceRow(onClick = onClick, selected = selected, enabled = enabled) { Text(label) }
 }
 
 @Composable private fun NotebookDialog(title: String, tag: String, onClose: () -> Unit, content: @Composable ColumnScope.() -> Unit) {

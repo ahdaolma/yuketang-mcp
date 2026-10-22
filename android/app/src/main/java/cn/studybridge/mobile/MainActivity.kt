@@ -790,7 +790,13 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 OutlinedTextField(modelQuery, { modelQuery = it }, label = { Text("搜索模型") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
                 val candidates = remember(ui.modelList, modelQuery, ui.modelNames) { ui.modelList.filter { it.contains(modelQuery, ignoreCase = true) || ui.modelNames[it]?.contains(modelQuery, ignoreCase = true) == true } }
                 if (candidates.isEmpty()) Text("没有匹配的模型", Modifier.padding(20.dp), style = MaterialTheme.typography.bodyMedium)
-                LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = expandedListHeight(420.dp)).testTag("模型选择列表"), contentPadding = PaddingValues(vertical = 12.dp)) { items(candidates, key = { it }) { id -> TextButton(onClick = { model = id; chooseModel = false; focus.clearFocus(); keyboard?.hide() }, modifier = Modifier.fillMaxWidth()) { Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) { Text(ui.modelNames[id] ?: id, maxLines = 2, overflow = TextOverflow.Ellipsis); if (ui.modelNames[id]?.let { it != id } == true) Text(id, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) } } } }
+                LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = expandedListHeight(420.dp)).testTag("模型选择列表"), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)) {
+                    items(candidates, key = { it }) { id ->
+                        StudyChoiceRow(onClick = { model = id; chooseModel = false; focus.clearFocus(); keyboard?.hide() }, selected = model == id) {
+                            Column { Text(ui.modelNames[id] ?: id, maxLines = 2, overflow = TextOverflow.Ellipsis); if (ui.modelNames[id]?.let { it != id } == true) Text(id, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                        }
+                    }
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically) { Text("所选模型支持图片输入", Modifier.weight(1f)); Switch(images, { images = it }, enabled = !ui.locked) }
             Text("课件图片需要支持图片的模型。列表可见不等于已验证图片权限，实际以请求结果为准。", style = MaterialTheme.typography.bodySmall)

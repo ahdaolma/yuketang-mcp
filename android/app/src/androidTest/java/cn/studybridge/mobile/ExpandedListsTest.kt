@@ -22,6 +22,10 @@ class ExpandedListsTest {
         val bounds = compose.onNodeWithTag(tag).getUnclippedBoundsInRoot()
         val limit = minOf(maximum, compose.activity.resources.configuration.screenHeightDp * ratio)
         assertTrue("$tag must be bounded: ${bounds.bottom - bounds.top} > $limit", (bounds.bottom - bounds.top).value <= limit + 2f)
+        if (tag == "展开菜单容器" || tag == "展开面板容器") {
+            val height = compose.activity.resources.configuration.screenHeightDp.toFloat()
+            assertTrue("Sheet must expand from the bottom, not the top", bounds.top.value >= height * (1f - ratio) - 4f)
+        }
     }
 
     @Test fun longAnchoredMenusScrollInternallyAndTheLastActionWorks() {

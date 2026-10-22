@@ -52,23 +52,28 @@ fun searchNoteContent(content: String, query: String, segments: List<NoteReading
     return result
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable fun NoteSearchDialog(note: Note, onDismiss: () -> Unit, onHit: ((NoteSearchHit, String) -> Unit)? = null, onSelect: (Int) -> Unit) {
     var query by remember(note.id) { mutableStateOf("") }
     val results by produceState<List<NoteSearchHit>?>(emptyList(), note.content, query) {
         value = null
         value = withContext(Dispatchers.Default) { searchNoteContent(note.content, query) }
     }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("笔记内查找") }, text = {
-        Column(Modifier.heightIn(max = expandedListHeight(360.dp)), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    StudyModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text("笔记内查找", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                FeedbackTextButton(onClick = onDismiss) { Text("关闭") }
+            }
             OutlinedTextField(query, { query = it.take(120) }, Modifier.fillMaxWidth(), label = { Text("查找完整正文") }, singleLine = true)
-            Text(when { query.isBlank() -> "输入关键词，点击结果跳转到所在阅读分段。"; results == null -> "正在查找…"; results!!.isEmpty() -> "没有匹配的内容"; else -> "找到 ${results!!.size} 处${if (results!!.size == 100) "（最多显示 100 处）" else ""}" }, style = MaterialTheme.typography.bodySmall)
-            LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).testTag("查找结果列表")) {
+            Text(when { query.isBlank() -> "输入关键词，点击结果定位到正文命中处。"; results == null -> "正在查找…"; results!!.isEmpty() -> "没有匹配的内容"; else -> "找到 ${results!!.size} 处${if (results!!.size == 100) "（最多显示 100 处）" else ""}" }, style = MaterialTheme.typography.bodySmall)
+            LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = expandedListHeight(360.dp)).testTag("查找结果列表"), contentPadding = PaddingValues(bottom = 12.dp)) {
                 items(results.orEmpty(), key = { it.offset }) { hit ->
-                    FeedbackTextButton(onClick = { if (onHit == null) onSelect(hit.segment) else onHit(hit, query.trim()) }, modifier = Modifier.fillMaxWidth()) {
+                    StudyChoiceRow(onClick = { if (onHit == null) onSelect(hit.segment) else onHit(hit, query.trim()) }) {
                         Column(Modifier.fillMaxWidth()) { Text("第 ${hit.segment + 1} 段", fontWeight = FontWeight.SemiBold); Text(searchSnippet(hit.snippet, query.trim()), style = MaterialTheme.typography.bodySmall, maxLines = 3) }
                     }
                 }
             }
         }
-    }, confirmButton = { FeedbackTextButton(onClick = onDismiss) { Text("关闭") } })
+    }
 }

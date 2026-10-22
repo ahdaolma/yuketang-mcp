@@ -20,18 +20,23 @@ import androidx.compose.ui.unit.dp
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable fun JumpDialog(title: String, labels: List<String>, onDismiss: () -> Unit, onSelect: (Int) -> Unit) {
     var query by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = {
-        Column(Modifier.heightIn(max = expandedListHeight(360.dp)), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    StudyModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = onDismiss) { Text("取消跳转") }
+            }
             OutlinedTextField(query, { query = it.take(120) }, label = { Text("输入序号或关键词") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             val choices = remember(labels, query) { labels.withIndex().filter { query.isBlank() || "${it.index + 1}" == query.trim() || it.value.contains(query.trim(), true) } }
-            LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).testTag("跳转选择列表")) {
+            LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = expandedListHeight(360.dp)).testTag("跳转选择列表"), contentPadding = PaddingValues(bottom = 12.dp)) {
                 if (choices.isEmpty()) item { Text("没有匹配的内容") }
-                itemsIndexed(choices, key = { _, item -> item.index }) { _, item -> TextButton(onClick = { onSelect(item.index) }, modifier = Modifier.fillMaxWidth()) { Text("${item.index + 1}. ${item.value}", Modifier.fillMaxWidth(), maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) } }
+                itemsIndexed(choices, key = { _, item -> item.index }) { _, item -> StudyChoiceRow(onClick = { onSelect(item.index) }) { Text("${item.index + 1}. ${item.value}", maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) } }
             }
         }
-    }, confirmButton = { TextButton(onClick = onDismiss) { Text("取消跳转") } })
+    }
 }
 
 // Code blocks may contain lines resembling headings; they are not destinations.
