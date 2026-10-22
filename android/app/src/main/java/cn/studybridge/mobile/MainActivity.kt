@@ -198,7 +198,12 @@ class MainActivity : ComponentActivity() {
             }).build()
     }
     val dark = colors.background.luminance() < 0.5f
-    val formatted by produceState<Pair<String, android.text.Spanned>?>(null, text, renderer, density, dark) { value = withContext(Dispatchers.Default) { text to renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(text)), density, dark) } }
+    val formatted by produceState<Pair<String, android.text.Spanned>?>(null, text, renderer, density, dark) {
+        val parsed = withContext(Dispatchers.Default) { text to renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(text)), density, dark) }
+        // AndroidView updates must stay on the UI thread even when a test's
+        // unconfined frame clock resumes the producer on its worker thread.
+        withContext(Dispatchers.Main.immediate) { value = parsed }
+    }
     val selectionController = LocalNoteSelection.current
     val personalMarks = LocalNoteAnnotations.current
     val searchQuery = LocalNoteSearchQuery.current

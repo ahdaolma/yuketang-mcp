@@ -37,9 +37,25 @@ class ReadingMarksAndClassControlTest {
             assertFalse(text.contains("==模板==")); assertFalse(text.contains("++方向++")); assertFalse(text.contains("==DNA")); assertFalse(text.contains("++理解")); assertFalse(text.contains("%%复制")); assertFalse(text.contains("!!不要"))
         }
         advancedUiShot(compose.activity, "sample-note-marks-light")
+        val wrongThread = java.util.concurrent.atomic.AtomicReference<String?>(null)
+        val updates = java.util.concurrent.atomic.AtomicInteger()
+        compose.runOnIdle {
+            textViews(compose.activity.window.decorView).first { it.text.contains("复制的主线") }.addTextChangedListener(object : android.text.TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                    updates.incrementAndGet()
+                    if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) wrongThread.set(Thread.currentThread().name)
+                }
+                override fun afterTextChanged(s: android.text.Editable?) = Unit
+            })
+        }
         var previousText: CharSequence? = null
-        compose.runOnIdle { previousText = textViews(compose.activity.window.decorView).first { it.text.contains("复制的主线") }.text; dark.value = true }
-        compose.waitUntil(5000) { var changed = false; compose.runOnIdle { changed = textViews(compose.activity.window.decorView).any { it.text.contains("复制的主线") && it.text !== previousText } }; changed }
+        repeat(5) {
+            compose.runOnIdle { previousText = textViews(compose.activity.window.decorView).first { it.text.contains("复制的主线") }.text; dark.value = !dark.value }
+            compose.waitUntil(5000) { var changed = false; compose.runOnIdle { changed = textViews(compose.activity.window.decorView).any { it.text.contains("复制的主线") && it.text !== previousText } }; changed }
+        }
+        assertTrue("Each theme change must finish background formatting", updates.get() >= 5)
+        assertNull("Native text was updated off the UI thread", wrongThread.get())
         compose.waitForIdle(); advancedUiShot(compose.activity, "sample-note-marks-dark")
         val parsed = Markwon.create(compose.activity).toMarkdown("==**原有加粗**==")
         val marked = renderStudyMarks(parsed, 1f, false)
