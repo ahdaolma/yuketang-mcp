@@ -5,7 +5,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <application android:name=".StudyApplication" android:theme="@style/AppTheme" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:label="雨课伴学" android:allowBackup="false" android:usesCleartextTraffic="false" android:supportsRtl="true">
+    <application android:name=".StudyApplication" android:theme="@style/AppTheme" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:label="雨课伴学" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:usesCleartextTraffic="false" android:supportsRtl="true">
         <service android:name=".AuthorizationService" android:exported="false" android:foregroundServiceType="dataSync" />
         <service android:name=".RainLoginService" android:exported="false" android:foregroundServiceType="dataSync" />
         <service android:name=".ClassFollowService" android:exported="false" android:stopWithTask="false" android:foregroundServiceType="dataSync" />

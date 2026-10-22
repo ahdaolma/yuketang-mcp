@@ -88,6 +88,7 @@ internal class ClassOverlayView(
     var paused = true
         set(value) { field = value; contentDescription = if (value) "继续上课，点击继续，拖动可移动" else "暂停上课，点击暂停，拖动可移动" }
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val playPath = Path()
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
     private var downX = 0f; private var downY = 0f
     private var lastX = 0f; private var lastY = 0f
@@ -100,8 +101,9 @@ internal class ClassOverlayView(
         paint.style = Paint.Style.STROKE; paint.strokeWidth = width * .045f; paint.color = if (paused) Color.rgb(164, 151, 132) else Color.rgb(55, 126, 107)
         canvas.drawCircle(cx, cy, r - width * .045f, paint); paint.style = Paint.Style.FILL
         if (paused) {
-            val path = Path().apply { moveTo(width * .43f, height * .32f); lineTo(width * .43f, height * .68f); lineTo(width * .68f, height * .5f); close() }
-            canvas.drawPath(path, paint)
+            playPath.rewind()
+            playPath.moveTo(width * .43f, height * .32f); playPath.lineTo(width * .43f, height * .68f); playPath.lineTo(width * .68f, height * .5f); playPath.close()
+            canvas.drawPath(playPath, paint)
         } else {
             canvas.drawRoundRect(width * .37f, height * .33f, width * .46f, height * .67f, 2f, 2f, paint)
             canvas.drawRoundRect(width * .55f, height * .33f, width * .64f, height * .67f, 2f, 2f, paint)

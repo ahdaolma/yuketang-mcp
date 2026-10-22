@@ -118,7 +118,7 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         state.update { it.copy(noteDraftSaving = true) }; draftWrites.trySend(Unit)
     }
     fun notice(value: String) { state.update { it.copy(notice = value) } }
-    fun settingsPage(value: String) { if (value in setOf("", "models", "notes", "learning", "files")) state.update { it.copy(settingsPage = value) } }
+    fun settingsPage(value: String) { if (value in setOf("", "models", "notes", "learning", "files", "about")) state.update { it.copy(settingsPage = value) } }
     fun tab(value: Int) { state.update { if (value == 1 && it.localDocument != null) it.copy(tab = value, localDocument = null, slides = emptyList()) else it.copy(tab = value) } }
     private fun persist() { viewModelScope.launch(Dispatchers.IO) { disk.withLock { if (!storageBlocked) try {
         val snapshot = state.value.data

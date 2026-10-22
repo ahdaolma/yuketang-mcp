@@ -14,3 +14,7 @@
 截图复查补充：基线模型面板位于屏幕顶部，原因是外层 ModalBottomSheet 高度约束污染了拖动锚点使用的窗口高度。将高度限制移入内容列，并给展开面板增加底部位置断言。目录和查找改用固定搜索/关闭入口的同类面板，目录、查找、模型、课堂、筛选使用统一圆角选择行；阅读工具补充分组及图标。
 
 正式版门槛增加云端 `lintRelease`，报告始终随 android-verification 上传，检查发布源码的 API 兼容、生命周期及资源等静态问题；不在本地运行。
+
+用户追加：设置增加独立“关于雨课伴学”页，展示从 PackageManager 读取的实际版本和构建号、可点击的仓库地址及独立客户端/AI 内容/数据处理声明。接入设置返回路径并补入已有导航回归与必需截图。
+
+Lint 首轮（39722381778）：2 个 ContextCastToActivity 错误、43 条警告。修复 Activity 来源，缓存圆球绘制 Path，阅读页索引用 derivedStateOf，导航位移延迟到布局阶段，备注点击补 performClick。补充 Android 12+ 明确禁止系统备份/设备迁移的规则，保持现有手动备份政策，依据 https://developer.android.com/identity/data/autobackup 。剩余依赖升级、目标 SDK、KTX 写法、图标与工具构造器建议分别记录；stopService(Intent) 的 ImplicitSamInstance 是按实例比较的误报，停止服务按 Intent 组件匹配，不能据此改动运行语义。

@@ -95,7 +95,7 @@ import kotlin.math.abs
     var searchOffset by remember(note.id) { mutableIntStateOf(-1) }
     var searchRevision by remember(note.id) { mutableIntStateOf(0) }
     val hits by produceState(emptyList<NoteSearchHit>(), query, note.content) { value = withContext(Dispatchers.Default) { searchNoteContent(note.content, query, segments) } }
-    val selected = if (continuous && restored) (list.firstVisibleItemIndex - 1).coerceIn(segments.indices) else index.coerceIn(segments.indices)
+    val selected by remember(continuous, restored, segments) { derivedStateOf { if (continuous && restored) (list.firstVisibleItemIndex - 1).coerceIn(segments.indices) else index.coerceIn(segments.indices) } }
     val readyPages = remember(note.id, hash, mode) { mutableStateMapOf<Int, Boolean>() }
     val renderReady = readyPages[selected] == true
     var jumpGeneration by remember(note.id) { mutableIntStateOf(0) }

@@ -74,7 +74,7 @@ import androidx.compose.ui.unit.dp
         outline = Color(0xFF8C968A), outlineVariant = Color(0xFFE0E2D8)
     )
     val regular = TextStyle(letterSpacing = 0.sp)
-    val activity = LocalContext.current as? Activity
+    val activity = androidx.activity.compose.LocalActivity.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     DisposableEffect(activity, lifecycle) {
         fun hideStatusBar() { activity?.window?.let { window ->
@@ -145,10 +145,10 @@ import androidx.compose.ui.unit.dp
                     val isSelected = ui.tab == index
                     FeedbackIconButton(onClick = { onTab(index) }, modifier = Modifier.weight(1f).fillMaxHeight().semantics { contentDescription = label; selected = isSelected; role = Role.Tab }) {
                         Box(Modifier.fillMaxSize()) {
-                            Surface(Modifier.align(Alignment.TopCenter).offset(y = (6f + 4f * slide).dp), shape = RoundedCornerShape(11.dp), color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent) {
+                            Surface(Modifier.align(Alignment.TopCenter).offset { androidx.compose.ui.unit.IntOffset(0, (6f + 4f * slide).dp.roundToPx()) }, shape = RoundedCornerShape(11.dp), color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent) {
                                 Icon(if (isSelected) selectedIcons[index] else icons[index], null, Modifier.padding(horizontal = 12.dp, vertical = 6.dp).size(21.dp), tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Text(label, Modifier.align(Alignment.BottomCenter).offset(y = (20f * slide - 4f).dp).alpha(1f - slide).clearAndSetSemantics {}, style = MaterialTheme.typography.labelMedium, color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(label, Modifier.align(Alignment.BottomCenter).offset { androidx.compose.ui.unit.IntOffset(0, (20f * slide - 4f).dp.roundToPx()) }.alpha(1f - slide).clearAndSetSemantics {}, style = MaterialTheme.typography.labelMedium, color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }

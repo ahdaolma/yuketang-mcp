@@ -12,7 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 
-fun settingsPageTitle(page: String) = when (page) { "models" -> "模型与账号"; "notes" -> "笔记生成"; "learning" -> "学习偏好"; "files" -> "文件与下载"; else -> "设置" }
+fun settingsPageTitle(page: String) = when (page) { "models" -> "模型与账号"; "notes" -> "笔记生成"; "learning" -> "学习偏好"; "files" -> "文件与下载"; "about" -> "关于雨课伴学"; else -> "设置" }
 
 @Composable fun SettingsOverview(ui: UiState, vm: StudyViewModel) {
     val provider = ui.data.provider()
@@ -24,6 +24,7 @@ fun settingsPageTitle(page: String) = when (page) { "models" -> "模型与账号
         SettingsCategory("笔记生成", if (ui.data.superFocusNotes) "超重点模式已开启 · 自动整理" else "普通讲解 · 超重点模式与自动整理", Icons.Outlined.EditNote) { vm.settingsPage("notes") }
         SettingsCategory("学习偏好", "学习基础、讲解偏好与高级提示词", Icons.Outlined.School) { vm.settingsPage("learning") }
         SettingsCategory("文件与下载", ui.data.downloadDirectoryName.ifBlank { "设置笔记与课件的下载位置" }, Icons.Outlined.FolderOpen) { vm.settingsPage("files") }
+        SettingsCategory("关于雨课伴学", "版本、项目地址与声明", Icons.Outlined.Info) { vm.settingsPage("about") }
         Text("账号、密钥和文字记录加密保存在本机。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

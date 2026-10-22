@@ -25,6 +25,7 @@ finally:
         required.update({'sample-note-image-full-width.png', 'sample-image-markup-saved.png', 'sample-class-system-circle-over-home.png', 'sample-note-pdf-first.png', 'sample-note-pdf-last.png', 'sample-notebook-details.png', 'sample-notebook-history.png', 'sample-notebook-trash.png', 'sample-notebook-tools.png'})
         required.update({'sample-reader-time-cutout.png', 'sample-reader-continuous-end.png', 'sample-reader-click-pages.png', 'sample-reader-search-highlight.png', 'sample-reader-font-settings.png', 'sample-reader-sticky-title.png', 'sample-reader-swipe-pages.png'})
         required.update({'sample-expanded-dropdown.png', 'sample-expanded-directory.png', 'sample-expanded-classes.png', 'sample-expanded-landscape.png'})
+        required.add('sample-settings-about.png')
         found = {p.name for p in target.rglob('*.png')}
         assert required <= found, f'Missing UI review screenshots: {required - found}'
         screenshots = [p for p in target.rglob('*.png') if p.name in required]

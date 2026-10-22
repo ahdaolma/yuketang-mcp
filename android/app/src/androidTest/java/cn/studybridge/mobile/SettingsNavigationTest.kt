@@ -35,6 +35,18 @@ class SettingsNavigationTest {
         compose.onNodeWithContentDescription("返回设置").performClick()
         compose.onNodeWithText("学习偏好").performClick()
         compose.onNodeWithText("我的学习情况").assertIsDisplayed(); compose.onNodeWithText("学习助教提示词").assertDoesNotExist()
-        compose.runOnIdle { assertEquals("learning", vm.ui.value.settingsPage); store.clear() }
+        compose.runOnIdle { assertEquals("learning", vm.ui.value.settingsPage) }
+        compose.onNodeWithContentDescription("返回设置").performClick()
+        compose.onNodeWithText("关于雨课伴学").performScrollTo().performClick()
+        compose.onNodeWithText("项目声明").performScrollTo().assertIsDisplayed()
+        @Suppress("DEPRECATION")
+        val version = compose.activity.packageManager.getPackageInfo(compose.activity.packageName, 0).versionName
+        compose.onNodeWithText("版本 $version").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(PROJECT_URL).assertIsDisplayed()
+        compose.onNodeWithTag("项目地址").assertHasClickAction()
+        advancedUiShot(compose.activity, "sample-settings-about")
+        compose.onNodeWithContentDescription("返回设置").performClick()
+        compose.onNodeWithText("模型与账号").assertIsDisplayed()
+        compose.runOnIdle { assertEquals("", vm.ui.value.settingsPage); store.clear() }
     }
 }

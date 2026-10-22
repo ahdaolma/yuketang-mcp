@@ -67,10 +67,11 @@ class NoteSelectableTextView(context: Context) : TextView(context) {
             val value = text as? Spanned
             val offset = getOffsetForPosition(event.x, event.y)
             val remark = value?.getSpans(offset, offset, NoteAnnotationSpan::class.java)?.firstOrNull { it.annotation.kind == "remark" }
-            if (remark != null && controller != null) { controller?.openedRemark = remark.annotation.id; return true }
+            if (remark != null && controller != null) { controller?.openedRemark = remark.annotation.id; performClick(); return true }
         }
         return super.onTouchEvent(event)
     }
+    override fun performClick(): Boolean { super.performClick(); return true }
 }
 
 class NoteAnnotationSpan(val annotation: NoteAnnotation) : CharacterStyle() {
