@@ -246,6 +246,27 @@ class ReaderExperienceTest {
         advancedUiShot(compose.activity, "sample-reader-swipe-pages")
     }
 
+    @Test fun endCommandsExposeTheFinalLineInContinuousAndPagedModes() = withReader(fullNote()) { _, vm ->
+        fun jumpEnd() {
+            compose.openNoteTool("阅读跳转")
+            compose.onNodeWithText("整本末尾").performScrollTo().performClick()
+            compose.waitUntil(5000) { visibleMarkers(listOf(markers.last())).isNotEmpty() }
+        }
+        jumpEnd()
+        compose.openNoteTool("阅读跳转")
+        compose.onNodeWithText("本段顶部").performScrollTo().performClick()
+        compose.waitUntil(5000) { visibleMarkers(listOf("来源3段落1标记")).isNotEmpty() }
+        compose.openNoteTool("阅读跳转")
+        compose.onNodeWithText("本段底部").performScrollTo().performClick()
+        compose.waitUntil(5000) { visibleMarkers(listOf(markers.last())).isNotEmpty() }
+        compose.openNoteTool("阅读设置")
+        compose.onNodeWithText("点击翻页").performScrollTo().performClick()
+        compose.waitUntil(5000) { vm.ui.value.data.noteReadMode == "buttons" }
+        compose.onNodeWithContentDescription("关闭阅读方式与字号").performClick()
+        jumpEnd()
+        assertReaderChrome()
+    }
+
     @Test fun searchHighlightsNativeTextAndPreviousNextRevealTheActualHitLines() {
         val query = "模板坐标"
         val hits = listOf("定位甲", "定位乙", "定位丙")

@@ -219,7 +219,7 @@ fun studyClockText(now: Long = System.currentTimeMillis()): String =
         // Reserve the middle slot even while hidden. Animation never changes
         // the row height or moves the body, clock, or page counter.
         Box(Modifier.weight(1f).fillMaxHeight().clipToBounds(), contentAlignment = Alignment.Center) {
-            if (readingProgress?.title != null) AnimatedVisibility(
+            if (readingProgress?.title != null) androidx.compose.animation.AnimatedVisibility(
                 readingProgress.titleVisible,
                 enter = fadeIn(tween(320)) + slideInVertically(tween(360)) { it },
                 exit = fadeOut(tween(280)) + slideOutVertically(tween(320)) { it }

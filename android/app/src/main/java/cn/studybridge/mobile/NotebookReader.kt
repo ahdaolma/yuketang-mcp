@@ -140,7 +140,7 @@ import kotlin.math.abs
     LaunchedEffect(ui.data.noteFontSize) { fontSize = ui.data.noteFontSize }
     var turning by remember { mutableStateOf(false) }
     val offsets = remember(note.id, hash) { mutableMapOf<Int, Int>() }
-    fun goTo(segment: Int, offset: Int = 0) {
+    fun goTo(segment: Int, offset: Int = 0, end: Boolean = false) {
         val target = segment.coerceIn(segments.indices)
         val generation = ++jumpGeneration
         jumpJob?.cancel()
@@ -150,13 +150,19 @@ import kotlin.math.abs
                 list.scrollToItem(target + 1, offset)
                 withTimeoutOrNull(1800) { snapshotFlow { readyPages[target] == true }.first { it } }
                 withFrameNanos { }; withFrameNanos { }
-                list.scrollToItem(target + 1, offset)
+                val endOffset = if (end) {
+                    val size = list.layoutInfo.visibleItemsInfo.firstOrNull { it.index == target + 1 }?.size ?: 0
+                    val bottomSpace = if (target == segments.lastIndex) with(density) { 72.dp.roundToPx() } else 0
+                    (size - viewport + bottomSpace).coerceAtLeast(0)
+                } else offset
+                list.scrollToItem(target + 1, endOffset)
             }
             else {
                 index = target
+                withTimeoutOrNull(1800) { snapshotFlow { readyPages[target] == true }.first { it } }
                 withFrameNanos { }; withFrameNanos { }
                 if (offset > 0) withTimeoutOrNull(1800) { snapshotFlow { scroll.maxValue }.first { it >= offset } }
-                scroll.scrollTo(offset.coerceAtMost(scroll.maxValue))
+                scroll.scrollTo(if (end) scroll.maxValue else offset.coerceAtMost(scroll.maxValue))
             }
             } finally { if (generation == jumpGeneration) settledJump = generation }
         }
@@ -221,9 +227,9 @@ import kotlin.math.abs
             FeedbackDropdownMenuItem(text = { Text("下一段") }, enabled = selected < segments.lastIndex, onClick = { navigation = false; goTo(selected + 1) })
         }
         FeedbackDropdownMenuItem(text = { Text("本段顶部") }, onClick = { navigation = false; goTo(selected) })
-        FeedbackDropdownMenuItem(text = { Text("本段底部") }, onClick = { navigation = false; if (continuous) scope.launch { list.scrollToItem((selected + 2).coerceAtMost(segments.size)) } else scope.launch { scroll.scrollTo(scroll.maxValue) } })
+        FeedbackDropdownMenuItem(text = { Text("本段底部") }, onClick = { navigation = false; goTo(selected, end = true) })
         FeedbackDropdownMenuItem(text = { Text("整本开头") }, onClick = { navigation = false; if (continuous) scope.launch { list.scrollToItem(0) } else goTo(0) })
-        FeedbackDropdownMenuItem(text = { Text("整本末尾") }, onClick = { navigation = false; goTo(segments.lastIndex) })
+        FeedbackDropdownMenuItem(text = { Text("整本末尾") }, onClick = { navigation = false; goTo(segments.lastIndex, end = true) })
     }
     if (preferences) ReadingActionSheet("阅读方式与字号", { preferences = false }) {
         NOTE_READING_MODES.forEach { (id, title) ->
