@@ -128,7 +128,8 @@ class VisualReviewTest {
     @Test fun populatedScreensAndDraftSurviveTabChanges() {
         val state = mutableStateOf(sample()); render(state)
         compose.onNodeWithText(courseTitle).assertIsDisplayed(); shot("sample-courses-light")
-        val initialCourseHeight = compose.onNodeWithTag("课程列表").getUnclippedBoundsInRoot().height
+        val initialCourseBounds = compose.onNodeWithTag("课程列表").getUnclippedBoundsInRoot()
+        val initialCourseHeight = initialCourseBounds.bottom - initialCourseBounds.top
         compose.onNodeWithText("笔记").performClick()
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).assertIsDisplayed(); shot("sample-notes-light")
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).performClick()
@@ -138,8 +139,9 @@ class VisualReviewTest {
         compose.onNode(hasSetTextAction()).performTextInput("\n新增草稿内容")
         compose.runOnIdle { state.value = state.value.copy(tab = 1) }
         compose.waitUntil(5000) {
+            val bounds = compose.onNodeWithTag("课程列表").getUnclippedBoundsInRoot()
             androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) != true &&
-                compose.onNodeWithTag("课程列表").getUnclippedBoundsInRoot().height >= initialCourseHeight - 2.dp
+                bounds.bottom - bounds.top >= initialCourseHeight - 2.dp
         }
         // Restore a virtualized item through its scrolling container before
         // checking the actual title, including text merged into a course card.
