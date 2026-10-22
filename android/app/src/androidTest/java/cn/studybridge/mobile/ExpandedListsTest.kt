@@ -7,6 +7,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.Density
@@ -23,8 +24,32 @@ class ExpandedListsTest {
         val limit = minOf(maximum, compose.activity.resources.configuration.screenHeightDp * ratio)
         assertTrue("$tag must be bounded: ${bounds.bottom - bounds.top} > $limit", (bounds.bottom - bounds.top).value <= limit + 2f)
         if (tag == "展开菜单容器" || tag == "展开面板容器") {
-            val height = compose.activity.resources.configuration.screenHeightDp.toFloat()
-            assertTrue("Sheet must expand from the bottom, not the top", bounds.top.value >= height * (1f - ratio) - 4f)
+            var screenTop = 0f
+            var screenBottom = 0f
+            var expectedBottom = 0f
+            // A modal has its own Android window and an asynchronous show
+            // transition. Compose-root coordinates cannot be compared with
+            // physical screen height; include the owning window's origin.
+            try { compose.waitUntil(5000) {
+                val node = compose.onNodeWithTag(tag).fetchSemanticsNode()
+                compose.runOnIdle {
+                    val view = (node.root as ViewRootForTest).view
+                    val screen = IntArray(2); view.getLocationOnScreen(screen)
+                    val window = IntArray(2); view.getLocationInWindow(window)
+                    val density = view.resources.displayMetrics.density
+                    val origin = screen[1] - window[1]
+                    screenTop = (node.boundsInWindow.top + origin) / density
+                    screenBottom = (node.boundsInWindow.bottom + origin) / density
+                    val navigation = androidx.core.view.ViewCompat.getRootWindowInsets(view)?.getInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
+                    // The inner menu ends above the sheet's navigation padding;
+                    // the tagged whole panel includes that padding itself.
+                    expectedBottom = (view.resources.displayMetrics.heightPixels - if (tag == "展开菜单容器") navigation else 0) / density
+                }
+                kotlin.math.abs(screenBottom - expectedBottom) <= 6f
+            } } catch (failure: Throwable) {
+                advancedUiShot(compose.activity, "sheet-position-failure-${if (tag == "展开菜单容器") "menu" else "panel"}")
+                throw AssertionError("Sheet screen top=$screenTop bottom=$screenBottom, expected bottom=$expectedBottom; root=$bounds", failure)
+            }
         }
     }
 

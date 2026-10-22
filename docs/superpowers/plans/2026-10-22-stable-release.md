@@ -18,3 +18,5 @@
 用户追加：设置增加独立“关于雨课伴学”页，展示从 PackageManager 读取的实际版本和构建号、可点击的仓库地址及独立客户端/AI 内容/数据处理声明。接入设置返回路径并补入已有导航回归与必需截图。
 
 Lint 首轮（39722381778）：2 个 ContextCastToActivity 错误、43 条警告。修复 Activity 来源，缓存圆球绘制 Path，阅读页索引用 derivedStateOf，导航位移延迟到布局阶段，备注点击补 performClick。补充 Android 12+ 明确禁止系统备份/设备迁移的规则，保持现有手动备份政策，依据 https://developer.android.com/identity/data/autobackup 。剩余依赖升级、目标 SDK、KTX 写法、图标与工具构造器建议分别记录；stopService(Intent) 的 ImplicitSamInstance 是按实例比较的误报，停止服务按 Intent 组件匹配，不能据此改动运行语义。
+
+39723243230：105 项单元测试通过，Lint 0 错误/38 警告，69 项操作中 67 项通过。新增位置断言错误地将弹层 Compose 根坐标与整屏高度比较；截图显示模型面板已在底部，关于页/标题/查找/通知和末行跳转均通过。将面板测试标签移到实际内容，断言改用所属原生窗口的屏幕坐标并等待展开稳定；继续保留高度、末项和关闭断言，不放宽位置要求。

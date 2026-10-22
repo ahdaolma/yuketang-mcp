@@ -46,8 +46,8 @@ import androidx.core.view.WindowInsetsControllerCompat
     // Restricting the Surface itself makes Material calculate a zero/top
     // expanded anchor; only the CONTENT should have a maximum height.
     NativeModalBottomSheet(onDismissRequest = onDismissRequest, sheetState = sheetState, dragHandle = null,
-        contentWindowInsets = { WindowInsets(0, 0, 0, 0) }, modifier = Modifier.testTag("展开面板容器")) {
-        Column(Modifier.fillMaxWidth().heightIn(max = expandedPanelHeight()).windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))) {
+        contentWindowInsets = { WindowInsets(0, 0, 0, 0) }) {
+        Column(Modifier.fillMaxWidth().heightIn(max = expandedPanelHeight()).testTag("展开面板容器").windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))) {
             SheetWindowChrome()
             content()
         }
