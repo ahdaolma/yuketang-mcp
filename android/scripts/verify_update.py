@@ -14,6 +14,9 @@ def adb(*args):
 assert adb('shell', 'getprop', 'ro.kernel.qemu').decode().strip() == '1', 'Upgrade check is emulator-only'
 package = 'cn.studybridge.mobile'
 apk = os.environ.get('RAIN_UPDATE_APK', 'app/build/outputs/apk/release/app-release.apk')
+baseline_apk = os.environ.get('RAIN_UPDATE_BASELINE_APK', apk)
+expected_version = os.environ.get('RAIN_UPDATE_EXPECTED_VERSION', '')
+legacy_marker = 'rain_upgrade_fixture_v100'
 out = pathlib.Path('signing-artifacts')
 out.mkdir(exist_ok=True)
 
@@ -75,6 +78,42 @@ def start():
     time.sleep(1)
 
 
+def wait_text(text):
+    for attempt in range(8):
+        if any(text in node.get('text', '') for node in nodes()):
+            return
+        time.sleep(0.5)
+    raise AssertionError('Missing persisted upgrade text: ' + text)
+
+
+def version():
+    result = adb('shell', 'dumpsys', 'package', package).decode()
+    match = re.search(r'\bversionName=([^\s]+)', result)
+    assert match, 'Installed version must be inspectable'
+    return match.group(1)
+
+
+def seed_legacy_note():
+    tap('笔记')
+    tap('新建笔记')
+    tap('Markdown 笔记')
+    adb('shell', 'input', 'text', legacy_marker)
+    wait_text(legacy_marker)
+    adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+    time.sleep(0.5)
+    tap('保存修改')
+    adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+    wait_text(legacy_marker)
+    tap('学习')
+
+
+def verify_legacy_note():
+    tap('笔记')
+    wait_text(legacy_marker)
+    (out / 'upgrade-note.png').write_bytes(adb('exec-out', 'screencap', '-p'))
+    tap('学习')
+
+
 def focus_mode():
     tap('设置')
     tap('笔记生成')
@@ -89,8 +128,12 @@ def focus_mode():
 
 try:
     adb('logcat', '-c')
-    adb('install', '-r', apk)
+    adb('install', '-r', baseline_apk)
     start()
+    before_version = version()
+    if baseline_apk != apk:
+        assert before_version == '1.0.0', 'Pinned published upgrade baseline changed'
+        seed_legacy_note()
     tap('设置')
     tap('笔记生成')
     switch = next(n for n in nodes() if n.get('content-desc') == '超重点模式')
@@ -103,11 +146,18 @@ try:
     adb('shell', 'am', 'force-stop', package)
     start()
     focus_mode()
+    if baseline_apk != apk:
+        verify_legacy_note()
     result = adb('install', '-r', apk).decode()
     assert 'Success' in result, 'Fixed-key replacement failed'
     start()
+    after_version = version()
+    if expected_version:
+        assert after_version == expected_version, 'Installed upgrade version differs from release candidate'
     focus_mode()
-    (out / 'upgrade.txt').write_text('PASS: adb install -r succeeded; encrypted super-focus preference survived restart and APK replacement.\n')
+    if baseline_apk != apk:
+        verify_legacy_note()
+    (out / 'upgrade.txt').write_text(f'PASS: {before_version} -> {after_version}; adb install -r succeeded; encrypted super-focus preference survived restart and APK replacement.' + (' A manual note created in published 1.0.0 also survived restart and upgrade.' if baseline_apk != apk else '') + '\n')
     (out / 'upgrade.png').write_bytes(adb('exec-out', 'screencap', '-p'))
 except Exception:
     # Preserve the original failure before the disposable installation is removed.

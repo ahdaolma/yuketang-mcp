@@ -7,9 +7,17 @@ from ui_review import verify_screenshots
 
 passed = False
 try:
-    if os.environ.get('RAIN_VERIFY_RELEASE_UPDATE') == '1' and pathlib.Path('app/build/outputs/apk/release/app-release.apk').exists():
+    release_apk = pathlib.Path('app/build/outputs/apk/release/app-release.apk')
+    smoke_environment = dict(os.environ)
+    if os.environ.get('RAIN_VERIFY_RELEASE_UPDATE') == '1' and release_apk.exists():
         subprocess.run([sys.executable, 'scripts/verify_update.py'], check=True)
-    subprocess.run([sys.executable, 'scripts/smoke.py'], check=True)
+        smoke_environment['RAIN_SMOKE_APK'] = str(release_apk)
+    subprocess.run([sys.executable, 'scripts/smoke.py'], check=True, env=smoke_environment)
+    if smoke_environment.get('RAIN_SMOKE_APK') == str(release_apk):
+        assert subprocess.check_output(['adb', 'shell', 'getprop', 'ro.kernel.qemu']).decode().strip() == '1', 'Release smoke cleanup is emulator-only'
+        # The instrumentation target uses the debug certificate. Remove only
+        # this disposable release installation after its UI checks have passed.
+        subprocess.run(['adb', 'uninstall', 'cn.studybridge.mobile'], check=True)
     subprocess.run(['gradle', '--no-daemon', 'connectedDebugAndroidTest'], check=True)
     passed = True
 finally:
