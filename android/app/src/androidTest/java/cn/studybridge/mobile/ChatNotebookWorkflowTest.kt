@@ -50,7 +50,7 @@ class ChatNotebookWorkflowTest {
                 assertTrue(vm.openChatNote(old.id, edit = true))
                 vm.noteReader.draft = edited
                 assertTrue(vm.editNote(old.id, vm.noteReader.draft))
-                val remark = NoteAnnotation(sourceStart = 0, sourceLength = edited.length, sourceHash = imageDigest(edited.toByteArray()), start = 0, end = 4, quote = "活性中心", kind = "comment", comment = "人工保存的核对备注")
+                val remark = NoteAnnotation(sourceStart = 0, sourceLength = edited.length, sourceHash = imageDigest(edited.toByteArray()), start = 0, end = 4, quote = "活性中心", kind = "remark", comment = "人工保存的核对备注")
                 assertTrue(vm.saveNoteAnnotation(old.id, remark))
                 vm.noteReader.editing = false
                 vm.tab(0)

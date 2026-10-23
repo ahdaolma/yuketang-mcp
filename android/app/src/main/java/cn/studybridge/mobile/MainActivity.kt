@@ -296,7 +296,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             Spacer(Modifier.weight(1f))
             if (ui.busy && inlineHeader) IconButton(onClick = vm::stop) { Icon(Icons.Outlined.StopCircle, "停止生成") }
             else Box {
-                IconButton(onClick = { notebookActions = true }, enabled = !ui.locked && (chat.messages.isNotEmpty() || ui.pending != null), unavailableReason = if (chat.messages.isEmpty() && ui.pending == null) "先添加资料或进行对话。" else null) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Outlined.NoteAdd, "对话笔记", Modifier.size(20.dp)); Text("笔记", style = MaterialTheme.typography.labelSmall) } }
+                IconButton(onClick = { notebookActions = true }, enabled = !ui.locked && (chat.messages.isNotEmpty() || ui.pending != null), unavailableReason = if (chat.messages.isEmpty() && ui.pending == null) "先添加资料或进行对话。" else null) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Outlined.NoteAdd, "对话笔记", Modifier.size(20.dp)); Text("保存", style = MaterialTheme.typography.labelSmall) } }
                 if (notebookActions) ReadingActionSheet("对话笔记", { notebookActions = false }) {
                     Text("选择保存原文，或让 AI 重新整理。笔记会以卡片返回当前对话。", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
                     DropdownMenuItem(text = { Text("保存对话原文") }, enabled = !ui.locked && chat.messages.any { it.kind != "note_result" && it.text.isNotBlank() }, onClick = { notebookActions = false; vm.saveChatAsNote() })

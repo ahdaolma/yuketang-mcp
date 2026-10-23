@@ -21,7 +21,7 @@ class ChatNotebookContextTest {
 
     @Test fun longNoteFindsActualQueryHitAndIncludesSavedRemarksWithinBounds() {
         val huge = note("huge", "长文", "甲乙丙丁".repeat(20000) + "\n线粒体氧化磷酸化发生在内膜。\n" + "戊己庚辛".repeat(20000))
-        val remark = NoteAnnotation(sourceStart = 0, sourceLength = 4, sourceHash = imageDigest(huge.content.take(4).toByteArray()), start = 0, end = 4, quote = "甲乙丙丁", kind = "comment", comment = "我新保存的备注")
+        val remark = NoteAnnotation(sourceStart = 0, sourceLength = 4, sourceHash = imageDigest(huge.content.take(4).toByteArray()), start = 0, end = 4, quote = "甲乙丙丁", kind = "remark", comment = "我新保存的备注")
         val context = chatNotebookContext(Saved(notes = listOf(huge.copy(annotations = listOf(remark)))), "氧化磷酸化在哪里？")
         val ref = context.references.single()
         assertFalse(ref.complete)
@@ -36,7 +36,7 @@ class ChatNotebookContextTest {
         val old = note("original", "生物学", "旧结论：在外膜发生。")
         val first = chatNotebookContext(Saved(notes = listOf(old)), "生物学")
         val history = listOf(Message("assistant", "首次回答", noteRefs = first.references))
-        val updated = old.copy(content = "新结论：在内膜发生。", annotations = listOf(NoteAnnotation(sourceStart = 0, sourceLength = 0, sourceHash = imageDigest(byteArrayOf()), start = 0, end = 0, quote = "内膜", kind = "comment", comment = "已核对课本")))
+        val updated = old.copy(content = "新结论：在内膜发生。", annotations = listOf(NoteAnnotation(sourceStart = 0, sourceLength = 0, sourceHash = imageDigest(byteArrayOf()), start = 0, end = 0, quote = "内膜", kind = "remark", comment = "已核对课本")))
         val next = chatNotebookContext(Saved(notes = listOf(updated)), "继续", history = history)
         assertEquals(old.id, next.references.single().noteId)
         assertNotEquals(first.references.single().hash, next.references.single().hash)
