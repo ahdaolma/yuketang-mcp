@@ -5,10 +5,9 @@ import android.app.Application
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
-import android.graphics.Bitmap
 import android.os.SystemClock
 import android.util.Base64
-import androidx.compose.material3.Text
+import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
@@ -35,7 +34,7 @@ import java.util.concurrent.atomic.AtomicReference
 // Real TLS/WebSocket, foreground service and HOME/return lifecycle; all QR images,
 // account responses and files are synthetic and isolated from the app's records.
 class RainLoginBackgroundTest {
-    @get:Rule val compose = createAndroidComposeRule<WebFixtureActivity>()
+    @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private class IsolatedApplication(base: Context, directory: File) : Application() {
         init { attachBaseContext(object : ContextWrapper(base) {
             override fun getNoBackupFilesDir() = File(directory, "private").apply { mkdirs() }
@@ -48,13 +47,15 @@ class RainLoginBackgroundTest {
     }
     private fun returnToApp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        context.startActivity(Intent(context, WebFixtureActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+        context.startActivity(Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         compose.waitUntil(10000) { compose.activityRule.scenario.state == Lifecycle.State.RESUMED }
     }
     @Test fun savedQrSurvivesBackgroundBeyondOldRefreshIntervalAndConfirmationPersists() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val directory = File(context.cacheDir, "login-fixture-${newId()}").apply { mkdirs() }
         val app = IsolatedApplication(context, directory)
+        val ownerApplication = context.applicationContext as StudyApplication
+        val originalOwner = ownerApplication.studyViewModel
         val certificate = HeldCertificate.Builder().commonName("localhost").addSubjectAlternativeName("localhost").build()
         val serverTls = HandshakeCertificates.Builder().heldCertificate(certificate).build()
         val clientTls = HandshakeCertificates.Builder().addTrustedCertificate(certificate.certificate).build()
@@ -90,14 +91,21 @@ class RainLoginBackgroundTest {
         val owner = object : ViewModelStoreOwner { override val viewModelStore = store }
         lateinit var vm: StudyViewModel
         try {
-            compose.setContent { StudyTheme(false) { Text("扫码切换测试") } }
             compose.runOnIdle { vm = ViewModelProvider(owner, object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST") override fun <T : ViewModel> create(modelClass: Class<T>): T = StudyViewModel(app, RainApi(client)) as T
-            })[StudyViewModel::class.java] }
+            })[StudyViewModel::class.java]; ownerApplication.installClassFixture(vm) }
             compose.waitUntil(5000) { vm.ui.value.ready }
-            compose.runOnIdle { vm.startLogin() }
+            compose.activityRule.scenario.recreate()
+            compose.runOnIdle { vm.tab(1); vm.startLogin() }
             compose.waitUntil(10000) { vm.ui.value.qr != null }
             val firstQr = requireNotNull(vm.ui.value.qr).clone()
+            compose.activityRule.scenario.recreate()
+            assertSame("MainActivity must retain the application's login owner", vm, ownerApplication.studyViewModel)
+            assertArrayEquals("Activity recreation must keep the same saved QR", firstQr, vm.ui.value.qr)
+            compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("微信登录二维码").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithContentDescription("微信登录二维码").performScrollTo().assertIsDisplayed()
+            compose.runOnIdle { vm.rainLoginServiceStopped("superseded-fixture-attempt") }
+            assertTrue("An old service callback must not cancel the current attempt", vm.ui.value.loginActive)
             compose.waitUntil(5000) { foreground(context) }
             InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("input keyevent KEYCODE_HOME").close()
             compose.waitUntil(5000) { compose.activityRule.scenario.state == Lifecycle.State.CREATED }
@@ -113,6 +121,9 @@ class RainLoginBackgroundTest {
             assertEquals("fixture-session-123", Vault(app).load().session)
             compose.waitUntil(5000) { !foreground(context) }
             returnToApp()
+            compose.activityRule.scenario.recreate()
+            assertSame(vm, ownerApplication.studyViewModel)
+            assertEquals("fixture-session-123", vm.ui.value.data.session)
             compose.runOnIdle { vm.logout(); vm.startLogin() }
             compose.waitUntil(10000) { vm.ui.value.qr != null && requests.get() == 2 }
             val canceledSocket = socket.get()
@@ -122,9 +133,20 @@ class RainLoginBackgroundTest {
             assertFalse(vm.ui.value.loginActive)
             assertNull(vm.ui.value.qr)
             assertTrue(vm.ui.value.data.session.isBlank())
+            compose.runOnIdle { vm.startLogin() }
+            compose.waitUntil(10000) { vm.ui.value.qr != null && requests.get() == 3 && foreground(context) }
+            val stoppedSocket = socket.get()
+            context.stopService(Intent(context, RainLoginService::class.java))
+            compose.waitUntil(5000) { !vm.ui.value.loginActive }
+            assertNull("An unexpected service stop must not leave a stale QR waiting", vm.ui.value.qr)
+            assertTrue(vm.ui.value.notice.contains("后台扫码连接已停止"))
+            stoppedSocket.send("""{"op":"loginsuccess","UserID":88,"Auth":"after-service-stop"}""")
+            compose.activityRule.scenario.recreate()
+            assertTrue(vm.ui.value.data.session.isBlank())
+            assertFalse(vm.ui.value.loginActive)
         } finally {
             try { returnToApp() } finally {
-                InstrumentationRegistry.getInstrumentation().runOnMainSync { store.clear() }
+                InstrumentationRegistry.getInstrumentation().runOnMainSync { store.clear(); ownerApplication.installClassFixture(originalOwner) }
             }
             client.dispatcher.executorService.shutdown()
             client.connectionPool.evictAll()

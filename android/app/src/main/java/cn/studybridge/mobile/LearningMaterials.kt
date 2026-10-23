@@ -36,8 +36,10 @@ import androidx.compose.ui.unit.dp
     var focusedPage by rememberSaveable(ui.presentationId, ui.localDocument?.material?.id, ui.slideTitle) { mutableIntStateOf(0) }
     if (!ui.materialsOpen) return
     BackHandler { vm.closeMaterials() }
-    ModalBottomSheet(onDismissRequest = vm::closeMaterials, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.fillMaxWidth().heightIn(max = expandedPanelHeight())) {
+    ModalBottomSheet(onDismissRequest = vm::closeMaterials, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), sheetMaxWidth = 1120.dp) {
+        BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = androidx.compose.ui.Alignment.TopCenter) {
+        val libraryColumns = courseLibraryColumns(maxWidth.value.coerceAtMost(1120f) - 40f, androidx.compose.ui.platform.LocalDensity.current.fontScale)
+        Column(Modifier.widthIn(max = 1120.dp).fillMaxWidth().heightIn(max = expandedPanelHeight())) {
         Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text("学习资料", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
             if (ui.materialPane != "home") TextButton(onClick = { vm.materialPane("home") }, enabled = !ui.locked) { Text("返回资料") }
@@ -58,7 +60,7 @@ import androidx.compose.ui.unit.dp
             }
             if (ui.materialPane == "files") {
                 if (ui.data.materials.isEmpty()) item { Text("还没有导入资料。") }
-                items(ui.data.materials, key = { it.id }) { m -> MaterialRow(m.title, "${m.format.uppercase()} · ${if (m.kind == "notes") "笔记" else "课件"} · ${m.pages} 页/段\n导入：${readableTime(m.importedAt)}" + if (m.modifiedAt > 0) "\n文件修改：${readableTime(m.modifiedAt)}" else "", !ui.locked, { vm.openMaterial(m) }) { PagePreview("local:${m.id}", m.title, vm.previews) { vm.previewLocal(m) }; if (m.format in listOf("pptx", "docx")) Text("文字与嵌入图片提取预览", style = MaterialTheme.typography.labelSmall) } }
+                items(ui.data.materials, key = { it.id }) { m -> MaterialRow(m.title, "${m.format.uppercase()} · ${if (m.kind == "notes") "笔记" else "课件"} · ${m.pages} 页/段\n老师：未提供\n创建时间：未提供\n导入时间：${readableTime(m.importedAt)}" + if (m.modifiedAt > 0) "\n文件修改时间：${readableTime(m.modifiedAt)}" else "", !ui.locked, { vm.openMaterial(m) }) { PagePreview("local:${m.id}", m.title, vm.previews) { vm.previewLocal(m) }; if (m.format in listOf("pptx", "docx")) Text("文字与嵌入图片提取预览", style = MaterialTheme.typography.labelSmall) } }
             }
             if (ui.materialPane == "notes") {
                 if (ui.data.notes.isEmpty()) item { Text("还没有笔记，可先导入笔记或保存 AI 讲解。") }
@@ -67,16 +69,12 @@ import androidx.compose.ui.unit.dp
             if (ui.materialPane == "rain") {
                 if (ui.slides.isEmpty()) {
                     item { Row { TextButton(onClick = vm::allCourses, enabled = !ui.locked) { Text("课程列表") }; TextButton(onClick = vm::loadCourses, enabled = !ui.locked) { Text("刷新") } } }
-                    if (ui.course == null) items(ui.courses, key = { it.id }) { c -> MaterialRow(c.title, c.detail, !ui.locked, { vm.loadActivities(c) }) }
-                    else {
-                        item { Text(ui.course.title, style = MaterialTheme.typography.titleMedium) }
-                        items(ui.presentations, key = { "${it.lessonId}:${it.id}" }) { p -> MaterialRow(p.title, (if (p.isLesson) "课堂记录" else "课件") + " · " + p.recordedAt.ifBlank { "雨课堂未提供时间" }, !ui.locked, { vm.openPresentation(p) }) { DeckPreview(ui, p, vm) } }
-                        item { Row { TextButton(onClick = { vm.loadActivities(ui.course, ui.activityPage - 1) }, enabled = !ui.locked && ui.activityPage > 0) { Text("上一批") }; TextButton(onClick = { vm.loadActivities(ui.course, ui.activityPage + 1) }, enabled = !ui.locked && ui.activityPage < 1000) { Text("下一批") } } }
-                    }
+                    if (ui.course != null) item { Text(ui.course.title, style = MaterialTheme.typography.titleMedium) }
+                    courseLibraryItems(ui, vm, libraryColumns)
                 }
             }
             if ((ui.materialPane == "rain" || ui.materialPane == "pages") && ui.slides.isNotEmpty()) {
-                item { Text(ui.slideTitle, style = MaterialTheme.typography.titleMedium); Text(ui.slideRecordedAt.ifBlank { "雨课堂未提供时间" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                item { Text(ui.slideTitle, style = MaterialTheme.typography.titleMedium); Text(ui.slideRecordedAt.ifBlank { "创建时间：未提供" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 if (ui.localDocument == null) item { OutlinedButton(onClick = { vm.prepareDeckDownload()?.let { name -> if (ui.data.downloadTreeUri.isBlank()) pdf.launch(name) else vm.downloadDeck() } }, enabled = !ui.locked) { Text("下载课件 PDF") }; Text("按已开放页面重建 PDF，并非原始 PPT。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(from, { from = it.filter(Char::isDigit).take(5) }, label = { Text("开始页/段") }, singleLine = true, modifier = Modifier.weight(1f), enabled = !ui.locked); OutlinedTextField(to, { to = it.filter(Char::isDigit).take(5) }, label = { Text("结束页/段") }, singleLine = true, modifier = Modifier.weight(1f), enabled = !ui.locked) }; TextButton(onClick = { vm.closeMaterials(); vm.batchNotes(from, to) }, enabled = !ui.locked && from.isNotBlank() && to.isNotBlank()) { Text("连续讲解并保存 · 每次最多 50 页/段") } }
                 items(ui.slides.filter { focusedPage == 0 || it.page == focusedPage }, key = { it.page }) { page -> StudyPanel { Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { Text("第 ${page.page} ${if (ui.localDocument?.material?.format in listOf("txt", "md", "docx")) "段" else "页"}", style = MaterialTheme.typography.titleSmall); PagePreview(vm.pagePreviewKey(ui, page), "${ui.slideTitle} · 第 ${page.page} 页", vm.previews) { vm.previewPage(ui, page) }; if (ui.localDocument?.material?.format in listOf("pptx", "docx")) Text("提取预览，复杂版式请导入 PDF", style = MaterialTheme.typography.labelSmall); if (page.text.isNotBlank()) Text(notePreview(page.text), maxLines = 2, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) { TextButton(onClick = { vm.attach(page) }, enabled = !ui.locked) { Text("带入学习") }; TextButton(onClick = { vm.explainPage(page) }, enabled = !ui.locked) { Text("讲解并保存") } } } } }
@@ -85,6 +83,8 @@ import androidx.compose.ui.unit.dp
         }
     }
     }
+}
+
 }
 
 @Composable private fun MaterialRow(title: String, detail: String, enabled: Boolean, onClick: () -> Unit, preview: (@Composable () -> Unit)? = null) {

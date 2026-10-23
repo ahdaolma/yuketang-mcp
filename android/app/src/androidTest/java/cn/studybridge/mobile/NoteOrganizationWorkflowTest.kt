@@ -66,18 +66,19 @@ class NoteOrganizationWorkflowTest {
             compose.waitUntil(5000) { vm.ui.value.ready }
             compose.runOnIdle { vm.tab(2) }
             compose.onNodeWithContentDescription("管理笔记分类").performClick()
-            compose.onNodeWithText("新建分类").performClick()
+            compose.onNodeWithText("新建笔记本").performClick()
             compose.onNodeWithText("分类名称").performTextInput("遗传学")
             hideKeyboard()
             compose.onNodeWithText("保存分类").performClick()
-            compose.onNodeWithText("关闭").performClick()
+            compose.onNodeWithContentDescription("关闭笔记本管理").performClick()
             compose.onNodeWithTag("笔记卡片 organize").performTouchInput { longClick() }
             listOf("编辑笔记", "重命名笔记", "取消置顶", "移动到分类", "删除笔记…").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
             shot("sample-note-longpress")
             compose.onNodeWithText("移动到分类").performClick()
             compose.onNodeWithText("遗传学").performClick()
-            compose.waitUntil(5000) { compose.onAllNodesWithText("遗传学 1").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNodeWithText("遗传学 1").performClick()
+            compose.waitUntil(5000) { vm.ui.value.data.notes.single { it.id == first.id }.folderId.isNotEmpty() }
+            compose.onNodeWithTag("当前笔记本").performClick()
+            compose.onNodeWithText("遗传学").performClick()
             compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记卡片 untouched").fetchSemanticsNodes().isEmpty() }
             assertEquals(first.copy(folderId = vm.ui.value.data.noteFolders.single().id), vm.ui.value.data.notes.single { it.id == first.id })
             compose.waitUntil(5000) { vault.load().noteFolders.singleOrNull()?.name == "遗传学" && vault.load().notes.single { it.id == first.id }.folderId.isNotEmpty() }
@@ -97,7 +98,7 @@ class NoteOrganizationWorkflowTest {
             assertEquals("生物学", vm.ui.value.data.noteFolders.single().name)
             compose.onNodeWithContentDescription("删除分类 生物学").performClick()
             compose.onNodeWithText("只删除分类").performClick()
-            compose.onNodeWithText("关闭").performClick()
+            compose.onNodeWithContentDescription("关闭笔记本管理").performClick()
             compose.waitUntil(5000) { vm.ui.value.data.noteFolders.isEmpty() && compose.onAllNodesWithTag("笔记卡片 organize").fetchSemanticsNodes().isNotEmpty() }
             assertEquals(listOf(first, other), vm.ui.value.data.notes)
             compose.onNodeWithTag("笔记卡片 organize").performTouchInput { longClick() }

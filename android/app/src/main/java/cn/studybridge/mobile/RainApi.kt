@@ -82,18 +82,30 @@ class RainApi(private val client: OkHttpClient = defaultRainClient()) {
     }
     fun courses(s: Saved): List<Course> {
         val list = api(s.region, s.session, "/v2/api/web/courses/list", mapOf("identity" to "2")).optJSONArray("list") ?: error("课程列表结构需要适配。")
-        return list.objects().map { Course(numericId(it.optString("classroom_id")), it.optJSONObject("course")?.optional("name") ?: it.optString("name", "未命名课程"), listOfNotNull(it.optJSONObject("teacher")?.optional("name"), it.optional("term")).joinToString(" · ")) }.distinctBy { it.id }
+        val merged = linkedMapOf<String, Course>()
+        list.objects().forEach {
+            val teacher = it.optJSONObject("teacher")?.optional("name").orEmpty()
+            val term = it.optional("term").orEmpty()
+            val course = Course(numericId(it.optString("classroom_id")), it.optJSONObject("course")?.optional("name") ?: it.optString("name", "未命名课程"), listOf(teacher, term).filter(String::isNotBlank).joinToString(" · "), teacher, term)
+            val old = merged[course.id]
+            merged[course.id] = old?.copy(teacher = old.teacher.ifBlank { teacher }, term = old.term.ifBlank { term }, detail = old.detail.ifBlank { course.detail }) ?: course
+        }
+        return merged.values.toList()
     }
     fun presentations(s: Saved, course: Course, page: Int): List<Presentation> {
         val d = api(s.region, s.session, "/v2/api/web/logs/learn/${numericId(course.id)}", mapOf("actype" to "-1", "page" to page.toString(), "offset" to "50", "sort" to "-1"))
         val activities = d.optJSONArray("activities") ?: error("课程活动结构需要适配。")
-        return activityPresentations(activities)
+        return activityPresentations(activities).map { it.copy(teacher = it.teacher.ifBlank { course.teacher }) }
     }
     fun lessonPresentations(s: Saved, lesson: Presentation): List<Presentation> {
         val d = api(s.region, s.session, "/api/v3/classroom-report/student/lesson-info", mapOf("lesson_id" to numericId(lesson.lessonId)))
         val ids = d.optJSONArray("presentationIds") ?: error("这节课未返回课件目录，可能未开放课后回顾。")
         val title = d.optional("lessonName") ?: lesson.title
-        return (0 until ids.length()).map { Presentation(numericId(ids.get(it).toString()), "$title · 课件 ${it + 1}", lesson.lessonId, recordedAt = lesson.recordedAt) }
+        val perIdTimes = presentationOwnedTimes(d)
+        return mergePresentations((0 until ids.length()).map {
+            val id = numericId(ids.get(it).toString())
+            lessonPresentation(id, "$title · 课件 ${it + 1}", lesson, perIdTimes[id].orEmpty())
+        })
     }
     fun slides(s: Saved, id: String, lessonId: String = "", authorization: String = "", onAuthorization: (String) -> Unit = {}): Pair<String, List<Slide>> {
         val d = if (lessonId.isBlank()) api(s.region, s.session, "/api/v3/lesson/presentation/fetch", mapOf("presentation_id" to numericId(id)), authorization, onAuthorization = onAuthorization)
@@ -138,17 +150,19 @@ class RainApi(private val client: OkHttpClient = defaultRainClient()) {
         check(image != null || slide.text.isNotBlank()) { "此页没有可读取的图片或文字。" }
         return Attachment(image, "$title · 第 ${slide.page} 页", slide.text)
     }
-    fun login(region: String, onQr: (ByteArray) -> Unit, onSuccess: (String, String) -> Unit, onError: (String) -> Unit, onStep: (String) -> Unit = {}): AutoCloseable {
+    fun login(region: String, onQr: (ByteArray) -> Unit, onSuccess: (String, String) -> Unit, onError: (String) -> Unit, onStep: (String) -> Unit = {}, timeoutMillis: Long = 180_000): AutoCloseable {
         val timer = Timer(true)
         val lock = Any()
         var finished = false
         var socket: WebSocket? = null
+        var exchange: okhttp3.Call? = null
         fun active() = synchronized(lock) { !finished }
-        fun finish(action: () -> Unit = {}) { synchronized(lock) { if (finished) return; finished = true; timer.cancel(); socket?.close(1000, "finished"); action() } }
+        fun update(action: () -> Unit) { synchronized(lock) { if (!finished) action() } }
+        fun finish(action: () -> Unit = {}) { synchronized(lock) { if (finished) return; finished = true; timer.cancel(); exchange?.cancel(); socket?.close(1000, "finished"); action() } }
         fun qr(ws: WebSocket) { if (active()) ws.send(JSONObject().put("op", "requestlogin").put("role", "web").put("version", 1.4).put("type", "qrcode").put("from", "web").toString()) }
         socket = client.newWebSocket(Request.Builder().url("wss://${host(region)}/wsapp/").header("Origin", "https://${host(region)}").header("User-Agent", UA).build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                if (active()) onStep("微信通道已连接，正在获取二维码")
+                update { onStep("微信通道已连接，正在获取二维码") }
                 qr(webSocket)
                 // Keep the ticket the user saved. Requesting another QR while
                 // they are in WeChat can invalidate that image without notice.
@@ -159,19 +173,27 @@ class RainApi(private val client: OkHttpClient = defaultRainClient()) {
                 try {
                     val d = JSONObject(text)
                     when (d.optString("op")) {
-                        "requestlogin" -> { val bytes = image(d.getString("ticket")).second; if (active()) { onStep("二维码已生成，等待微信确认"); onQr(bytes) } }
+                        "requestlogin" -> { val bytes = image(d.getString("ticket")).second; update { onStep("二维码已生成，等待微信确认"); onQr(bytes) } }
                         "loginsuccess" -> {
-                            timer.cancel()
-                            onStep("微信已确认，正在获取雨课堂登录记录")
+                            // The session HTTP exchange still belongs to this
+                            // bounded attempt, even after WeChat confirmation.
+                            update { onStep("微信已确认，正在获取雨课堂登录记录") }
                             stage = "微信已确认，但雨课堂会话获取失败。"
                             val url = "https://${host(region)}/pc/web_login".toHttpUrl()
                             val request = Request.Builder().url(url).header("User-Agent", UA).post(JSONObject().put("UserID", d.get("UserID")).put("Auth", d.get("Auth")).toString().toRequestBody("application/json".toMediaType())).build()
-                            val session = client.newCall(request).execute().use { r ->
+                            val call = client.newCall(request)
+                            synchronized(lock) {
+                                // Cancellation can win while constructing the
+                                // exchange; never start it after the lease ends.
+                                if (finished) { call.cancel(); return }
+                                exchange = call
+                            }
+                            val session = try { call.execute().use { r ->
                                 check(r.isSuccessful)
                                 r.headers.values("Set-Cookie").mapNotNull { Cookie.parse(url, it) }.find { it.name == "sessionid" }?.value ?: error("missing session")
-                            }
+                            } } finally { synchronized(lock) { if (exchange === call) exchange = null } }
                             check(session.matches(Regex("[A-Za-z0-9._-]{8,512}")))
-                            onStep("已取得雨课堂登录记录，正在加密保存")
+                            update { onStep("已取得雨课堂登录记录，正在加密保存") }
                             finish { onSuccess(session, d.optional("Name") ?: "已确认账号") }
                         }
                     }
@@ -181,20 +203,22 @@ class RainApi(private val client: OkHttpClient = defaultRainClient()) {
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { finish { onError("登录通道已关闭，请重新开始。") } }
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) { webSocket.close(1000, "closed") }
         })
-        synchronized(lock) { if (finished) socket?.close(1000, "finished") else timer.schedule(object : TimerTask() { override fun run() { finish { onError("本次扫码等待已结束，请重新获取二维码。") } } }, 180000) }
+        synchronized(lock) { if (finished) socket?.close(1000, "finished") else timer.schedule(object : TimerTask() { override fun run() { finish { onError("本次扫码等待已结束，请重新获取二维码。") } } }, timeoutMillis) }
         return AutoCloseable { finish() }
     }
 }
 
 internal fun defaultRainClient() = OkHttpClient.Builder().followRedirects(false).followSslRedirects(false).connectTimeout(20, TimeUnit.SECONDS).readTimeout(25, TimeUnit.SECONDS).pingInterval(20, TimeUnit.SECONDS).build()
 
-fun activityPresentations(activities: org.json.JSONArray): List<Presentation> = activities.objects().flatMap { a ->
+fun activityPresentations(activities: org.json.JSONArray): List<Presentation> = mergePresentations(activities.objects().flatMap { a ->
     val title = a.optional("title") ?: a.optional("name") ?: "课堂记录"
-    val refs = presentationRefs(a).map { Presentation(it, title, recordedAt = sourceRecordTime(a)) }
+    val teacher = a.optJSONObject("teacher")?.optional("name").orEmpty()
+    val owned = presentationOwnedTimes(a)
+    val refs = presentationRefs(a).map { Presentation(it, title, teacher = teacher, times = activityTimes(a, false) + owned[it].orEmpty()) }
     // A type-14 courseware_id denotes a lesson, never a presentation.
     val lessonId = a.optional("courseware_id")
-    if (a.optInt("type") == 14 && lessonId?.matches(Regex("[0-9]{1,24}")) == true) listOf(Presentation("lesson:$lessonId", title, lessonId, true, sourceRecordTime(a))) else refs
-}.distinctBy { "${it.lessonId}:${it.id}" }
+    if (a.optInt("type") == 14 && lessonId?.matches(Regex("[0-9]{1,24}")) == true) listOf(Presentation("lesson:$lessonId", title, lessonId, true, teacher = teacher, times = activityTimes(a, true))) else refs
+})
 
 fun parseSlides(d: JSONObject, report: Boolean): List<Slide> {
     val list = d.optJSONArray(if (report) "slideList" else "slides") ?: error("课件页面结构无法识别，或尚未开放。")

@@ -39,7 +39,7 @@ private fun sanitizedBackupData(data: Saved): Saved {
         folderId = note.folderId.takeIf { it in folders }.orEmpty(),
         relatedNoteIds = note.relatedNoteIds.filter { it in ids && it != note.id }.distinct().take(100)
     )
-    return data.copy(notes = data.notes.map(::clean), noteTrash = data.noteTrash.map { it.copy(note = clean(it.note)) },
+    return data.copy(notes = data.notes.map(::clean), noteFolders = data.noteFolders.map { it.copy(classroomKey = "") }, noteTrash = data.noteTrash.map { it.copy(note = clean(it.note)) },
         noteHistory = data.noteHistory.map { it.copy(note = clean(it.note)) },
         noteModifiedTimes = data.noteModifiedTimes.filterKeys { it in ids },
         noteDrafts = data.noteDrafts.filter { it.noteId in activeIds },
@@ -48,7 +48,7 @@ private fun sanitizedBackupData(data: Saved): Saved {
 
 private fun backupDataJson(data: Saved) = JSONObject().apply {
     put("notes", JSONArray(data.notes.map { it.portableJson() }))
-    put("noteFolders", JSONArray(data.noteFolders.map { JSONObject().put("id", it.id).put("name", it.name) }))
+    put("noteFolders", JSONArray(data.noteFolders.map { it.json(includeAssociation = false) }))
     put("noteTrash", JSONArray(data.noteTrash.map { JSONObject().put("note", it.note.portableJson()).put("deletedAt", it.deletedAt) }))
     put("noteHistory", JSONArray(data.noteHistory.map { JSONObject().put("id", it.id).put("note", it.note.portableJson()).put("savedAt", it.savedAt) }))
     put("noteModifiedTimes", JSONObject(data.noteModifiedTimes)); put("noteSort", data.noteSort)
@@ -85,6 +85,7 @@ private fun validateBackupData(data: Saved) {
     require(data.noteHistory.map { it.id }.distinct().size == data.noteHistory.size && data.noteHistory.all { validBackupId(it.id) })
     require(data.notes.none { note -> data.noteTrash.any { it.note.id == note.id } }) { "备份中同一笔记同时出现在笔记库和回收站。" }
     require(folders.size == data.noteFolders.size && data.noteFolders.all { validBackupId(it.id) && it.name.isNotBlank() && it.name.length <= 1000 })
+    require(data.noteFolders.all { folder -> folder.parentId.isEmpty() || folder.parentId != folder.id && data.noteFolders.any { it.id == folder.parentId && it.parentId.isEmpty() } }) { "备份中的笔记本层级无效。" }
     require(data.noteDrafts.map { it.noteId }.distinct().size == data.noteDrafts.size && data.noteDrafts.all { it.noteId in activeIds })
     require(data.noteReadingPositions.map { it.noteId }.distinct().size == data.noteReadingPositions.size && data.noteReadingPositions.all { it.noteId in activeIds && it.index >= 0 && it.scroll >= 0 })
     require(data.noteModifiedTimes.keys.all { it in ids } && data.noteSort in NOTE_SORT_OPTIONS)
@@ -110,7 +111,7 @@ private fun readBackupData(json: JSONObject): Saved {
     val data = Saved(
         providers = emptyList(), conversations = emptyList(),
         notes = notes.backupObjects().map(::note),
-        noteFolders = json.getJSONArray("noteFolders").backupObjects().map { it.requireKeys(setOf("id", "name")); NoteFolder(it.getString("id"), it.getString("name")) },
+        noteFolders = json.getJSONArray("noteFolders").backupObjects().map { it.requireKeys(setOf("id", "name", "parentId")); noteFolderFromJson(it) },
         noteTrash = trash.backupObjects().map { it.requireKeys(setOf("note", "deletedAt")); TrashedNote(note(it.getJSONObject("note")), it.getLong("deletedAt")) },
         noteHistory = history.backupObjects().map { it.requireKeys(setOf("id", "note", "savedAt")); NoteRevision(it.getString("id"), note(it.getJSONObject("note")), it.getLong("savedAt")) },
         noteModifiedTimes = json.getJSONObject("noteModifiedTimes").let { times -> times.keys().asSequence().associateWith { times.getLong(it) } },
@@ -192,14 +193,15 @@ fun mergeNotebookBackup(current: Saved, backup: Saved): Saved {
     validateBackupData(backup)
     val fingerprint = imageDigest(backupDataJson(backup).toString().toByteArray(Charsets.UTF_8)).take(20)
     val folders = current.noteFolders.toMutableList(); val folderMap = mutableMapOf<String, String>()
-    backup.noteFolders.forEach { folder ->
-        val same = folders.firstOrNull { it.id == folder.id && it.name == folder.name } ?: folders.firstOrNull { it.name.equals(folder.name, true) }
+    backup.noteFolders.sortedBy { if (it.parentId.isEmpty()) 0 else 1 }.forEach { folder ->
+        val parent = if (folder.parentId.isEmpty()) "" else folderMap.getValue(folder.parentId)
+        val same = folders.firstOrNull { it.id == folder.id && it.name == folder.name && it.parentId == parent } ?: folders.firstOrNull { it.parentId == parent && it.name.equals(folder.name, true) }
         if (same != null) folderMap[folder.id] = same.id
         else {
             val base = if (folders.none { it.id == folder.id }) folder.id else "import-$fingerprint-folder-${imageDigest(folder.id.toByteArray()).take(16)}"
             var id = base; var suffix = 1
             while (folders.any { it.id == id }) { id = "$base-${suffix++}" }
-            folders += folder.copy(id = id); folderMap[folder.id] = id
+            folders += folder.copy(id = id, parentId = parent, classroomKey = ""); folderMap[folder.id] = id
         }
     }
     val source = backup.imageBearingNotes().distinctBy { it.id }.associateBy { it.id }

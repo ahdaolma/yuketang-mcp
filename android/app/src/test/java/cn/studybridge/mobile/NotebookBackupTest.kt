@@ -12,6 +12,27 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 class NotebookBackupTest {
+    @Test fun legacyBackupFolderWithoutParentKeepsMembershipAndContent() {
+        val legacy = Saved(noteFolders = listOf(NoteFolder("legacy", "旧分类")), notes = listOf(note("old").copy(folderId = "legacy")))
+        val bytes = changed(legacy) { it.getJSONObject("data").getJSONArray("noteFolders").getJSONObject(0).remove("parentId") }
+        val restored = restore(bytes).data
+        assertEquals(legacy.noteFolders, restored.noteFolders)
+        assertEquals(legacy.notes, restored.notes)
+    }
+    @Test fun notebookSectionsRoundTripAndMergeUnderTheirOwnParentsWithoutAccountBindings() {
+        val folders = listOf(NoteFolder("bio", "遗传学", classroomKey = "private-binding"), NoteFolder("bio-one", "第一章", "bio"), NoteFolder("eng", "英语"), NoteFolder("eng-one", "第一章", "eng"))
+        val incoming = Saved(noteFolders = folders, notes = listOf(Note("chapter-note", "章节", "完整正文", "fixture", "fixture", folderId = "eng-one")))
+        val restored = restore(archive(incoming)).data
+        assertEquals(folders.map { it.copy(classroomKey = "") }, restored.noteFolders)
+        val local = Saved(noteFolders = listOf(NoteFolder("bio", "本机课程"), NoteFolder("local-eng", "英语"), NoteFolder("local-one", "第一章", "local-eng")))
+        val merged = mergeNotebookBackup(local, restored)
+        assertEquals("local-one", merged.notes.single().folderId)
+        assertEquals("local-eng", merged.noteFolders.single { it.id == "local-one" }.parentId)
+        assertEquals(2, merged.noteFolders.count { it.name == "第一章" })
+        val importedBio = merged.noteFolders.single { it.name == "遗传学" }
+        assertNotEquals("bio", importedBio.id)
+        assertEquals(importedBio.id, merged.noteFolders.single { it.id == "bio-one" }.parentId)
+    }
     private fun note(id: String, content: String = "正文 $id", links: List<String> = emptyList()) = Note(id, "笔记 $id", content, "手写", "手写", createdAt = 100, relatedNoteIds = links)
     private fun archive(data: Saved): ByteArray = ByteArrayOutputStream().also { writeNotebookBackup(it, data, { error("unexpected image") }, { null }) }.toByteArray()
     private fun entries(bytes: ByteArray): LinkedHashMap<String, ByteArray> = linkedMapOf<String, ByteArray>().also { out ->

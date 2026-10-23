@@ -269,7 +269,7 @@ import kotlin.math.abs
                 FeedbackIconButton(onClick = { selectHit(hits[(hitIndex + 1).coerceAtMost(hits.lastIndex)], query) }, enabled = hits.isNotEmpty() && hitIndex < hits.lastIndex) { Icon(Icons.Default.ChevronRight, "下一处") }
                 FeedbackIconButton(onClick = { query = ""; searchOffset = -1 }) { Icon(Icons.Default.Close, "结束查找") }
             }
-            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth().onSizeChanged { viewport = it.height; bodyWidth = it.width }.onGloballyPositioned { bodyTop = it.positionInWindow().y }) {
+            BoxWithConstraints(Modifier.weight(1f).widthIn(max = 840.dp).fillMaxWidth().align(Alignment.CenterHorizontally).onSizeChanged { viewport = it.height; bodyWidth = it.width }.onGloballyPositioned { bodyTop = it.positionInWindow().y }) {
                 // Native text keeps the actual reader width during lazy item
                 // premeasurement as well as its later placement on screen.
                 val contentWidth = maxWidth

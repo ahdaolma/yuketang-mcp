@@ -361,7 +361,9 @@ private fun preview(bytes: ByteArray): Bitmap? {
     var connectionHelp by remember { mutableStateOf(false) }
     var advanced by remember { mutableStateOf(false) }
     var focusedPage by rememberSaveable(ui.presentationId, ui.slideTitle) { mutableIntStateOf(0) }
-    Column(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+    val libraryColumns = courseLibraryColumns(maxWidth.value.coerceAtMost(1120f) - 40f, androidx.compose.ui.platform.LocalDensity.current.fontScale)
+    Column(Modifier.widthIn(max = 1120.dp).fillMaxSize()) {
     SlidePageControls(ui.slides, focusedPage) { focusedPage = it }
     LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 20.dp).testTag("课程列表"), verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
         item {
@@ -394,32 +396,11 @@ private fun preview(bytes: ByteArray): Bitmap? {
         if (ui.data.session.isNotBlank()) {
             item { Row(verticalAlignment = Alignment.CenterVertically) { Text(if (ui.course == null) "我的课程" else ui.course.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f)); if (ui.course != null) TextButton(onClick = vm::allCourses, enabled = !ui.locked) { Text("返回课程") } else TextButton(onClick = vm::loadCourses, enabled = !ui.locked && !ui.loginActive) { Text("刷新") } } }
             if (ui.courses.isEmpty() && ui.course == null) item { StudyEmpty(Icons.Outlined.MenuBook, "还没有读取课程", "点击右上方刷新，读取你已加入的课程。") }
-            if (ui.course == null) itemsIndexed(ui.courses, key = { _, it -> it.id }) { index, c ->
-                Card(onClick = { vm.loadActivities(c) }, enabled = !ui.locked, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(16.dp), border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(horizontal = 18.dp, vertical = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant), shape = RoundedCornerShape(12.dp)) { Icon(Icons.Outlined.MenuBook, null, Modifier.padding(10.dp).size(21.dp), tint = MaterialTheme.colorScheme.primary) }
-                        Column(Modifier.weight(1f).padding(horizontal = 14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) { Text(c.title, style = MaterialTheme.typography.titleSmall); if (c.detail.isNotBlank()) Text(c.detail, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                        Icon(Icons.Default.ChevronRight, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.outline)
-                    }
-                }
-            }
-            ui.course?.let { c ->
-                if (ui.slides.isEmpty()) {
-                    items(ui.presentations, key = { "${it.lessonId}:${it.id}" }) { p ->
-                        Card(onClick = { vm.openPresentation(p) }, enabled = !ui.locked, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(16.dp), border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outlineVariant), modifier = Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text(p.title, style = MaterialTheme.typography.titleSmall)
-                                Text((if (p.isLesson) "课堂记录" else "课件") + " · " + p.recordedAt.ifBlank { "雨课堂未提供时间" }, style = MaterialTheme.typography.bodySmall)
-                                DeckPreview(ui, p, vm)
-                            }
-                        }
-                    }
-                    item { Row { TextButton(onClick = { vm.loadActivities(c, ui.activityPage - 1) }, enabled = !ui.locked && ui.activityPage > 0) { Text("上一批") }; Text("第 ${ui.activityPage + 1} 批", Modifier.padding(12.dp), style = MaterialTheme.typography.labelMedium); TextButton(onClick = { vm.loadActivities(c, ui.activityPage + 1) }, enabled = !ui.locked && ui.activityPage < 1000) { Text("下一批") } } }
-                }
-            }
+            if (ui.slides.isEmpty()) courseLibraryItems(ui, vm, libraryColumns)
             if (ui.slides.isNotEmpty()) item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(ui.slideTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(ui.slideRecordedAt.ifBlank { "创建时间：未提供" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("${ui.slides.size} 个已开放页面 · 选择范围生成一份讲解笔记", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedTextField(fromPage, { if (it.length <= 5 && it.all(Char::isDigit)) fromPage = it }, label = { Text("开始页") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), enabled = !ui.locked)
@@ -441,9 +422,12 @@ private fun preview(bytes: ByteArray): Bitmap? {
     }
 }
 
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable fun NotesScreen(ui: UiState, vm: StudyViewModel) {
     val reader = vm.noteReader
+    val libraryState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     val chrome = LocalReadingChrome.current
     val inlineHeader = LocalInlineReadingHeader.current
     DisposableEffect(chrome, reader.editing) { chrome?.locked = reader.editing; onDispose { chrome?.locked = false } }
@@ -457,25 +441,9 @@ private fun preview(bytes: ByteArray): Bitmap? {
     var remarks by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     var titleDraft by remember { mutableStateOf("") }
-    var query by rememberSaveable { mutableStateOf("") }
-    var selectedFolder by rememberSaveable { mutableStateOf<String?>(null) }
-    var tagFilter by rememberSaveable { mutableStateOf<String?>(null) }
-    var reviewFilter by rememberSaveable { mutableStateOf<String?>(null) }
-    var libraryPane by remember { mutableStateOf("") }
     var actionNoteId by rememberSaveable { mutableStateOf<String?>(null) }
     var initialListAction by rememberSaveable { mutableStateOf("options") }
     NoteListActions(ui, vm, actionNoteId, initialListAction) { actionNoteId = null }
-    val sortedNotes = remember(ui.data.notes, ui.data.noteSort, ui.data.noteModifiedTimes) { libraryNotes(ui.data, "", null, null, null) }
-    val searchedNotes by produceState(sortedNotes, sortedNotes, query) {
-        if (query.isBlank()) value = sortedNotes
-        else {
-            kotlinx.coroutines.delay(140)
-            value = withContext(Dispatchers.Default) { val matched = findNotes(sortedNotes, query).map { it.id }.toSet(); sortedNotes.filter { it.id in matched } }
-        }
-    }
-    val visibleNotes = remember(searchedNotes, selectedFolder, ui.data.noteFolders, tagFilter, reviewFilter) {
-        searchedNotes.filter { (selectedFolder == null || ui.data.effectiveFolder(it) == selectedFolder) && (tagFilter == null || it.tags.any { tag -> tag.equals(tagFilter, true) }) && (reviewFilter == null || it.reviewState == reviewFilter) }
-    }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val exportPdf = rememberNotePdfExport(vm)
@@ -557,32 +525,8 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 }
             } else NoteReadingSelection(note, vm, Modifier.weight(1f)) { readingModifier -> NotebookReader(note, ui, vm, readingModifier, extraHeader = { OriginalNotePages(note, ui, vm); HorizontalDivider() }, onOptions = { menu = true }, onBack = { requestClose() }) }
         }
-    } else LazyColumn(Modifier.fillMaxSize().testTag("笔记列表").padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp)) {
-        item { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(if (query.isBlank()) "${visibleNotes.size} 份笔记" else "找到 ${visibleNotes.size} 份", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            IconButton(onClick = { vm.createManualNote(selectedFolder ?: "") }, enabled = !ui.locked) { Icon(Icons.Outlined.Add, "新建笔记") }
-            TextButton(onClick = vm::notes, enabled = !ui.locked) { Text("生成笔记") }
-            NotebookTools(ui, vm, selectedFolder, tagFilter, reviewFilter) { tag, review -> tagFilter = tag; reviewFilter = review }
-            IconButton(onClick = { vm.tab(3) }) { Icon(Icons.Outlined.Settings, "设置") }
-        } }
-        item { OutlinedTextField(query, { query = it.take(200) }, Modifier.fillMaxWidth(), label = { Text("搜索笔记") }, placeholder = { Text("标题、正文或来源") }, singleLine = true, leadingIcon = { Icon(Icons.Outlined.Search, null) }, trailingIcon = if (query.isNotBlank()) ({ IconButton(onClick = { query = "" }) { Icon(Icons.Outlined.Close, "清除笔记搜索") } }) else null) }
-        item { NoteFolderBar(ui, vm, selectedFolder) { selectedFolder = it } }
-        if (ui.data.session.isNotBlank() || ui.hasClassSession()) item { ClassModePanel(ui, vm) }
-        if (tagFilter != null || reviewFilter != null) item { TextButton(onClick = { tagFilter = null; reviewFilter = null }) { Text("清除筛选：" + listOfNotNull(tagFilter?.let { "#$it" }, reviewFilter?.let { NOTE_REVIEW_STATES[it] }).joinToString(" · ")) } }
-        if (selectedFolder != null && query.isBlank() && visibleNotes.isEmpty() && ui.data.notes.isNotEmpty()) item { StudyEmpty(Icons.Outlined.FolderOpen, "这个分类还没有笔记", "长按笔记选择移动分类，或在当前分类中新建笔记。") }
-        if (query.isNotBlank() && visibleNotes.isEmpty()) item { StudyEmpty(Icons.Outlined.Search, "没有找到相关笔记", "试试正文中的关键词或课件名称。") }
-        if (ui.noteDraft.isNotBlank()) item { StudyPanel { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("正在整理", style = MaterialTheme.typography.titleSmall); Text(ui.noteDraft.takeLast(1600), maxLines = 8, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } } }
-        if (ui.data.notes.isEmpty() && query.isBlank()) item { StudyEmpty(Icons.Outlined.AutoStories, "还没有笔记", "新建自己的笔记，或从学习页保存回答，随时回看、编辑或导出。") { Spacer(Modifier.height(4.dp)); OutlinedButton(onClick = { vm.tab(0) }) { Text("去学习") } } }
-        items(visibleNotes, key = { it.id }) { n -> NoteListCard(n, onOpen = { reader.open(n); details = false }, onActions = { initialListAction = "options"; actionNoteId = n.id }) {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${ui.data.folderName(n)} · ${n.source}", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(remember(n.createdAt) { java.text.SimpleDateFormat("MM月dd日", java.util.Locale.CHINA).format(java.util.Date(n.createdAt)) }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Text(remember(n.content) { notePreview(n.content) }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                NotebookStatus(n)
-            }
-        } }
+    } else libraryState.SaveableStateProvider("notebook-library") {
+        NotebookLibraryScreen(ui, vm, onOpen = { reader.open(it); details = false }, onActions = { initialListAction = "options"; actionNoteId = it.id })
     }
 }
 

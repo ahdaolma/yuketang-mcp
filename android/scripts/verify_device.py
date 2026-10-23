@@ -28,4 +28,5 @@ finally:
         required.add('sample-settings-about.png')
         required.update({'sample-reader-title-below-camera.png', 'sample-settings-risk-statement.png'})
         required.add('sample-chat-landscape-busy.png')
+        required.update({'sample-notebook-hierarchy.png', 'sample-notebook-tablet-landscape.png', 'sample-notebook-tablet-reader.png', 'sample-notebook-tablet-portrait-large-text.png', 'sample-notebook-split-window.png', 'sample-courseware-tablet-materials.png'})
         verify_screenshots(target, required)

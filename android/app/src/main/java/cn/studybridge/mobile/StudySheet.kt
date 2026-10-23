@@ -4,6 +4,8 @@ import android.view.View
 import android.view.ViewTreeObserver
 import androidx.compose.foundation.layout.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.testTag
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.SheetState
@@ -41,11 +43,11 @@ import androidx.core.view.WindowInsetsControllerCompat
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable fun StudyModalBottomSheet(onDismissRequest: () -> Unit, sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), content: @Composable ColumnScope.() -> Unit) {
+@Composable fun StudyModalBottomSheet(onDismissRequest: () -> Unit, sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), sheetMaxWidth: Dp = 640.dp, content: @Composable ColumnScope.() -> Unit) {
     // Keep the draggable anchor's constraints equal to the whole window.
     // Restricting the Surface itself makes Material calculate a zero/top
     // expanded anchor; only the CONTENT should have a maximum height.
-    NativeModalBottomSheet(onDismissRequest = onDismissRequest, sheetState = sheetState, dragHandle = null,
+    NativeModalBottomSheet(onDismissRequest = onDismissRequest, sheetState = sheetState, sheetMaxWidth = sheetMaxWidth, dragHandle = null,
         contentWindowInsets = { WindowInsets(0, 0, 0, 0) }) {
         Column(Modifier.fillMaxWidth().heightIn(max = expandedPanelHeight()).testTag("展开面板容器").windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))) {
             SheetWindowChrome()

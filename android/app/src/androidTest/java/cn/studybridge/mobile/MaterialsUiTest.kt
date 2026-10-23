@@ -23,7 +23,7 @@ class MaterialsUiTest {
         val beforeDialog = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
         compose.setContent { StudyTheme(false) { if (state.value.materialsOpen) LearningMaterialsHost(state.value, vm) else ModelScreen(state.value, vm) } }
         compose.onNodeWithText(title).assertIsDisplayed()
-        compose.onNodeWithText("课件 · 2026-10-20 08:00").assertIsDisplayed()
+        compose.onNodeWithText("记录时间：2026-10-20 08:00", substring = true).assertIsDisplayed()
         compose.waitForIdle()
         compose.waitUntil(5000) { focusedAppStatusBarsHidden() }
         val bitmap = dialogScreenshot(compose, beforeDialog)

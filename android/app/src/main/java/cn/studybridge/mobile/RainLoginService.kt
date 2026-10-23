@@ -13,8 +13,10 @@ import android.os.Looper
 // Started by the visible login button, only for the bounded QR handshake.
 // Switching to WeChat must not demote the process that owns the login socket.
 class RainLoginService : Service() {
+    companion object { internal const val ATTEMPT = "rain-login-attempt" }
     private val handler = Handler(Looper.getMainLooper())
     private val deadline = Runnable { stopSelf() }
+    private var attempt = ""
     override fun onCreate() {
         super.onCreate()
         getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("rain-login", "雨课堂扫码登录", NotificationManager.IMPORTANCE_LOW))
@@ -24,8 +26,18 @@ class RainLoginService : Service() {
         startForeground(1404, notification)
         handler.postDelayed(deadline, 240_000)
     }
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_NOT_STICKY
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        attempt = intent?.getStringExtra(ATTEMPT).orEmpty()
+        return START_NOT_STICKY
+    }
     override fun onBind(intent: Intent?): IBinder? = null
-    override fun onDestroy() { handler.removeCallbacks(deadline); stopForeground(STOP_FOREGROUND_REMOVE); super.onDestroy() }
+    override fun onDestroy() {
+        handler.removeCallbacks(deadline)
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        // A surviving process must not keep waiting on an unprotected socket.
+        // The attempt tag prevents an old service stop from canceling a retry.
+        if (attempt.isNotBlank()) (application as StudyApplication).studyViewModel.rainLoginServiceStopped(attempt)
+        super.onDestroy()
+    }
     override fun onTimeout(startId: Int, fgsType: Int) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() }
 }

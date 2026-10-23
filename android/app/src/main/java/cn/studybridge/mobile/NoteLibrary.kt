@@ -63,7 +63,8 @@ fun Saved.withNoteDetails(id: String, tags: List<String>, review: String, links:
     return copy(notes = notes.map { if (it.id == id) it.copy(tags = normalizedNoteTags(tags), reviewState = review, relatedNoteIds = links.filter { link -> link != id && link in valid }.distinct().take(100)) else it })
 }
 fun libraryNotes(data: Saved, query: String, folder: String?, tag: String?, review: String?): List<Note> {
-    val filtered = findNotes(data.notes, query).filter { (folder == null || it.folderId == folder) && (tag == null || it.tags.any { t -> t.equals(tag, true) }) && (review == null || it.reviewState == review) }
+    val scope = folder?.let { data.folderScope(it) }
+    val filtered = findNotes(data.notes, query).filter { (scope == null || data.effectiveFolder(it) in scope) && (tag == null || it.tags.any { t -> t.equals(tag, true) }) && (review == null || it.reviewState == review) }
     val sorted = when (data.noteSort) {
         "title" -> filtered.sortedWith(compareBy<Note> { it.title.lowercase() }.thenBy { it.id })
         "created" -> filtered.sortedByDescending { it.createdAt }

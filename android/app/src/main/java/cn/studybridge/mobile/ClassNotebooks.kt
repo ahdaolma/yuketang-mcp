@@ -23,9 +23,10 @@ fun prepareClassNotebook(saved: Saved, lesson: LiveLesson, userId: String, provi
     // identity are never guessed by title, model name or source description.
     val old = found ?: current?.let { run -> saved.notes.find { it.id == run.noteId && it.classNotebook == null } }
     val completed = (old?.classNotebook?.completed.orEmpty() + current?.takeIf { it.noteId == old?.id }?.completed.orEmpty()).distinct()
-    val note = old?.copy(classNotebook = identity.copy(completed = completed)) ?: Note(newNoteId, "${lesson.title} · 课堂笔记", "# ${lesson.title}\n\n> 根据课堂展示的课件逐页整理；补充内容标为 AI 讲解，不包含老师口述。\n\n", "课堂：${lesson.title}", saved.providers.find { it.id == providerId }?.let { "${it.name} / ${it.model}" }.orEmpty(), now, classNotebook = identity)
+    val organized = if (old == null) saved.withClassNotebookFolder(identity, lesson.title) else saved to old.folderId
+    val note = old?.copy(classNotebook = identity.copy(completed = completed)) ?: Note(newNoteId, "${lesson.title} · 课堂笔记", "# ${lesson.title}\n\n> 根据课堂展示的课件逐页整理；补充内容标为 AI 讲解，不包含老师口述。\n\n", "课堂：${lesson.title}", saved.providers.find { it.id == providerId }?.let { "${it.name} / ${it.model}" }.orEmpty(), now, folderId = organized.second, classNotebook = identity)
     val run = if (current != null && current.noteId == note.id) current.copy(lesson = lesson, completed = completed) else ClassRun(lesson, note.id, providerId, now, completed)
-    return saved.copy(notes = if (old != null) saved.notes.map { if (it.id == note.id) note else it } else listOf(note) + saved.notes, classRun = run)
+    return organized.first.copy(notes = if (old != null) saved.notes.map { if (it.id == note.id) note else it } else listOf(note) + saved.notes, classRun = run)
 }
 
 fun appendClassNotebookPage(saved: Saved, noteId: String, page: LivePage, content: String, label: String, imageRef: String): Saved {

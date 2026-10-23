@@ -13,8 +13,8 @@ data class Saved(val providers: List<Provider> = listOf(Provider()), val selecte
     fun provider() = providers.find { it.id == selectedProvider } ?: providers.first()
     fun chat() = conversations.find { it.id == currentChat } ?: conversations.first()
 }
-data class Course(val id: String, val title: String, val detail: String = "")
-data class Presentation(val id: String, val title: String, val lessonId: String = "", val isLesson: Boolean = false, val recordedAt: String = "")
+data class Course(val id: String, val title: String, val detail: String = "", val teacher: String = "", val term: String = "")
+data class Presentation(val id: String, val title: String, val lessonId: String = "", val isLesson: Boolean = false, val recordedAt: String = "", val teacher: String = "", val times: List<SourceTime> = emptyList())
 data class Slide(val page: Int, val cover: String, val text: String)
 data class Attachment(val image: String?, val label: String, val text: String, val imageRef: String = "")
 
@@ -31,7 +31,7 @@ fun Saved.toJson(): JSONObject = JSONObject().apply {
     put("conversations", JSONArray(conversations.map { c -> JSONObject().put("id", c.id).put("title", c.title).put("messages", JSONArray(c.messages.map { m -> JSONObject().put("role", m.role).put("text", m.text).put("image", m.image).put("source", m.source) })) }))
     put("noteReadingPositions", JSONArray(noteReadingPositions.map { JSONObject().put("noteId", it.noteId).put("index", it.index).put("scroll", it.scroll).put("anchor", it.anchor).put("contentHash", it.contentHash).put("textAnchor", it.textAnchor?.toJson()) }))
     put("noteDrafts", JSONArray(noteDrafts.map { JSONObject().put("noteId", it.noteId).put("content", it.content).put("updatedAt", it.updatedAt).put("baseContent", it.baseContent) }))
-    put("noteFolders", JSONArray(noteFolders.map { JSONObject().put("id", it.id).put("name", it.name) }))
+    put("noteFolders", JSONArray(noteFolders.map { it.json() }))
     put("notes", JSONArray(notes.map { it.notebookJson() })); putNotebookLibrary(this, this@toJson)
 }
 fun savedFromJson(o: JSONObject): Saved = Saved(
@@ -43,7 +43,7 @@ fun savedFromJson(o: JSONObject): Saved = Saved(
     currentChat = o.optString("currentChat"), notes = (o.optJSONArray("notes") ?: JSONArray()).objects().map(::notebookNoteFromJson),
     noteReadingPositions = (o.optJSONArray("noteReadingPositions") ?: JSONArray()).objects().map { NoteReadingPosition(it.getString("noteId"), it.optInt("index").coerceAtLeast(0), it.optInt("scroll").coerceAtLeast(0), it.optString("anchor"), it.optString("contentHash"), noteTextAnchorFromJson(it.optJSONObject("textAnchor"))) },
     noteDrafts = (o.optJSONArray("noteDrafts") ?: JSONArray()).objects().map { NoteDraft(it.getString("noteId"), it.getString("content"), it.getLong("updatedAt"), if (it.isNull("baseContent")) null else it.getString("baseContent")) },
-    noteFolders = (o.optJSONArray("noteFolders") ?: JSONArray()).objects().map { NoteFolder(it.getString("id"), it.getString("name")) }.distinctBy { it.id },
+    noteFolders = normalizedNoteFolders((o.optJSONArray("noteFolders") ?: JSONArray()).objects().map(::noteFolderFromJson)),
     materials = (o.optJSONArray("materials") ?: JSONArray()).objects().map(::materialFromJson), downloadTreeUri = o.optString("downloadTreeUri"), downloadDirectoryName = o.optString("downloadDirectoryName"),
     learnerProfile = o.optString("learnerProfile").take(LEARNER_PROFILE_LIMIT), autoNotes = o.optBoolean("autoNotes"), region = o.optString("region", "standard"), session = o.optString("session"), username = o.optString("username"), tutorPrompt = upgradedTutorPrompt(o.optString("tutorPrompt", TUTOR_PROMPT)), notesPrompt = upgradedNotesPrompt(o.optString("notesPrompt", NOTES_PROMPT)), sessionVerified = o.optBoolean("sessionVerified", o.optString("session").isNotBlank()), classRun = o.optJSONObject("classRun")?.let(::classRunFromJson)?.let { if (it.providerId == "chatgpt-web") it.copy(ended = true, pending = emptyList()) else it }, chatgptAccounts = (o.optJSONArray("chatgptAccounts") ?: JSONArray()).objects().map(::chatGptAccountFromJson), chatgptHostId = o.optString("chatgptHostId"), chatgptDraftClients = (o.optJSONArray("chatgptDraftClients") ?: JSONArray()).let { a -> (0 until a.length()).map { a.getString(it) } }, chatgptWelcomeShown = o.optBoolean("chatgptWelcomeShown")
 ).let { migrateLegacyWebNotes(o, it) }

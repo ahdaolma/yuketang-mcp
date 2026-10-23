@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-data class UiState(val data: Saved = Saved(), val tab: Int = 0, val settingsPage: String = "", val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val activityPage: Int = 0, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi(), val chatgptLoginActive: Boolean = false, val chatgptStage: String = "", val chatgptPlanWelcome: Boolean = false, val modelNames: Map<String, String> = emptyMap(), val modelListRequest: String = "", val materialsOpen: Boolean = false, val materialPane: String = "home", val localDocument: MaterialDocument? = null, val slideRecordedAt: String = "", val storageError: String = "", val noteDraftSaving: Boolean = false, val noteDraftSavedAt: Long = 0L, val noteDraftSaveError: String = "") { val locked get() = !ready || storageError.isNotBlank() || busy || chatgptLoginActive || (classUi.running && !classUi.paused) }
+data class UiState(val data: Saved = Saved(), val tab: Int = 0, val settingsPage: String = "", val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val activityPage: Int = 0, val courseOrder: CourseOrder = CourseOrder.NEWEST, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi(), val chatgptLoginActive: Boolean = false, val chatgptStage: String = "", val chatgptPlanWelcome: Boolean = false, val modelNames: Map<String, String> = emptyMap(), val modelListRequest: String = "", val materialsOpen: Boolean = false, val materialPane: String = "home", val localDocument: MaterialDocument? = null, val slideRecordedAt: String = "", val storageError: String = "", val noteDraftSaving: Boolean = false, val noteDraftSavedAt: Long = 0L, val noteDraftSaveError: String = "") { val locked get() = !ready || storageError.isNotBlank() || busy || chatgptLoginActive || (classUi.running && !classUi.paused) }
 
 class StudyViewModel @JvmOverloads constructor(app: Application, private val rain: RainApi = RainApi(), private val ai: AiApi = AiApi()) : AndroidViewModel(app) {
     val noteReader = NoteReader(
@@ -228,19 +228,20 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         } catch (e: IllegalArgumentException) { notice(e.message ?: "页码无效。"); false }
     }
     fun deleteNote(id: String): Boolean { if (state.value.locked || !state.value.data.noteWritable(id) || classWriter?.isActive == true && state.value.data.classRun?.noteId == id) { notice("请先结束整理并恢复待保存回答，再删除笔记。"); return false }; if (state.value.data.notes.none { it.id == id }) return false; data { it.copy(notes = it.notes.filterNot { n -> n.id == id }) }; return true }
-    fun saveNoteFolder(id: String?, name: String): Boolean {
+    fun saveNoteFolder(id: String?, name: String, parentId: String? = null): Boolean {
         if (state.value.locked) return false
         return try {
-            val next = state.value.data.withNoteFolder(id, name)
-            data { it.copy(noteFolders = next.noteFolders) }
+            data { it.withNoteFolder(id, name, parentId) }
             true
         } catch (e: IllegalArgumentException) { notice(e.message ?: "分类保存失败。"); false }
     }
     fun moveNote(id: String, folderId: String): Boolean {
-        if (state.value.locked || state.value.data.notes.none { it.id == id }) return false
-        if (folderId.isNotEmpty() && state.value.data.noteFolders.none { it.id == folderId }) return false
-        data { it.copy(notes = it.notes.map { n -> if (n.id == id) n.copy(folderId = folderId) else n }) }
-        return true
+        return moveNotes(setOf(id), folderId)
+    }
+    fun moveNotes(ids: Set<String>, folderId: String): Boolean {
+        if (state.value.locked) return false
+        return try { data { it.withMovedNotes(ids, folderId) }; true }
+        catch (error: IllegalArgumentException) { notice(error.message ?: "移动失败，请重新选择。"); false }
     }
     fun deleteNoteFolder(id: String): Boolean {
         if (state.value.locked || state.value.data.noteFolders.none { it.id == id }) return false
@@ -321,7 +322,7 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         cancelLogin(); val region = state.value.data.region; val attempt = newId(); loginAttempt = attempt
         state.update { it.copy(qr = null, loginActive = true, loginSteps = emptyList(), notice = "正在获取微信二维码…") }
         loginStep("正在连接微信登录通道")
-        try { getApplication<Application>().startForegroundService(Intent(getApplication(), RainLoginService::class.java)) }
+        try { getApplication<Application>().startForegroundService(Intent(getApplication(), RainLoginService::class.java).putExtra(RainLoginService.ATTEMPT, attempt)) }
         catch (_: Exception) { state.update { it.copy(loginActive = false, notice = "系统未允许保持扫码连接，请回到 App 后重新开始。") }; return }
         login = rain.login(region,
             onQr = { bytes -> if (loginAttempt == attempt) state.update { it.copy(qr = bytes, notice = "用微信扫一扫识别二维码并确认，完成后切回本 App。") } },
@@ -342,8 +343,16 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         )
     }
     private fun stopRainLoginService() { getApplication<Application>().stopService(Intent(getApplication(), RainLoginService::class.java)) }
+    internal fun rainLoginServiceStopped(attempt: String) {
+        if (loginAttempt != attempt || !state.value.loginActive) return
+        cancelLogin()
+        val message = "后台扫码连接已停止，请回到 App 后重新获取二维码。"
+        loginStep(message)
+        notice(message)
+    }
     fun cancelLogin() { loginAttempt = newId(); login?.close(); login = null; stopRainLoginService(); state.update { it.copy(loginActive = false, qr = null) } }
     fun logout() { pauseClass(); cancelLogin(); data { it.copy(session = "", username = "", sessionVerified = false) }; state.update { it.copy(courses = emptyList(), course = null, presentations = emptyList(), slides = emptyList(), pending = null, loginSteps = emptyList(), loginStage = "") } }
+    fun courseOrder(order: CourseOrder) { state.update { it.copy(courseOrder = order) } }
     fun loadCourses() = operation("读取课程") { if (!state.value.data.sessionVerified) verifySession(state.value.data); val list = withContext(Dispatchers.IO) { rain.courses(state.value.data) }; state.update { it.copy(courses = list, course = null, slides = emptyList(), presentations = emptyList(), notice = if (list.isEmpty()) "接口未返回课程。" else "已读取 ${list.size} 门课程；不保证包含全部历史学期。") } }
     fun loadActivities(course: Course, page: Int = 0) = operation("读取课程活动") {
         val list = withContext(Dispatchers.IO) { rain.presentations(state.value.data, course, page) }
@@ -353,7 +362,7 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
     fun openPresentation(p: Presentation) = if (p.isLesson) operation("读取本节课件目录") {
         val list = withContext(Dispatchers.IO) { rain.lessonPresentations(state.value.data, p) }
         state.update { it.copy(presentations = list, slides = emptyList(), notice = if (list.isEmpty()) "本节课未开放可读取的课件。" else "本节共 ${list.size} 份课件，点击查看页面。") }
-    } else loadSlides(p.id, p.lessonId, p.title, p.recordedAt)
+    } else loadSlides(p.id, p.lessonId, p.title, presentationMetadata(p))
     fun loadSlides(id: String, lessonId: String = "", fallbackTitle: String = "", recordedAt: String = "") = operation("读取课件目录") {
         val (title, slides) = withContext(Dispatchers.IO) { rain.slides(state.value.data, id, lessonId) }
         state.update { it.copy(localDocument = null, slideRecordedAt = recordedAt, slideTitle = if (title == "课件 $id" && fallbackTitle.isNotBlank()) fallbackTitle else title, presentationId = id, slides = slides, notice = if (slides.isEmpty()) "课件尚未开放可读取的页面。" else "已读取 ${slides.size} 页，可以提问或连续整理讲解笔记。") }
@@ -417,7 +426,7 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         if (state.value.data.session.isBlank()) { closeMaterials(); tab(1); notice("请先连接雨课堂，再选择学习资料。") } else loadCourses()
     }
     private fun showMaterial(doc: MaterialDocument) {
-        state.update { it.copy(localDocument = doc, slideTitle = doc.material.title, slideRecordedAt = "导入时间：${readableTime(doc.material.importedAt)}", presentationId = "", slides = doc.pages.map { p -> Slide(p.page, if (doc.material.format in listOf("pdf", "image") || p.images.isNotEmpty()) "local" else "", p.text) }, materialsOpen = true, materialPane = "pages") }
+        state.update { it.copy(localDocument = doc, slideTitle = doc.material.title, slideRecordedAt = "创建时间：未提供\n导入时间：${readableTime(doc.material.importedAt)}" + if (doc.material.modifiedAt > 0) "\n文件修改时间：${readableTime(doc.material.modifiedAt)}" else "", presentationId = "", slides = doc.pages.map { p -> Slide(p.page, if (doc.material.format in listOf("pdf", "image") || p.images.isNotEmpty()) "local" else "", p.text) }, materialsOpen = true, materialPane = "pages") }
     }
     fun openMaterial(m: StudyMaterial) = operation("读取本机资料") { showMaterial(withContext(Dispatchers.IO) { materials.read(m) }) }
     fun importMaterial(uri: Uri, kind: String) = operation("导入学习资料") {
