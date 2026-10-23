@@ -33,8 +33,9 @@ class ReaderExperienceTest {
         }, source = "三个合成来源页", model = "fixture"
     )
 
-    private fun withReader(note: Note, block: (Application, StudyViewModel) -> Unit) {
+    private fun withReader(note: Note, setup: (Application) -> Unit = {}, block: (Application, StudyViewModel) -> Unit) {
         val app = noteTestApplication(compose.activity.applicationContext)
+        setup(app)
         Vault(app).save(Saved(notes = listOf(note)))
         val store = ViewModelStore()
         lateinit var vm: StudyViewModel
@@ -122,6 +123,44 @@ class ReaderExperienceTest {
     private fun jump(label: String) {
         compose.openNoteTool("阅读跳转")
         compose.onNodeWithText(label).performScrollTo().performClick()
+    }
+
+    @Test fun mixedImageAndShortLongPagesRemainReadableAcrossEveryModeAndBackwards() {
+        val image = syntheticSlideImage()
+        val id = imageDigest(android.util.Base64.decode(image.substringAfter(','), android.util.Base64.DEFAULT))
+        val longPage = (1..8).joinToString("\n\n") { "图文段${it}标记。" + "图示与解释应按顺序完整阅读。".repeat(12) }
+        val note = Note(title = "混合图文翻页", source = "合成图文", model = "fixture", content =
+            "## 第 1 页\n\n短首页标记。\n\n## 第 2 页\n\n" + sourceImageMarkdown(id, "翻页原图") + longPage + "\n\n图文页尾标记。\n\n## 第 3 页\n\n短末页标记。")
+        val wanted = listOf("短首页标记", "短末页标记", "图文页尾标记") + (1..8).map { "图文段${it}标记" }
+        withReader(note, { SourceImages(it).save(image) }) { _, vm ->
+            for ((mode, label) in NOTE_READING_MODES) {
+                setMode(vm, mode, label)
+                jump("整本开头")
+                val seen = mutableSetOf<String>()
+                var sawImage = false
+                for (attempt in 0 until 45) {
+                    seen += visibleMarkers(wanted)
+                    sawImage = sawImage || compose.onAllNodesWithContentDescription("翻页原图 缩略图").fetchSemanticsNodes().any { it.boundsInRoot.height > 0f }
+                    if (seen.size == wanted.size && sawImage) break
+                    compose.onNodeWithTag("笔记正文").performTouchInput {
+                        when (mode) {
+                            "buttons" -> click(Offset(width * .92f, height * .5f))
+                            "swipe" -> swipeLeft(durationMillis = 220)
+                            else -> { down(Offset(center.x, height * .8f)); moveTo(Offset(center.x, height * .25f), 600); advanceEventTime(250); up() }
+                        }
+                    }
+                }
+                assertEquals("All mixed-page text must be reachable in $mode", wanted.toSet(), seen)
+                assertTrue("The source image must be visible in $mode", sawImage)
+                if (mode != "continuous") {
+                    jump("本段顶部")
+                    compose.onNodeWithTag("笔记正文").performTouchInput {
+                        if (mode == "buttons") click(Offset(width * .08f, height * .5f)) else swipeRight(durationMillis = 220)
+                    }
+                    compose.waitUntil(8000) { "图文页尾标记" in visibleMarkers(listOf("图文页尾标记")) }
+                }
+            }
+        }
     }
 
     @Test fun switchingAllReadingModesKeepsTheCurrentParagraphVisible() = withReader(fullNote()) { _, vm ->
