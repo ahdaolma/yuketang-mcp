@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.toArgb
@@ -59,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 
 // Keep press/ripple/selection feedback visual, including built-in text controls.
 private object SilentHapticFeedback : HapticFeedback {
@@ -126,6 +128,13 @@ private object SilentHapticFeedback : HapticFeedback {
     }
 }
 
+// Callers already consume Scaffold's bottom padding before applying imePadding.
+// Only the remaining overlap with the snackbar needs additional layout space.
+internal fun feedbackBottomReservation(feedbackHeight: Dp, imeBottom: Dp, contentBottomPadding: Dp): Dp {
+    val effectiveIme = (imeBottom - contentBottomPadding).coerceAtLeast(0.dp)
+    return (feedbackHeight - effectiveIme).coerceAtLeast(0.dp)
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable fun StudyFrame(ui: UiState, onTab: (Int) -> Unit, onBack: () -> Unit, onStop: () -> Unit, snackbar: SnackbarHostState = remember { SnackbarHostState() }, noteOpen: Boolean = false, onClassToggle: () -> Unit = {}, classServiceRunning: Boolean = false, content: @Composable (PaddingValues) -> Unit) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -145,6 +154,9 @@ private object SilentHapticFeedback : HapticFeedback {
     val selectedIcons = listOf(Icons.Filled.ChatBubble, Icons.Filled.School, Icons.Filled.AutoStories)
     val expandedNavigation = 68f + (density.fontScale - 1f).coerceAtLeast(0f) * 24f
     val navigationHeight = (expandedNavigation + (48f - expandedNavigation) * slide).dp
+    var feedbackHeightPx by remember { mutableIntStateOf(0) }
+    val feedbackHeight = with(density) { feedbackHeightPx.toDp() }
+    val imeBottom = with(density) { WindowInsets.ime.getBottom(this).toDp() }
     var readerProgress by remember(noteOpen) { mutableStateOf<ReaderProgress?>(null) }
     val progressChanged = remember(noteOpen) { { value: ReaderProgress? -> readerProgress = value } }
     CompositionLocalProvider(LocalReadingChrome provides if (reading) chrome else null, LocalInlineReadingHeader provides inlineHeader, LocalReadingCompactFraction provides if (wide) 0f else slide, LocalReaderProgress provides progressChanged) {
@@ -184,8 +196,17 @@ private object SilentHapticFeedback : HapticFeedback {
             }
             Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
         } },
-        snackbarHost = { SnackbarHost(snackbar) }
+        snackbarHost = {
+            SnackbarHost(snackbar, Modifier.testTag("操作反馈").onSizeChanged { feedbackHeightPx = it.height })
+        }
     ) { padding ->
+        // Scaffold overlays its snackbar on the body. Reserve only the part
+        // still above the IME: reserving hidden feedback can collapse a short
+        // landscape body. Keep this out of PaddingValues: callers consume
+        // those as window insets, which would incorrectly consume IME space.
+        // The host measures zero once its outgoing snackbar has disappeared.
+        val feedbackReserve = feedbackBottomReservation(feedbackHeight, imeBottom, padding.calculateBottomPadding())
+        Box(Modifier.fillMaxSize().padding(bottom = feedbackReserve)) {
         if (wide && ui.tab != 3 && !noteOpen) Row(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             FlowRow(Modifier.width(if (landscapeKeyboard) 96.dp else 64.dp).fillMaxHeight().testTag("横屏导航"), horizontalArrangement = Arrangement.Center, verticalArrangement = Arrangement.Center, maxItemsInEachRow = if (landscapeKeyboard) 2 else 1) {
                 labels.forEachIndexed { index, label ->
@@ -199,8 +220,12 @@ private object SilentHapticFeedback : HapticFeedback {
             VerticalDivider(Modifier.fillMaxHeight(), color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
             Box(Modifier.weight(1f).fillMaxHeight()) { content(PaddingValues(0.dp)) }
         } else content(padding)
+        }
     }
-    if (showClassControl(ui, classServiceRunning)) ClassFloatingControl(ui.classUi.paused, ui.data.classRun!!.noteId, onClassToggle)
+    // The floating control separately reserves the full IME and its own
+    // navigation clearance; do not add space for feedback behind that IME.
+    val floatingFeedbackReserve = feedbackBottomReservation(feedbackHeight, imeBottom, 0.dp)
+    if (showClassControl(ui, classServiceRunning)) ClassFloatingControl(ui.classUi.paused, ui.data.classRun!!.noteId, onClassToggle, Modifier.padding(bottom = floatingFeedbackReserve))
     }
     }
 }

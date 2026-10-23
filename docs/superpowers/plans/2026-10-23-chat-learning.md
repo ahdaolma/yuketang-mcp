@@ -50,3 +50,4 @@
 - [ ] Preserve an open image editor and its unsaved stroke history across Activity recreation, without auto-saving into existing annotations. Verify rotation, undo, explicit save and reopening.
 - [ ] Retain unsaved model connection drafts across tabs and recreation in RAM ViewModel state, keyed by provider; never put plaintext API keys into SavedState. Explicit save/cancel controls when drafts clear.
 - [ ] Resolve all current cloud failures with root-cause evidence and keep meaningful assertions. Re-run full Android/Python CI and inspect screenshots before release.
+- [ ] Reserve actual Snackbar host height in content layout without consuming extra window insets. Verify real model Save stays above feedback and writes the chosen model; retain course/activity parent snapshots while allowing independent deck previews; synchronize body-read cancellation before blocking socket reads and service callbacks through their final message.

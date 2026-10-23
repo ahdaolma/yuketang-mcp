@@ -1,5 +1,16 @@
 package cn.studybridge.mobile
 
+import android.content.ContentValues
+import android.graphics.Bitmap
+import android.provider.MediaStore
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelStore
@@ -20,6 +31,43 @@ class AppFlowSimplificationTest {
     private val provider = Provider("flow-model", "流程测试服务", "https://fixture.example/v1", "fixture-key", "old-model", true)
 
     private fun back() = compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+
+    @Test fun globalFeedbackKeepsBottomActionsReachableAndRestoresSpaceAfterDismissal() {
+        val feedback = SnackbarHostState()
+        var scenario by mutableStateOf(3 to false)
+        var show by mutableStateOf(false)
+        var clicks = 0
+        compose.setContent {
+            StudyTheme(false) {
+                LaunchedEffect(show) {
+                    if (show) feedback.showSnackbar("操作结果仍然可见", withDismissAction = true, duration = SnackbarDuration.Indefinite)
+                }
+                StudyFrame(UiState(ready = true, tab = scenario.first), onTab = {}, onBack = {}, onStop = {}, snackbar = feedback, noteOpen = scenario.second) { padding ->
+                    Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
+                        FeedbackButton(onClick = { clicks++ }, modifier = Modifier.align(Alignment.BottomCenter).testTag("测试底部操作")) { Text("继续操作") }
+                    }
+                }
+            }
+        }
+        // Settings, bottom navigation, and the reader without a bottom bar
+        // share the same invariant, including a floating reader tool target.
+        for (mode in listOf(3 to false, 1 to false, 2 to true)) {
+            compose.runOnIdle { scenario = mode }
+            val action = compose.onNodeWithTag("测试底部操作")
+            val originalBottom = action.getUnclippedBoundsInRoot().bottom
+            compose.runOnIdle { show = true }
+            val notice = compose.onNodeWithTag("操作反馈")
+            compose.waitUntil(5000) { notice.getUnclippedBoundsInRoot().let { (it.bottom - it.top).value > 0f } }
+            notice.assertIsDisplayed()
+            assertTrue("Bottom action must remain above feedback in $mode", action.getUnclippedBoundsInRoot().bottom <= notice.getUnclippedBoundsInRoot().top)
+            val previousClicks = clicks
+            action.performTouchInput { click() }
+            compose.runOnIdle { assertEquals(previousClicks + 1, clicks); feedback.currentSnackbarData!!.dismiss() }
+            compose.waitUntil(5000) { notice.getUnclippedBoundsInRoot().let { (it.bottom - it.top).value == 0f } }
+            assertEquals("Dismissal must restore the entire body in $mode", originalBottom, action.getUnclippedBoundsInRoot().bottom)
+            compose.runOnIdle { show = false }
+        }
+    }
 
     @Test fun readerToolsExposeActualEditSearchAndRemarksWithoutAnotherActionMenu() {
         val app = noteTestApplication(compose.activity.applicationContext)
@@ -62,9 +110,10 @@ class AppFlowSimplificationTest {
         Vault(app).save(Saved(providers = listOf(provider), selectedProvider = provider.id, session = "synthetic-session", sessionVerified = true))
         val requests = AtomicInteger()
         val rain = RainApi(OkHttpClient.Builder().addInterceptor { chain ->
-            // DeckPreview may fetch thumbnails again after returning to a
-            // parent. Count only navigation catalog requests in this assertion.
-            if (chain.request().url.encodedPath in setOf("/v2/api/web/courses/list", "/v2/api/web/logs/learn/1", "/api/v3/classroom-report/student/lesson-info")) requests.incrementAndGet()
+            // Only course/activity catalogs define parent navigation reloads.
+            // DeckPreview legitimately resolves lesson-info to fetch its cover
+            // again when the lesson card returns, independently of navigation.
+            if (chain.request().url.encodedPath in setOf("/v2/api/web/courses/list", "/v2/api/web/logs/learn/1")) requests.incrementAndGet()
             val data = when (chain.request().url.encodedPath) {
                 "/v2/api/web/courses/list" -> """{"list":[{"classroom_id":1,"course":{"name":"系统返回课程"},"teacher":{"name":"测试老师"}}]}"""
                 "/v2/api/web/logs/learn/1" -> """{"activities":[{"type":14,"courseware_id":10,"title":"系统返回课堂"}]}"""
@@ -92,13 +141,23 @@ class AppFlowSimplificationTest {
             compose.waitUntil(5000) { !vm.ui.value.busy && vm.ui.value.presentationId == "101" }
             val reads = requests.get()
             back()
-            compose.runOnIdle { assertEquals("", vm.ui.value.presentationId); assertEquals(decks, vm.ui.value.presentations) }
+            compose.runOnIdle {
+                assertFalse(vm.ui.value.busy); assertNotNull(vm.ui.value.course); assertNotNull(vm.ui.value.lesson)
+                assertEquals("", vm.ui.value.presentationId); assertEquals(decks, vm.ui.value.presentations)
+                assertEquals(reads, requests.get())
+            }
             compose.onNodeWithText("系统返回课堂 · 课件 1").performScrollTo().assertIsDisplayed()
             back()
-            compose.runOnIdle { assertNull(vm.ui.value.lesson); assertEquals(activities, vm.ui.value.presentations) }
+            compose.runOnIdle {
+                assertFalse(vm.ui.value.busy); assertNotNull(vm.ui.value.course); assertNull(vm.ui.value.lesson)
+                assertEquals(activities, vm.ui.value.presentations); assertEquals(reads, requests.get())
+            }
             compose.onNodeWithText("系统返回课堂").performScrollTo().assertIsDisplayed()
             back()
-            compose.runOnIdle { assertNull(vm.ui.value.course); assertEquals(1, vm.ui.value.tab); assertEquals(reads, requests.get()) }
+            compose.runOnIdle {
+                assertFalse(vm.ui.value.busy); assertNull(vm.ui.value.course); assertNull(vm.ui.value.lesson)
+                assertEquals(1, vm.ui.value.tab); assertEquals(reads, requests.get())
+            }
             compose.onNodeWithText("系统返回课程").performScrollTo().assertIsDisplayed()
         } finally { compose.runOnIdle { store.clear() } }
     }
@@ -106,6 +165,21 @@ class AppFlowSimplificationTest {
     @Test fun delayedModelCatalogCannotReopenAfterLeavingItsPageAndCanStillBeChosenAndSaved() = delayedCatalog("page")
     @Test fun delayedModelCatalogCannotReopenAfterLeavingItsTab() = delayedCatalog("tab")
     @Test fun cancelledModelPopupIntentKeepsCompletedCatalogAvailable() = delayedCatalog("cancel")
+
+    private fun saveFailureScreenshot(name: String) {
+        val bitmap = requireNotNull(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+        try {
+            val resolver = compose.activity.contentResolver
+            val uri = requireNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, "$name.png")
+                put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/StudyUiReview")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }))
+            requireNotNull(resolver.openOutputStream(uri)).use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+            resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+        } finally { bitmap.recycle() }
+    }
 
     private fun delayedCatalog(exit: String) {
         val app = noteTestApplication(compose.activity.applicationContext)
@@ -170,11 +244,32 @@ class AppFlowSimplificationTest {
                 previousBounds = bounds
                 stable
             }
-            save.performClick()
-            compose.waitUntil(5000) { vm.ui.value.data.provider().model == "new-model" }
-            assertEquals("模型配置已保存。", vm.ui.value.notice)
-            compose.waitUntil(5000) { Vault(app).load().provider().model == "new-model" }
-            assertEquals("new-model", Vault(app).load().provider().model)
+            try {
+                val feedback = compose.onNodeWithTag("操作反馈")
+                // A slow device may already have timed out the catalog notice.
+                // Whenever it is still present, assert physical separation;
+                // the indefinite-notice test above always covers this case.
+                val saveBounds = save.getUnclippedBoundsInRoot()
+                val feedbackBounds = feedback.getUnclippedBoundsInRoot()
+                if ((feedbackBounds.bottom - feedbackBounds.top).value > 0f) {
+                    feedback.assertIsDisplayed()
+                    assertTrue("Save $saveBounds must be above feedback $feedbackBounds", saveBounds.bottom <= feedbackBounds.top)
+                }
+                if (exit == "page") advancedUiShot(compose.activity, "sample-model-save-feedback")
+                // Use an actual hit-tested tap, then verify both state and disk.
+                save.performTouchInput { click() }
+                compose.waitUntil(5000) { vm.ui.value.data.provider().model == "new-model" }
+                assertEquals("模型配置已保存。", vm.ui.value.notice)
+                compose.waitUntil(5000) { Vault(app).load().provider().model == "new-model" }
+                assertEquals("new-model", Vault(app).load().provider().model)
+            } catch (failure: Throwable) {
+                val trees = runCatching {
+                    val roots = compose.onAllNodes(isRoot())
+                    roots.fetchSemanticsNodes().indices.joinToString("\n") { index -> roots[index].printToString(maxDepth = 16) }
+                }.getOrElse { "Semantics unavailable: $it" }
+                runCatching { saveFailureScreenshot("model-save-$exit-failure") }.onFailure { failure.addSuppressed(it) }
+                throw AssertionError("Model save failed ($exit): model=${vm.ui.value.data.provider().model}; busy=${vm.ui.value.busy}; notice=${vm.ui.value.notice}; semantics=$trees", failure)
+            }
         } finally { release.countDown(); compose.runOnIdle { store.clear() } }
     }
 }

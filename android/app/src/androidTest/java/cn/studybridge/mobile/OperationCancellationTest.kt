@@ -46,9 +46,27 @@ class OperationCancellationTest {
             .sslSocketFactory(clientTls.sslSocketFactory(), clientTls.trustManager)
             .eventListener(object : EventListener() {
                 override fun callStart(call: Call) { calls.add(call) }
-                override fun responseBodyStart(call: Call) { bodyCalls.add(call); bodyStarted.countDown() }
             })
             .addInterceptor { chain -> chain.proceed(chain.request().newBuilder().url(server.url(chain.request().url.encodedPath)).build()) }
+            .addNetworkInterceptor { chain ->
+                val response = chain.proceed(chain.request())
+                val body = requireNotNull(response.body)
+                var started = false
+                // OkHttp's responseBodyStart fires after the first socket read
+                // returns. Signal before that read, while the delayed body is
+                // still blocked, so cancellation cannot race an already-done call.
+                val source = object : ForwardingSource(body.source()) {
+                    override fun read(sink: Buffer, byteCount: Long): Long {
+                        if (!started) { started = true; bodyCalls.add(chain.call()); bodyStarted.countDown() }
+                        return super.read(sink, byteCount)
+                    }
+                }.buffer()
+                response.newBuilder().body(object : ResponseBody() {
+                    override fun contentType() = body.contentType()
+                    override fun contentLength() = body.contentLength()
+                    override fun source() = source
+                }).build()
+            }
             .build()
         override fun close() { client.dispatcher.executorService.shutdownNow(); client.connectionPool.evictAll(); server.shutdown() }
     }

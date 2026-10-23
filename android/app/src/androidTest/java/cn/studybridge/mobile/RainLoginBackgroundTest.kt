@@ -137,7 +137,7 @@ class RainLoginBackgroundTest {
             compose.waitUntil(10000) { vm.ui.value.qr != null && requests.get() == 3 && foreground(context) }
             val stoppedSocket = socket.get()
             context.stopService(Intent(context, RainLoginService::class.java))
-            compose.waitUntil(5000) { !vm.ui.value.loginActive }
+            compose.waitUntil(5000) { !vm.ui.value.loginActive && vm.ui.value.notice.contains("后台扫码连接已停止") }
             assertNull("An unexpected service stop must not leave a stale QR waiting", vm.ui.value.qr)
             assertTrue(vm.ui.value.notice.contains("后台扫码连接已停止"))
             stoppedSocket.send("""{"op":"loginsuccess","UserID":88,"Auth":"after-service-stop"}""")

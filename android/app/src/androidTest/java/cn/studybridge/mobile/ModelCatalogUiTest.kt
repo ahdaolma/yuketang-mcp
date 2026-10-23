@@ -62,7 +62,12 @@ class ModelCatalogUiTest {
         compose.onNodeWithText("vision-model").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("保存并使用").performScrollTo().assertIsEnabled().performClick()
         compose.waitUntil(5000) { vm.ui.value.data.provider().model == "vision-model" }
-        compose.runOnIdle { assertEquals("vision-model", vm.ui.value.data.provider().model); assertEquals("模型配置已保存。", vm.ui.value.notice) }
+        compose.runOnIdle {
+            assertEquals("vision-model", vm.ui.value.data.provider().model); assertEquals("模型配置已保存。", vm.ui.value.notice)
+            // This fixture injects catalog metadata instead of collecting ui.
+            // Mirror production's committed provider before editing it again.
+            state.value = state.value.copy(data = vm.ui.value.data)
+        }
         compose.onNodeWithText("配置连接").performScrollTo().performClick()
         compose.onNodeWithText("API Base URL").performScrollTo().performTextReplacement("https://other.example/v1")
         compose.onNodeWithText("选择模型").performScrollTo().assertIsNotEnabled()
