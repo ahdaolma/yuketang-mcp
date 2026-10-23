@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import cn.studybridge.mobile.FeedbackTextButton as TextButton
 import cn.studybridge.mobile.FeedbackOutlinedButton as OutlinedButton
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
@@ -81,7 +82,7 @@ class MaterialPreviews(context: Context) {
 @Composable fun PagePreview(key: String, label: String, repository: MaterialPreviews, markup: ImageMarkupStore = repository.markup, source: suspend () -> Attachment) {
     val loader by rememberUpdatedState(source)
     var retry by remember(key) { mutableIntStateOf(0) }
-    var enlarged by remember(key) { mutableStateOf(false) }
+    var enlarged by rememberSaveable(key) { mutableStateOf(false) }
     val result by produceState<VisualLoad?>(null, key, retry) {
         value = null
         value = try { VisualLoad(key, retry, withContext(Dispatchers.IO) {

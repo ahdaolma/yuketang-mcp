@@ -4,6 +4,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Protocol
 import okhttp3.Response
 import okhttp3.ResponseBody.Companion.toResponseBody
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -16,7 +17,7 @@ class ModelCatalogTest {
             Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
                 .body("""{"data":[{"id":"vision-model","display_name":"视觉讲解"},{"id":"text-model","name":"文字讲解"},{"id":"vision-model"}]}""".toResponseBody()).build()
         }.build()
-        val choices = AiApi(client).modelChoices(Provider(baseUrl = "https://provider.example/v1", key = "fixture-key", model = ""))
+        val choices = runBlocking { AiApi(client).modelChoices(Provider(baseUrl = "https://provider.example/v1", key = "fixture-key", model = "")) }
         assertEquals(listOf("/v1/models"), paths)
         assertEquals(listOf(ModelChoice("text-model", "文字讲解"), ModelChoice("vision-model", "视觉讲解")), choices)
     }

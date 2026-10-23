@@ -64,7 +64,8 @@ class NotebookHierarchyUiTest {
         compose.onNodeWithTag("笔记卡片 b").performClick().assertIsSelected()
         top(); compose.onNodeWithContentDescription("移动所选笔记").performClick()
         compose.onNodeWithContentDescription("展开笔记本 英语").performClick()
-        compose.onNodeWithTag("选择分类 words").performScrollTo().performClick()
+        compose.onNodeWithTag("笔记本选择列表").performScrollToNode(hasTestTag("选择分类 words"))
+        compose.onNodeWithTag("选择分类 words").performClick()
         compose.waitUntil(5000) { Vault(app).load().notes.single { it.id == "b" }.folderId == "words" }
         assertEquals(notes.single { it.id == "b" }.copy(folderId = "words"), vm.ui.value.data.notes.single { it.id == "b" })
         chooseFolder("bio")

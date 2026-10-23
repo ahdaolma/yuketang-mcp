@@ -24,6 +24,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -32,35 +33,29 @@ import kotlinx.coroutines.withContext
 enum class ImageMarkupTool(val title: String) { VIEW("查看"), PEN("画笔"), HIGHLIGHT("荧光笔"), ERASER("橡皮") }
 
 @Composable fun ImageMarkupEditor(bitmap: Bitmap, imageId: String, label: String, store: ImageMarkupStore, onClose: () -> Unit, setCloseRequest: (() -> Unit) -> Unit = {}) {
-    var history by remember(imageId) { mutableStateOf(MarkupHistory()) }
-    var saved by remember(imageId) { mutableStateOf<List<ImageStroke>>(emptyList()) }
-    var ready by remember(imageId) { mutableStateOf(false) }
-    var saving by remember(imageId) { mutableStateOf(false) }
-    var error by remember(imageId) { mutableStateOf("") }
-    var status by remember(imageId) { mutableStateOf("") }
+    val drafts: ImageMarkupDrafts = viewModel()
+    val session = drafts.session(imageId)
+    var history by session::history
+    var saved by session::saved
+    var ready by session::ready
+    val saving = session.saving
+    var error by session::error
+    var status by session::status
     var loadAttempt by remember(imageId) { mutableIntStateOf(0) }
-    var confirmClose by remember(imageId) { mutableStateOf(false) }
-    var tool by remember(imageId) { mutableStateOf(ImageMarkupTool.VIEW) }
-    var zoom by remember(imageId) { mutableFloatStateOf(1f) }
-    var pan by remember(imageId) { mutableStateOf(Offset.Zero) }
+    var confirmClose by session::confirmClose
+    var tool by session::tool
+    var zoom by session::zoom
+    var pan by session::pan
     var pending by remember(imageId) { mutableStateOf<List<MarkPoint>>(emptyList()) }
     var erasing by remember(imageId) { mutableStateOf<List<ImageStroke>?>(null) }
-    val scope = rememberCoroutineScope()
     val dirty = history.strokes != saved
-    fun requestClose() { if (!saving) { if (dirty) confirmClose = true else onClose() } }
-    fun save(close: Boolean = false) {
-        if (!ready || saving) return
-        val snapshot = history.strokes
-        saving = true; error = ""; status = ""
-        scope.launch {
-            try { withContext(Dispatchers.IO) { store.save(imageId, snapshot) }; saved = snapshot; status = "批注已保存"; confirmClose = false; if (close) onClose() }
-            catch (e: CancellationException) { throw e }
-            catch (_: Exception) { error = "批注保存失败，请重试。" }
-            finally { saving = false }
-        }
-    }
+    fun closeEditor() { drafts.discard(imageId); onClose() }
+    fun requestClose() { if (!saving) { if (dirty) confirmClose = true else closeEditor() } }
+    fun save(close: Boolean = false) { drafts.save(imageId, store, close) }
+    LaunchedEffect(session.closeAfterSave) { if (session.closeAfterSave) closeEditor() }
     SideEffect { setCloseRequest { requestClose() } }
     LaunchedEffect(imageId, loadAttempt) {
+        if (ready) return@LaunchedEffect
         try { val strokes = withContext(Dispatchers.IO) { store.load(imageId) }; history = MarkupHistory(strokes); saved = strokes; ready = true; error = "" }
         catch (e: CancellationException) { throw e }
         catch (_: Exception) { error = "批注读取失败，请重试后再编辑。" }
@@ -139,6 +134,6 @@ enum class ImageMarkupTool(val title: String) { VIEW("查看"), PEN("画笔"), H
         }
     }
     if (confirmClose) AlertDialog(onDismissRequest = { if (!saving) confirmClose = false }, title = { Text("保存图片批注？") }, text = { Text("这次画的内容还没有保存。") }, confirmButton = { TextButton(onClick = { save(close = true) }, enabled = !saving) { Text("保存并关闭") } }, dismissButton = {
-        Row { TextButton(onClick = { confirmClose = false }, enabled = !saving) { Text("继续编辑") }; TextButton(onClick = onClose, enabled = !saving) { Text("放弃更改") } }
+        Row { TextButton(onClick = { confirmClose = false }, enabled = !saving) { Text("继续编辑") }; TextButton(onClick = { closeEditor() }, enabled = !saving) { Text("放弃更改") } }
     })
 }

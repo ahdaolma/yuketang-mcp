@@ -19,6 +19,25 @@ val LocalClassManager = staticCompositionLocalOf<(() -> Unit)?> { null }
 fun UiState.hasClassSession() = classUi.running || data.classRun?.let { !it.ended || it.pending.isNotEmpty() } == true
 fun showClassControl(ui: UiState, serviceRunning: Boolean) = serviceRunning && ui.classUi.running && ui.data.session.isNotBlank() && ui.data.classRun?.let { !it.ended || it.pending.isNotEmpty() } == true
 
+internal fun StudyViewModel.openClassNote(): Boolean {
+    val current = ui.value
+    if (!current.ready || current.storageError.isNotBlank() || current.busy || current.chatgptLoginActive) return false
+    val note = current.data.notes.find { it.id == current.data.classRun?.noteId }
+        ?: run { notice("本节课堂还没有生成笔记，整理完成后即可查看。"); return false }
+    val open = current.data.notes.find { it.id == noteReader.id }
+    if (noteReader.id != note.id && noteReader.editing && noteReader.draft != open?.content) {
+        tab(2)
+        notice("请先保存或取消当前笔记的修改，再查看课堂笔记。")
+        return false
+    }
+    if (noteReader.id != note.id) {
+        closeNoteReader()
+        noteReader.open(note)
+    }
+    tab(2)
+    return true
+}
+
 @Composable fun ClassManagerButton() {
     LocalClassManager.current?.let { open ->
         FeedbackIconButton(onClick = open) { Icon(Icons.Outlined.AutoStories, "上课管理", Modifier.size(22.dp)) }
@@ -69,7 +88,7 @@ fun showClassControl(ui: UiState, serviceRunning: Boolean) = serviceRunning && u
                 Text(ui.classUi.status.ifBlank { "本节记录已保留，点击继续恢复。" }, style = MaterialTheme.typography.bodySmall)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FeedbackFilledTonalButton(colors = classButtonColors, onClick = { if (ui.classUi.running && !ui.classUi.paused) vm.pauseClass() else vm.resumeClass() }, enabled = !ui.busy && !ui.chatgptLoginActive) { Text(if (ui.classUi.running && !ui.classUi.paused) "暂停" else "继续") }
-                    FeedbackTextButton(onClick = { vm.tab(2); onClose() }) { Text("查看笔记") }
+                    FeedbackTextButton(onClick = { vm.openClassNote(); onClose() }, enabled = ui.ready && ui.storageError.isBlank() && !ui.busy && !ui.chatgptLoginActive) { Text("查看笔记") }
                     FeedbackTextButton(onClick = { vm.endClass(); onClose() }, colors = ButtonDefaults.textButtonColors(), enabled = !ui.busy) { Text("结束") }
                 }
             } else {

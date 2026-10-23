@@ -284,7 +284,9 @@ private fun preview(bytes: ByteArray): Bitmap? {
         }
     }
     val landscapeInput = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    val keyboardBeside = inlineHeader && (landscapeInput || WindowInsets.ime.getBottom(LocalDensity.current) > 0)
+    val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val compactComposer = landscapeInput && imeVisible
+    val keyboardBeside = inlineHeader && (landscapeInput || imeVisible)
     ReadingChatLayout(keyboardBeside, Modifier.fillMaxSize().padding(horizontal = 14.dp), toolbar = {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("学习工具栏"), verticalAlignment = Alignment.CenterVertically) {
             Box { IconButton(onClick = { history = true }) { Icon(Icons.Outlined.Forum, "会话") }; if (history) ReadingActionSheet("会话", { history = false }) {
@@ -324,7 +326,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
         if (!inlineHeader) ui.pending?.let { a -> ElevatedCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) { Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.AttachFile, null); Text(a.label, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); IconButton(onClick = vm::clearAttachment, enabled = !ui.locked) { Icon(Icons.Default.Close, "移除课件附件") } } } }
         if (!inlineHeader && ui.data.provider().chatgptAccountId.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) { Text("使用 ChatGPT 套餐", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary); TextButton(onClick = { vm.openLink(CHATGPT_USAGE) }) { Text("管理用量") } }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-            OutlinedTextField(input, { if (it.length <= 20000) { input = it; vm.chatDraft(chat.id, it) } }, Modifier.weight(1f).onFocusChanged { chrome?.locked = it.isFocused }, placeholder = { Text(if (ui.pending != null) "想了解这份资料的什么？" else "输入问题，或先添加资料…", style = MaterialTheme.typography.bodyMedium) }, label = { Text(ui.data.provider().model.ifBlank { "尚未选择模型" } + if (ui.pending != null) " · 已附加资料" else "", maxLines = 1, overflow = TextOverflow.Ellipsis) }, textStyle = MaterialTheme.typography.bodyMedium, shape = RoundedCornerShape(14.dp), singleLine = landscapeInput, maxLines = if (inlineHeader) 2 else 4, enabled = !ui.locked, trailingIcon = ({
+            OutlinedTextField(input, { if (it.length <= 20000) { input = it; vm.chatDraft(chat.id, it) } }, Modifier.weight(1f).onFocusChanged { chrome?.locked = it.isFocused }, placeholder = { Text(if (ui.pending != null) "想了解这份资料的什么？" else "输入问题，或先添加资料…", style = MaterialTheme.typography.bodyMedium) }, label = if (compactComposer) null else ({ Text("提问 · " + ui.data.provider().model.ifBlank { "尚未选择模型" } + if (ui.pending != null) " · 已附加资料" else "", maxLines = 1, overflow = TextOverflow.Ellipsis) }), textStyle = MaterialTheme.typography.bodyMedium, shape = RoundedCornerShape(14.dp), singleLine = landscapeInput, maxLines = if (inlineHeader) 2 else 4, enabled = !ui.locked, trailingIcon = ({
                 Box {
                     IconButton(onClick = { composerDetails = true }) { Icon(if (ui.pending != null) Icons.Default.AttachFile else Icons.Outlined.MoreHoriz, "附件与用量") }
                     DropdownMenu(expanded = composerDetails, onDismissRequest = { composerDetails = false }, title = "附件与用量") {
@@ -675,21 +677,23 @@ private fun preview(bytes: ByteArray): Bitmap? {
 @Composable fun ModelScreen(ui: UiState, vm: StudyViewModel) {
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
-    var adding by remember { mutableStateOf<Provider?>(null) }
-    LaunchedEffect(ui.data.selectedProvider) { adding = null }
+    val editor = vm.modelEditor
+    var adding by editor.adding
+    LaunchedEffect(ui.data.selectedProvider) { editor.observeSelection(ui.data.selectedProvider) }
     val current = adding ?: ui.data.provider()
     val usingChatGpt = current.chatgptAccountId.isNotBlank()
-    var name by remember(current.id) { mutableStateOf(current.name) }
-    var base by remember(current.id) { mutableStateOf(current.baseUrl) }
-    var key by remember(current.id) { mutableStateOf(current.key) }
-    var model by remember(current.id, current.model) { mutableStateOf(current.model) }
-    var protocol by remember(current.id) { mutableStateOf(current.protocol) }
-    var images by remember(current.id) { mutableStateOf(current.images) }
-    var showConfig by remember(current.id) { mutableStateOf(adding != null) }
+    val draft = editor.draft(current)
+    var name by draft.name
+    var base by draft.base
+    var key by draft.key
+    var model by draft.model
+    var protocol by draft.protocol
+    var images by draft.images
+    var showConfig by draft.showConfig
     var accountOptions by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
     var chooseModel by remember(current.id) { mutableStateOf(false) }
-    var manualModel by remember(current.id) { mutableStateOf(false) }
+    var manualModel by draft.manualModel
     var requestedCatalog by remember { mutableStateOf("") }
     var modelQuery by remember { mutableStateOf("") }
     var showLearner by rememberSaveable { mutableStateOf(false) }
@@ -723,7 +727,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 if (accountOptions || ui.chatgptLoginActive || usingChatGpt) ChatGptAccountPanel(ui, vm)
         Text("模型配置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(ui.data.providers, key = { it.id }) { p -> FilterChip(selected = adding == null && current.id == p.id, onClick = { adding = null; vm.selectProvider(p.id) }, label = { Text(p.name) }, enabled = !ui.locked) } }
-        TextButton(onClick = { adding = Provider(name = "自定义模型"); showConfig = true }, enabled = !ui.locked) { Text("添加模型配置（API 接入）") }
+        TextButton(onClick = editor::beginNew, enabled = !ui.locked) { Text("添加模型配置（API 接入）") }
         Text("当前服务：${current.name}", style = MaterialTheme.typography.labelLarge)
         TextButton(onClick = { showConfig = !showConfig }, enabled = !ui.locked) { Text(if (showConfig) "收起连接详情" else "配置连接") }
         if (showConfig) {
@@ -769,9 +773,12 @@ private fun preview(bytes: ByteArray): Bitmap? {
             Row(verticalAlignment = Alignment.CenterVertically) { Text("所选模型支持图片输入", Modifier.weight(1f)); Switch(images, { images = it }, enabled = !ui.locked) }
             Text("课件图片需要支持图片的模型。列表可见不等于已验证图片权限，实际以请求结果为准。", style = MaterialTheme.typography.bodySmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { if (vm.saveProvider(provider())) adding = null }, enabled = !ui.locked && model.isNotBlank()) { Text("保存并使用") }
+                Button(onClick = { if (vm.saveProvider(provider())) { editor.saved(current.id); adding = null } }, enabled = !ui.locked && model.isNotBlank()) { Text("保存并使用") }
             }
-            if (adding != null) TextButton(onClick = { adding = null }) { Text("取消新增") } else if (showConfig) TextButton(onClick = { vm.removeProvider(current.id) }, enabled = !ui.locked && ui.data.providers.size > 1) { Text("删除此配置") }
+            if (adding != null) TextButton(onClick = editor::cancelNew) { Text("取消新增") } else if (showConfig) {
+                TextButton(onClick = { editor.discard(current.id); showConfig = false }) { Text("放弃未保存修改") }
+                TextButton(onClick = { vm.removeProvider(current.id); if (vm.ui.value.data.providers.none { it.id == current.id }) editor.discard(current.id) }, enabled = !ui.locked && ui.data.providers.size > 1) { Text("删除此配置") }
+            }
 
             }
             "notes" -> {

@@ -42,3 +42,11 @@
 - [ ] In model settings move current model input, catalog selection, image capability and save outside optional connection details; retain explicit save and stale-catalog invalidation. Cancel automatic popup intent on leaving model page/config or closing; delayed completion stays cached without re-opening.
 - [ ] `NotebookPicker` adds inline target-folder creation and optional child chapter without opening another tree; failed/blank creation keeps selection/input, success selects new target through existing onSelect. Existing folder manager remains for broader management.
 - [ ] Add actual cloud UI flows for direct reader actions, system back through course hierarchy, creating target during batch move, model switching without connection details, and delayed catalog completion after leaving. Re-run all existing responsive/reader/model regression suites.
+
+### 7. 收尾审计阻断项
+- [ ] Wire coroutine cancellation to individual Rain/model-catalog HTTP calls through body reading. Stop must promptly release operation ownership; cancelled results cannot update newer tasks. Cancel only owned material browsing on close/back, retaining imports and unrelated class/login requests.
+- [ ] Guard JSON and SSE AI text emission against cancellation, including late body completion after a new answer starts; verify both chat and Responses fixtures. Preserve rotating OAuth refresh/storage transaction safety as a separately documented boundary.
+- [ ] Class “查看笔记” targets the current classRun.noteId, protects unrelated unsaved drafts and allows read-only viewing while class mode is running.
+- [ ] Preserve an open image editor and its unsaved stroke history across Activity recreation, without auto-saving into existing annotations. Verify rotation, undo, explicit save and reopening.
+- [ ] Retain unsaved model connection drafts across tabs and recreation in RAM ViewModel state, keyed by provider; never put plaintext API keys into SavedState. Explicit save/cancel controls when drafts clear.
+- [ ] Resolve all current cloud failures with root-cause evidence and keep meaningful assertions. Re-run full Android/Python CI and inspect screenshots before release.

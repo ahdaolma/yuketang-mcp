@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -198,7 +200,8 @@ fun renderPersonalAnnotations(parsed: Spanned, source: String, sourceStart: Int?
             val availableWidth = with(density) { geometry.safeWindowBounds.width.toDp() } - 16.dp
             val availableHeight = with(density) { geometry.safeWindowBounds.height.toDp() } - 16.dp
             Surface(Modifier.widthIn(max = minOf(560.dp, availableWidth.coerceAtLeast(1.dp))).heightIn(max = availableHeight.coerceAtLeast(1.dp)).testTag("正文选词工具条"), shape = MaterialTheme.shapes.medium, shadowElevation = 8.dp, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                  Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
                     FeedbackTextButton(onClick = { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("笔记文字", selected.quote)); clearSelection() }) { Text("复制") }
                     val canMark = currentUi.noteEditable(note.id) && selected.annotation("highlight").isAttached(note.content)
                     FeedbackTextButton(onClick = { if (vm.saveNoteAnnotation(note.id, selected.annotation("highlight"))) clearSelection() }, enabled = canMark) { Text("重点高亮") }
@@ -206,7 +209,8 @@ fun renderPersonalAnnotations(parsed: Spanned, source: String, sourceStart: Int?
                     FeedbackTextButton(onClick = { adding = selected.annotation("remark"); comment = ""; clearSelection() }, enabled = canMark) { Text("添加备注") }
                     val overlapping = note.annotations.filter { it.sourceStart == selected.block.sourceStart && it.sourceHash == selected.annotation("").sourceHash && it.start < selected.end && it.end > selected.start }.map { it.id }.toSet()
                     FeedbackTextButton(onClick = { vm.removeNoteAnnotations(note.id, overlapping); clearSelection() }, enabled = canMark && overlapping.isNotEmpty()) { Text("取消标记") }
-                    FeedbackTextButton(onClick = { clearSelection() }) { Text("关闭") }
+                  }
+                  FeedbackIconButton(onClick = { clearSelection() }) { Icon(Icons.Outlined.Close, "关闭选词工具") }
                 }
             }
         }

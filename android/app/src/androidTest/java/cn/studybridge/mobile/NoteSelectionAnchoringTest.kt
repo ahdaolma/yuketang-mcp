@@ -135,7 +135,7 @@ class NoteSelectionAnchoringTest {
             compose.waitUntil(5000) { var quote = ""; compose.runOnIdle { quote = textView.controller?.selection?.quote.orEmpty() }; quote == note.content.take(8) }
             assertAnchored()
             advancedUiShot(compose.activity, "sample-selection-menu-near-text")
-            compose.onNodeWithText("关闭").performScrollTo().performClick()
+            compose.onNodeWithContentDescription("关闭选词工具").assertIsDisplayed().performClick()
             compose.onNodeWithTag("正文选词工具条").assertDoesNotExist()
             compose.runOnIdle {
                 assertNull(textView.controller?.selection)
@@ -154,6 +154,7 @@ class NoteSelectionAnchoringTest {
             prepare(store, fontScale = 2f)
             longPress()
             assertAnchored(below = true)
+            compose.onNodeWithContentDescription("关闭选词工具").assertIsDisplayed()
             advancedUiShot(compose.activity, "sample-selection-menu-top-large-font")
             compose.runOnIdle { Selection.setSelection(textView.text as Spannable, 0, 8) }
             compose.waitUntil(5000) { var end = 0; compose.runOnIdle { end = textView.controller?.selection?.end ?: 0 }; end == 8 }

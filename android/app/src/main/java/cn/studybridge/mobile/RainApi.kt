@@ -16,9 +16,7 @@ import okio.Buffer
 import java.util.Timer
 import java.util.TimerTask
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
 val RAIN_HOSTS = linkedMapOf("standard" to "www.yuketang.cn", "hetang" to "pro.yuketang.cn", "changjiang" to "changjiang.yuketang.cn", "huanghe" to "huanghe.yuketang.cn")
@@ -36,12 +34,18 @@ fun readBounded(response: Response, max: Int = 8 * 1024 * 1024): ByteArray {
     error("服务器数据超过大小上限。")
 }
 
-class RainApi(private val client: OkHttpClient = defaultRainClient()) {
+class RainApi private constructor(private val client: OkHttpClient, private val readScope: HttpReadScope?) {
+    constructor(client: OkHttpClient = defaultRainClient()) : this(client, null)
+
+    // The scoped instance is private to one coroutine read, never the shared API.
+    suspend fun <T> read(block: RainApi.() -> T): T = cancellableHttpRead { scope -> RainApi(client, scope).block() }
+    private fun <T> response(request: Request, block: (Response) -> T): T =
+        if (readScope != null) readScope.response(client, request, block) else client.newCall(request).execute().use(block)
 
     private fun host(region: String) = RAIN_HOSTS[region] ?: error("请选择雨课堂版本。")
     suspend fun probe(region: String): String {
         val hostname = host(region)
-        val status = try { withContext(Dispatchers.IO) { client.newCall(Request.Builder().url("https://$hostname/").header("User-Agent", UA).build()).execute().use { it.code } } }
+        val status = try { read { response(Request.Builder().url("https://$hostname/").header("User-Agent", UA).build()) { it.code } } }
         catch (_: java.io.IOException) { return "站点连接失败，请检查手机网络与雨课堂版本。" }
         return suspendCancellableCoroutine { continuation ->
             val timer = Timer(true); val lock = Any(); var socket: WebSocket? = null
@@ -68,7 +72,7 @@ class RainApi(private val client: OkHttpClient = defaultRainClient()) {
             if (authorization.isNotBlank()) header("Authorization", "Bearer $authorization")
             if (payload != null) post(payload.toString().toRequestBody("application/json".toMediaType()))
         }.build()
-        return client.newCall(request).execute().use { r ->
+        return response(request) { r ->
             check(r.isSuccessful) { "雨课堂返回 HTTP ${r.code}，请核对登录或课件权限。" }
             r.header("Set-Auth")?.takeIf { token -> token.length <= 8192 && token.none { it.isISOControl() || it.isWhitespace() } }?.let(onAuthorization)
             val bytes = readBounded(r)
@@ -128,7 +132,7 @@ class RainApi(private val client: OkHttpClient = defaultRainClient()) {
         repeat(4) {
             require(allowedMedia(current.toString())) { "此图片域名尚未适配。" }
             // Account cookies are only attached to api(); never to images or redirects.
-            client.newCall(Request.Builder().url(current).build()).execute().use { r ->
+            val result = response(Request.Builder().url(current).build()) { r ->
                 if (r.isRedirect) { current = current.resolve(r.header("Location") ?: error("图片跳转失败。")) ?: error("图片跳转失败。") }
                 else {
                     check(r.isSuccessful) { "课件图片读取失败。" }
@@ -139,9 +143,11 @@ class RainApi(private val client: OkHttpClient = defaultRainClient()) {
                     check(bounds.outWidth > 0 && bounds.outHeight > 0 && bounds.outWidth.toLong() * bounds.outHeight <= 40_000_000) { "图片无法识别或尺寸过大。" }
                     val mime = bounds.outMimeType ?: error("图片格式不支持。")
                     check(mime in listOf("image/jpeg", "image/png", "image/gif", "image/webp")) { "图片格式不支持。" }
-                    return mime to bytes
+                    return@response mime to bytes
                 }
+                null
             }
+            if (result != null) return result
         }
         error("图片跳转次数过多。")
     }

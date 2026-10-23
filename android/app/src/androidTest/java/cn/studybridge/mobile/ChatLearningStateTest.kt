@@ -131,7 +131,8 @@ class ChatLearningStateTest {
 
     @Test fun closedOrNavigatedMaterialsIgnoreInFlightReadsAndImportsButKeepImportedRecords() {
         val app = noteTestApplication(compose.activity.applicationContext)
-        Vault(app).save(Saved(session = "fixture-session-123", sessionVerified = true))
+        val p = provider()
+        Vault(app).save(Saved(providers = listOf(p), selectedProvider = p.id, session = "fixture-session-123", sessionVerified = true))
         val requested = CountDownLatch(1); val release = CountDownLatch(1)
         val api = rain { requested.countDown(); check(release.await(30, TimeUnit.SECONDS)); """{"title":"晚到的课件","slides":[{"index":1,"text":"原文"}]}""" }
         val store = ViewModelStore(); lateinit var vm: StudyViewModel
@@ -144,13 +145,16 @@ class ChatLearningStateTest {
             compose.setContent { Text("异步资料回归") }; compose.waitUntil(5000) { vm.ui.value.ready }
             compose.runOnIdle { vm.openMaterials(); vm.materialPane("rain"); vm.loadSlides("12") }
             compose.waitUntil(5000) { requested.count == 0L }
-            compose.runOnIdle { vm.backMaterials(); vm.closeMaterials(); release.countDown() }
-            compose.waitUntil(5000) { !vm.ui.value.busy }
+            compose.runOnIdle { vm.backMaterials(); vm.closeMaterials() }
+            // Even an interceptor that ignores cancellation must not hold the UI
+            // busy until its delayed result arrives.
+            compose.waitUntil(1000) { !vm.ui.value.busy }
             assertFalse(vm.ui.value.materialsOpen); assertEquals("", vm.ui.value.presentationId); assertTrue(vm.ui.value.slides.isEmpty())
             // Import is also valid when called while the sheet is closed. A subsequent
             // close invalidates only its presentation, never its durable imported data.
             compose.runOnIdle { vm.importMaterial(uri, "notes"); vm.closeMaterials() }
             compose.waitUntil(10000) { !vm.ui.value.busy && vm.ui.value.data.materials.size == 1 }
+            release.countDown()
             assertFalse(vm.ui.value.materialsOpen); assertNull(vm.ui.value.localDocument)
             val material = vm.ui.value.data.materials.single()
             compose.runOnIdle { vm.openMaterial(material) }

@@ -156,9 +156,9 @@ class VisualReviewTest {
     @Test fun largeTextClassActionsAndSettingsRemainReachable() {
         val base = sample()
         val run = ClassRun(LiveLesson("7", courseTitle, "1"), providerId = "fixture", completed = listOf("1:1", "1:2"), pending = listOf(LivePage("1", 3)))
-        val state = mutableStateOf(base.copy(tab = 2, data = base.data.copy(classRun = run), classUi = ClassUi(running = true, paused = true, status = "已暂停，完成的讲解已保存，回到学习页后可继续。")))
+        val state = mutableStateOf(base.copy(tab = 1, data = base.data.copy(classRun = run), classUi = ClassUi(running = true, paused = true, status = "已暂停，完成的讲解已保存，回到学习页后可继续。")))
         render(state, scale = 1.5f)
-        compose.onNodeWithTag("笔记列表").performScrollToNode(hasTestTag("上课控制面板"))
+        compose.onNodeWithTag("课程列表").performScrollToNode(hasTestTag("上课控制面板"))
         compose.onNodeWithTag("上课控制面板").assertIsDisplayed()
         compose.onAllNodesWithText("继续", useUnmergedTree = true).onLast().performScrollTo().assertIsDisplayed()
         compose.onAllNodesWithText("结束", useUnmergedTree = true).onLast().performScrollTo().assertIsDisplayed()

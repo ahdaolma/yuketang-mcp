@@ -75,7 +75,7 @@ class ChatLearningUiTest {
         val store = ViewModelStore()
         try {
             prepare(Saved(providers = listOf(model), conversations = listOf(Conversation("first", "第一门课")), currentChat = "first"), store)
-            compose.onNodeWithText("fixture-model").assertIsDisplayed()
+            compose.onNodeWithText("提问 · fixture-model").assertIsDisplayed()
             compose.onNode(hasSetTextAction()).performTextInput("第一个未发送问题")
             compose.runOnIdle { vm.tab(3) }
             compose.onNodeWithText("其他页面").assertIsDisplayed()

@@ -27,7 +27,7 @@ fun chatNoteReferencesFromJson(array: JSONArray?): List<ChatNoteReference> =
 
 // The canonical version includes saved markers/remarks, even when body text did not change.
 private fun chatNoteCanonicalContent(note: Note): String =
-    "标题：${note.title}\n来源：${note.source}\n标签：${note.tags.joinToString("、")}\n\n${note.content}${noteAnnotationExport(note)}"
+    "标题：${note.title}\n来源：${note.source}\n标签：${note.tags.joinToString("、")}\n分类标识：${note.folderId.ifBlank { "未整理" }}\n复习状态：${NOTE_REVIEW_STATES[note.reviewState] ?: note.reviewState}\n置顶：${if (note.pinned) "是" else "否"}\n\n${note.content}${noteAnnotationExport(note)}"
 
 fun chatNoteReadableContent(note: Note): String = Regex("!\\[([^\\]\\r\\n]*)]\\([^\\r\\n)]*\\)")
     .replace(chatNoteCanonicalContent(note)) { "[笔记图片：${it.groupValues[1].take(200)}；未提供图像，仅可读取附带文字]" }
@@ -113,6 +113,7 @@ fun chatNotebookContext(saved: Saved, query: String, pendingNoteId: String = "",
         unavailable.forEach { append("笔记 ID=${it.noteId.take(200)}（${it.title.take(120)}）当前不可用或已删除；历史快照不是当前正文。\n") }
         refs.forEach { ref ->
             append("\n--- 笔记 ID=${ref.noteId.take(200)}；版本 SHA256=${ref.hash}；${if (ref.complete) "全文" else "部分节选"} ---\n")
+            candidates.find { it.id == ref.noteId }?.let { append("当前笔记本/章节：${saved.folderPath(it.folderId).take(300)}\n") }
             append(referenceChange(previous[ref.noteId], ref)); append('\n'); append(ref.snapshot); append("\n--- 该笔记引用结束 ---\n")
         }
         append("【本机笔记引用结束】")

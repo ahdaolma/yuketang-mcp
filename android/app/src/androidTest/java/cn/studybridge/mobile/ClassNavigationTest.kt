@@ -11,6 +11,37 @@ import org.junit.Test
 class ClassNavigationTest {
     @get:Rule val compose = createAndroidComposeRule<WebFixtureActivity>()
 
+    @Test fun classNoteEntryTargetsItsOwnNoteAndProtectsAnotherDirtyReader() {
+        val app = noteTestApplication(compose.activity.applicationContext)
+        val other = Note("other-reader", "另一份笔记", "原正文", "手写", "手写")
+        val note = Note("target-class", "当前课堂", "这才是课堂笔记", "课堂", "测试")
+        val run = ClassRun(LiveLesson("42", "当前课堂", "7"), noteId = note.id, providerId = "fixture")
+        Vault(app).save(Saved(notes = listOf(other, note), classRun = run))
+        val store = ViewModelStore(); lateinit var vm: StudyViewModel
+        compose.runOnUiThread { vm = noteTestViewModel(app, store) }
+        compose.waitUntil(5000) { vm.ui.value.ready }
+        try {
+            compose.runOnIdle { vm.noteReader.open(other); vm.tab(1) }
+            compose.setContent { StudyTheme(false) { StudyApp(vm) } }
+            compose.onNodeWithText("查看笔记").performScrollTo().performClick()
+            compose.runOnIdle { assertEquals(note.id, vm.noteReader.id); assertFalse(vm.noteReader.editing) }
+            compose.onNodeWithTag("笔记正文").assertIsDisplayed()
+            compose.runOnIdle {
+                vm.noteReader.open(other); vm.noteReader.beginEditing(other); vm.noteReader.draft = "未保存的修改"
+                vm.tab(1)
+            }
+            compose.onNodeWithText("查看笔记").performScrollTo().performClick()
+            compose.runOnIdle {
+                assertEquals(other.id, vm.noteReader.id)
+                assertEquals("未保存的修改", vm.noteReader.draft)
+                assertTrue(vm.noteReader.editing)
+                assertEquals(2, vm.ui.value.tab)
+                assertTrue(vm.ui.value.notice.contains("请先保存"))
+            }
+            compose.onNodeWithText("保存修改").assertIsDisplayed()
+        } finally { compose.runOnIdle { store.clear() } }
+    }
+
     @Test fun restoredPausedClassUsesSharedManagerWithoutCoveringCoursesOrNotes() {
         val app = noteTestApplication(compose.activity.applicationContext)
         val note = Note("retained-class", "遗传学 · 课堂笔记", "已经保存的课堂内容。", "课堂", "测试")
@@ -60,8 +91,8 @@ class ClassNavigationTest {
             advancedUiShot(compose.activity, "sample-class-management")
             compose.onNode(hasText("查看笔记") and manager, useUnmergedTree = true).performClick()
             compose.onNodeWithTag("上课控制面板").assertDoesNotExist()
-            compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(note.title))
-            compose.onNodeWithText(note.title).performClick()
+            compose.runOnIdle { assertEquals(note.id, vm.noteReader.id) }
+            compose.onNodeWithTag("笔记正文").assertIsDisplayed()
             compose.onNodeWithTag("上课控制面板").assertDoesNotExist()
             compose.openNoteTool("上课管理")
             compose.onNodeWithText("结束", useUnmergedTree = true).performClick()

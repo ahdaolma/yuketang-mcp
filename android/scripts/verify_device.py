@@ -37,4 +37,6 @@ finally:
         required.update({'sample-reader-title-below-camera.png', 'sample-settings-risk-statement.png'})
         required.add('sample-chat-landscape-busy.png')
         required.update({'sample-notebook-hierarchy.png', 'sample-notebook-tablet-landscape.png', 'sample-notebook-tablet-reader.png', 'sample-notebook-tablet-portrait-large-text.png', 'sample-notebook-split-window.png', 'sample-courseware-tablet-materials.png'})
+        required.update({'chat-learning-auto-title.png', 'chat-learning-whole-deck.png', 'chat-learning-large-font.png', 'chat-learning-note-card.png', 'chat-learning-note-edited.png', 'sample-selection-menu-near-text.png', 'sample-selection-menu-top-large-font.png', 'sample-create-move-destination.png'})
+        required.update({'sample-model-draft-restored.png', 'sample-image-draft-rotated.png'})
         verify_screenshots(target, required)

@@ -62,7 +62,9 @@ class AppFlowSimplificationTest {
         Vault(app).save(Saved(providers = listOf(provider), selectedProvider = provider.id, session = "synthetic-session", sessionVerified = true))
         val requests = AtomicInteger()
         val rain = RainApi(OkHttpClient.Builder().addInterceptor { chain ->
-            requests.incrementAndGet()
+            // DeckPreview may fetch thumbnails again after returning to a
+            // parent. Count only navigation catalog requests in this assertion.
+            if (chain.request().url.encodedPath in setOf("/v2/api/web/courses/list", "/v2/api/web/logs/learn/1", "/api/v3/classroom-report/student/lesson-info")) requests.incrementAndGet()
             val data = when (chain.request().url.encodedPath) {
                 "/v2/api/web/courses/list" -> """{"list":[{"classroom_id":1,"course":{"name":"系统返回课程"},"teacher":{"name":"测试老师"}}]}"""
                 "/v2/api/web/logs/learn/1" -> """{"activities":[{"type":14,"courseware_id":10,"title":"系统返回课堂"}]}"""
@@ -145,16 +147,33 @@ class AppFlowSimplificationTest {
                 assertTrue("Navigation must finish while the catalog request is still pending", vm.ui.value.busy)
                 release.countDown()
             }
-            compose.waitUntil(5000) { !vm.ui.value.busy && vm.ui.value.modelList.isNotEmpty() }
+            compose.waitUntil(5000) { !vm.ui.value.busy }
+            assertTrue("Catalog completion must retain actual models: ${vm.ui.value.notice}", vm.ui.value.modelList.isNotEmpty())
             compose.onNodeWithText("选择可用模型").assertDoesNotExist()
             compose.onNodeWithText("API Base URL").assertDoesNotExist()
             compose.onNodeWithText("old-model").performScrollTo().performClick()
             compose.onNodeWithText("new-model").performClick()
             // Choosing only changes the form; saving remains an explicit action.
             assertEquals("old-model", vm.ui.value.data.provider().model)
+            // Model selection clears focus and hides the IME. The window can
+            // still resize after Compose is idle; wait for actual geometry.
+            compose.waitUntil(5000) {
+                androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) != true
+            }
             compose.onNodeWithText("所选模型支持图片输入").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText("保存并使用").performScrollTo().performClick()
-            compose.waitUntil(5000) { vm.ui.value.data.provider().model == "new-model" && Vault(app).load().provider().model == "new-model" }
+            val save = compose.onNodeWithText("保存并使用")
+            save.performScrollTo().assertIsDisplayed().assertIsEnabled()
+            var previousBounds = save.getUnclippedBoundsInRoot()
+            compose.waitUntil(5000) {
+                val bounds = save.getUnclippedBoundsInRoot()
+                val stable = bounds == previousBounds
+                previousBounds = bounds
+                stable
+            }
+            save.performClick()
+            compose.waitUntil(5000) { vm.ui.value.data.provider().model == "new-model" }
+            assertEquals("模型配置已保存。", vm.ui.value.notice)
+            compose.waitUntil(5000) { Vault(app).load().provider().model == "new-model" }
             assertEquals("new-model", Vault(app).load().provider().model)
         } finally { release.countDown(); compose.runOnIdle { store.clear() } }
     }

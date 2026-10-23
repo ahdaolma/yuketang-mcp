@@ -50,7 +50,9 @@ class AiApi(private val client: OkHttpClient = OkHttpClient.Builder().followRedi
         val request = Request.Builder().url(aiEndpoint(p.baseUrl, if (responses) "responses" else "chat/completions")).header("Authorization", "Bearer ${p.key.trim()}").post(body.toString().toRequestBody("application/json".toMediaType())).build()
         suspendCancellableCoroutine<Unit> { continuation ->
             val call = client.newCall(request)
-            continuation.invokeOnCancellation { call.cancel() }
+            val emissionLock = Any()
+            fun emit(text: String) { synchronized(emissionLock) { if (continuation.isActive) onText(text) } }
+            continuation.invokeOnCancellation { synchronized(emissionLock) { call.cancel() } }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) { if (continuation.isActive) continuation.resumeWithException(IOException("模型连接失败，请检查 API 地址和网络。")) }
                 override fun onResponse(call: Call, response: Response) {
@@ -65,10 +67,10 @@ class AiApi(private val client: OkHttpClient = OkHttpClient.Builder().followRedi
                                     check(result.optString("status") == "completed") { "模型未完整生成，请重试。" }
                                     (result.optJSONArray("output") ?: JSONArray()).objects().flatMap { (it.optJSONArray("content") ?: JSONArray()).objects() }.filter { it.optString("type") == "output_text" }.joinToString("\n") { it.optString("text") }
                                 } else result.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content")
-                                check(message.isNotBlank()) { "模型未返回可显示的文字。" }; onText(message)
+                                check(message.isNotBlank()) { "模型未返回可显示的文字。" }; emit(message)
                             } else {
                                 var length = 0; var done = false; var terminated = false
-                                val batcher = TextBatcher(emit = onText)
+                                val batcher = TextBatcher(emit = ::emit)
                                 val parser = SseEvents { event ->
                                     if (responses) {
                                         val chunk = JSONObject(event)
@@ -104,14 +106,16 @@ class AiApi(private val client: OkHttpClient = OkHttpClient.Builder().followRedi
             })
         }
     }
-    fun models(p: Provider): List<String> = modelChoices(p).map { it.id }
-    fun modelChoices(p: Provider): List<ModelChoice> {
+    suspend fun models(p: Provider): List<String> = modelChoices(p).map { it.id }
+    suspend fun modelChoices(p: Provider): List<ModelChoice> {
         validateProviderDestination(p)
         checkKey(p.key)
         val request = Request.Builder().url(aiEndpoint(p.baseUrl, "models")).header("Authorization", "Bearer ${p.key.trim()}").build()
-        return client.newCall(request).execute().use { r ->
-            check(r.isSuccessful) { if (p.chatgptAccountId.isNotBlank()) "ChatGPT 模型列表读取失败（HTTP ${r.code}），请核对账号授权。" else "模型列表接口返回 HTTP ${r.code}；可核对地址或手动填写模型名称。" }
-            parseModelChoices(JSONObject(String(readBounded(r, 1_000_000), Charsets.UTF_8)), p.chatgptAccountId.isNotBlank())
+        return cancellableHttpRead { scope ->
+            scope.response(client, request) { r ->
+                check(r.isSuccessful) { if (p.chatgptAccountId.isNotBlank()) "ChatGPT 模型列表读取失败（HTTP ${r.code}），请核对账号授权。" else "模型列表接口返回 HTTP ${r.code}；可核对地址或手动填写模型名称。" }
+                parseModelChoices(JSONObject(String(readBounded(r, 1_000_000), Charsets.UTF_8)), p.chatgptAccountId.isNotBlank())
+            }
         }
     }
 }

@@ -29,7 +29,7 @@ class SettingsNavigationTest {
         compose.onNodeWithContentDescription("返回设置").performClick()
         compose.onNodeWithText("模型与账号").performClick()
         compose.onNodeWithText("配置连接").assertIsDisplayed().performClick()
-        compose.onNodeWithText("API Base URL").assertIsDisplayed(); compose.onNodeWithText("API Key").assertIsDisplayed()
+        compose.onNodeWithText("API Base URL").performScrollTo().assertIsDisplayed(); compose.onNodeWithText("API Key").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("网页跟课适配").assertDoesNotExist()
         advancedUiShot(compose.activity, "sample-settings-model-setup")
         compose.onNodeWithContentDescription("返回设置").performClick()

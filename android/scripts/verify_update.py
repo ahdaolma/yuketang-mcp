@@ -16,7 +16,8 @@ package = 'cn.studybridge.mobile'
 apk = os.environ.get('RAIN_UPDATE_APK', 'app/build/outputs/apk/release/app-release.apk')
 baseline_apk = os.environ.get('RAIN_UPDATE_BASELINE_APK', apk)
 expected_version = os.environ.get('RAIN_UPDATE_EXPECTED_VERSION', '')
-legacy_marker = 'rain_upgrade_fixture_v100'
+baseline_version = os.environ.get('RAIN_UPDATE_BASELINE_VERSION', '')
+legacy_marker = 'rain_upgrade_fixture_v' + baseline_version.replace('.', '')
 out = pathlib.Path('signing-artifacts')
 out.mkdir(exist_ok=True)
 
@@ -132,7 +133,7 @@ try:
     start()
     before_version = version()
     if baseline_apk != apk:
-        assert before_version == '1.0.0', 'Pinned published upgrade baseline changed'
+        assert baseline_version and before_version == baseline_version, 'Pinned published upgrade baseline changed'
         seed_legacy_note()
     tap('设置')
     tap('笔记生成')
@@ -157,7 +158,7 @@ try:
     focus_mode()
     if baseline_apk != apk:
         verify_legacy_note()
-    (out / 'upgrade.txt').write_text(f'PASS: {before_version} -> {after_version}; adb install -r succeeded; encrypted super-focus preference survived restart and APK replacement.' + (' A manual note created in published 1.0.0 also survived restart and upgrade.' if baseline_apk != apk else '') + '\n')
+    (out / 'upgrade.txt').write_text(f'PASS: {before_version} -> {after_version}; adb install -r succeeded; encrypted super-focus preference survived restart and APK replacement.' + (f' A manual note created in published {before_version} also survived restart and upgrade.' if baseline_apk != apk else '') + '\n')
     (out / 'upgrade.png').write_bytes(adb('exec-out', 'screencap', '-p'))
 except Exception:
     # Preserve the original failure before the disposable installation is removed.

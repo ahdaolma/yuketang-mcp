@@ -109,4 +109,17 @@ class ChatNotebookContextTest {
         assertEquals(input.take(2), chatTranscriptMessages(input))
         assertEquals(4, input.size)
     }
+    @Test fun savedOrganizationAndReviewChangesAlsoReachTheNextQuestion() {
+        val original = note("organization", "课后复习", "酶的机制")
+        val edited = original.copy(folderId = "chapter", reviewState = "mastered", pinned = true, tags = listOf("考试"))
+        val history = listOf(Message("assistant", "原回答", noteRefs = listOf(chatNoteReference(original))))
+        val saved = Saved(notes = listOf(edited), noteFolders = listOf(NoteFolder("course", "生物化学"), NoteFolder("chapter", "酶学", "course")))
+        val context = chatNotebookContext(saved, "继续解释酶", history = history)
+        assertNotEquals(chatNoteHash(original), chatNoteHash(edited))
+        assertTrue(context.text.contains(saved.folderPath("chapter")))
+        assertTrue(context.text.contains("已掌握"))
+        assertTrue(context.text.contains("置顶：是"))
+        assertTrue(context.text.contains("考试"))
+        assertTrue(context.text.contains("已保存版本已变化"))
+    }
 }
