@@ -55,3 +55,5 @@ Files: new CourseLibrary.kt, Models.kt Course/Presentation declarations only, Ra
 
 
 Implementation, specification and quality reviews are complete. Final tested source: 8074e3b66457470717dc9feb0e544dbe16c537d9. Android 39902521563 and Python 39902521595 passed; downloaded reports confirm 122 unit and 87 device tests, zero failures/skips, Lint zero errors/40 warnings. Six final screenshots manually inspected out of 80 collected. Earlier compile errors and five first-device-run failures remain documented in docs/releases/1.0.1-verification.md rather than being counted as passes. No local Android execution occurred. No tag, GitHub Release or public release APK was created; release remains on hold.
+
+The preceding hold describes this branch-verification checkpoint. The user subsequently clarified "finish everything, then publish"; release authorization is restored. Final main/signing/1.0.0-upgrade verification and publication are tracked in 2026-10-23-release-1.0.1.md.
