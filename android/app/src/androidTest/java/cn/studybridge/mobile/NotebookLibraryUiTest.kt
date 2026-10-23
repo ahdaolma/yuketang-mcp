@@ -67,17 +67,27 @@ class NotebookLibraryUiTest {
     }
 
     private fun clickSettledChoice(node: SemanticsNodeInteraction) {
+        val panel = compose.onNodeWithTag("笔记详情面板")
         node.performScrollTo()
         // IME insets run on the platform clock, independently of Compose's
-        // test clock. A tap at pre-resize coordinates can hit another row.
-        var previous = node.getUnclippedBoundsInRoot()
+        // test clock. The target can keep the same un-clipped coordinates
+        // while the dialog's visible scroll viewport shrinks around it.
+        // Re-scroll after viewport changes, then click only settled geometry.
+        var previous = panel.fetchSemanticsNode().boundsInRoot to node.getUnclippedBoundsInRoot()
         var stableSince = android.os.SystemClock.uptimeMillis()
         compose.waitUntil(5000) {
-            val bounds = node.getUnclippedBoundsInRoot()
+            val bounds = panel.fetchSemanticsNode().boundsInRoot to node.getUnclippedBoundsInRoot()
             val now = android.os.SystemClock.uptimeMillis()
-            if (bounds != previous) { previous = bounds; stableSince = now }
+            if (bounds != previous) {
+                previous = bounds
+                stableSince = now
+                node.performScrollTo()
+            }
             now - stableSince >= 200
         }
+        // A scroll performed before the final native resize may no longer
+        // reveal this row even though its own coordinates have stopped moving.
+        node.performScrollTo()
         node.assertIsDisplayed().performClick()
     }
 

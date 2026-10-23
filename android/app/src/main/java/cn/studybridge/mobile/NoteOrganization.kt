@@ -61,7 +61,7 @@ import androidx.compose.ui.unit.dp
         "rename" -> AlertDialog(onDismissRequest = onDismiss, title = { Text("重命名笔记") }, text = {
             OutlinedTextField(title, { title = it.take(120) }, label = { Text("笔记标题") }, singleLine = true)
         }, confirmButton = { FeedbackTextButton(onClick = { if (vm.renameNote(note.id, title)) onDismiss() }, enabled = writable && title.isNotBlank()) { Text("保存标题") } }, dismissButton = { FeedbackTextButton(onClick = onDismiss) { Text("取消") } })
-        "move" -> NotebookPicker(ui.data, note.folderId, "移动到分类", allowAll = false, onClose = onDismiss) { destination ->
+        "move" -> NotebookPicker(ui.data, note.folderId, "移动到分类", allowAll = false, onCreate = { name, parent -> vm.createNotebookTarget(name, parent) }, canCreate = !ui.locked, onClose = onDismiss) { destination ->
             if (destination != null && vm.moveNote(note.id, destination)) onDismiss()
         }
         "delete" -> AlertDialog(onDismissRequest = onDismiss, title = { Text("删除这份笔记？") }, text = { Text("“${note.title}”将移到回收站，可以恢复。") },

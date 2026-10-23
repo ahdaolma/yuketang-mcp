@@ -34,7 +34,8 @@ class ModelCatalogUiTest {
                 }
             }
         }
-        compose.onNodeWithText("配置连接").performScrollTo().performClick()
+        compose.onNodeWithText("API Base URL").assertDoesNotExist()
+        compose.onNodeWithText("API Key").assertDoesNotExist()
         compose.onNodeWithText("模型 ID").assertDoesNotExist()
         compose.onNodeWithText("选择模型").performScrollTo()
         compose.onRoot().captureToImage()
@@ -62,6 +63,7 @@ class ModelCatalogUiTest {
         compose.onNodeWithText("保存并使用").performScrollTo().assertIsEnabled().performClick()
         compose.waitUntil(5000) { vm.ui.value.data.provider().model == "vision-model" }
         compose.runOnIdle { assertEquals("vision-model", vm.ui.value.data.provider().model); assertEquals("模型配置已保存。", vm.ui.value.notice) }
+        compose.onNodeWithText("配置连接").performScrollTo().performClick()
         compose.onNodeWithText("API Base URL").performScrollTo().performTextReplacement("https://other.example/v1")
         compose.onNodeWithText("选择模型").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("保存并使用").performScrollTo().assertIsNotEnabled()

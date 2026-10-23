@@ -41,7 +41,7 @@ import kotlinx.coroutines.withContext
     LaunchedEffect(ui.data.notes.map { it.id }) { selectedIds = selectedIds.filter { id -> ui.data.notes.any { it.id == id } } }
     LaunchedEffect(ui.data.noteFolders, selectedFolder) { if (selectedFolder != null && selectedFolder != "" && ui.data.noteFolders.none { it.id == selectedFolder }) selectedFolder = "" }
     fun clearFilters() { query = ""; selectedFolder = null; tag = null; review = null; quick = "all" }
-    if (moving) NotebookPicker(ui.data, selectedFolder, "移动到分类", allowAll = false, onClose = { moving = false }) { destination ->
+    if (moving) NotebookPicker(ui.data, selectedFolder, "移动到分类", allowAll = false, onCreate = { name, parent -> vm.createNotebookTarget(name, parent) }, canCreate = !ui.locked, onClose = { moving = false }) { destination ->
         if (destination != null && vm.moveNotes(selectedIds.toSet(), destination)) {
             vm.notice("已移动 ${selectedIds.size} 份笔记")
             selectedIds = emptyList(); moving = false; selecting = false
@@ -80,7 +80,6 @@ import kotlinx.coroutines.withContext
                     item { FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         NOTE_QUICK_VIEWS.forEach { (id, label) -> FeedbackFilterChip(quick == id, { quick = id }, label = { Text(label) }) }
                     } }
-                    if (ui.data.session.isNotBlank() || ui.hasClassSession()) item { ClassModePanel(ui, vm) }
                     if (tag != null || review != null) item { FeedbackTextButton(onClick = { tag = null; review = null }) { Text("清除筛选：" + listOfNotNull(tag?.let { "#$it" }, review?.let { NOTE_REVIEW_STATES[it] }).joinToString(" · ")) } }
                     if (visible.isEmpty() && ui.data.notes.isNotEmpty()) item { StudyEmpty(Icons.Outlined.Search, if (query.isBlank()) "这个位置暂无符合条件的笔记" else "没有找到相关笔记", "可以切换笔记本，或清除当前筛选后重新查找。") { FeedbackTextButton(onClick = ::clearFilters) { Text("查看全部笔记") } } }
                     if (ui.noteDraft.isNotBlank()) item { StudyPanel { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("正在整理", style = MaterialTheme.typography.titleSmall); Text(ui.noteDraft.takeLast(1600), maxLines = 8, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium) } } }

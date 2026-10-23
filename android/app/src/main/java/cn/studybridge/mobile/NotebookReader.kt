@@ -55,7 +55,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 
 @OptIn(kotlinx.coroutines.FlowPreview::class, ExperimentalFoundationApi::class)
-@Composable fun NotebookReader(note: Note, ui: UiState, vm: StudyViewModel, modifier: Modifier = Modifier, extraHeader: @Composable () -> Unit = {}, onOptions: () -> Unit, onBack: () -> Unit) {
+@Composable fun NotebookReader(note: Note, ui: UiState, vm: StudyViewModel, modifier: Modifier = Modifier, extraHeader: @Composable () -> Unit = {}, primaryTools: @Composable (() -> Unit) -> Unit = {}, extraTools: @Composable (() -> Unit) -> Unit = {}, backLabel: String = "返回笔记列表", onBack: () -> Unit) {
     val prepared by produceState<Pair<String, List<NoteReadingSegment>>?>(null, note.content) {
         val result = withContext(Dispatchers.Default) { note.content to noteReadingSegments(note.content) }
         withContext(Dispatchers.Main.immediate) { value = result }
@@ -91,7 +91,6 @@ import kotlin.math.abs
     var bodyTop by remember { mutableFloatStateOf(0f) }
     var titleHeight by remember { mutableIntStateOf(1) }
     var tools by remember { mutableStateOf(false) }
-    var navigation by remember { mutableStateOf(false) }
     var directory by remember { mutableStateOf(false) }
     var preferences by remember { mutableStateOf(false) }
     var searching by remember { mutableStateOf(false) }
@@ -226,25 +225,25 @@ import kotlin.math.abs
     if (searching) NoteSearchDialog(note, { searching = false }, onHit = ::selectHit) { goTo(it); searching = false }
     if (directory) JumpDialog("笔记目录 / 阅读分段", labels, { directory = false }) { goTo(it); directory = false }
     if (tools) ReadingActionSheet("阅读工具", { tools = false }) {
-        FeedbackDropdownMenuItem(text = { Text("返回笔记列表") }, leadingIcon = { Icon(Icons.Default.ArrowBack, null) }, modifier = Modifier.semantics { contentDescription = "返回笔记列表" }, onClick = { tools = false; onBack() })
+        ReadingActionGroup("阅读")
+        FeedbackDropdownMenuItem(text = { Text(backLabel) }, leadingIcon = { Icon(Icons.Default.ArrowBack, null) }, modifier = Modifier.semantics { contentDescription = backLabel }, onClick = { tools = false; onBack() })
+        FeedbackDropdownMenuItem(text = { Text("笔记内查找") }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, modifier = Modifier.semantics { contentDescription = "笔记内查找" }, onClick = { tools = false; searching = true })
         FeedbackDropdownMenuItem(text = { Text("目录 · ${selected + 1}/${segments.size}") }, leadingIcon = { Icon(Icons.Outlined.MenuBook, null) }, modifier = Modifier.semantics { contentDescription = "目录跳转"; stateDescription = "阅读分段 ${selected + 1} / ${segments.size} · 完整笔记已保留" }, onClick = { tools = false; directory = true })
-        FeedbackDropdownMenuItem(text = { Text("阅读跳转") }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, modifier = Modifier.semantics { contentDescription = "阅读跳转" }, onClick = { tools = false; navigation = true })
-        ReadingActionGroup("阅读与管理")
         FeedbackDropdownMenuItem(text = { Text("阅读方式与字号") }, leadingIcon = { Icon(Icons.Outlined.TextFields, null) }, modifier = Modifier.semantics { contentDescription = "阅读设置" }, onClick = { tools = false; preferences = true })
-        FeedbackDropdownMenuItem(text = { Text("笔记选项") }, leadingIcon = { Icon(Icons.Outlined.EditNote, null) }, modifier = Modifier.semantics { contentDescription = "笔记选项" }, onClick = { tools = false; onOptions() })
-        FeedbackDropdownMenuItem(text = { Text("设置") }, leadingIcon = { Icon(Icons.Outlined.Settings, null) }, modifier = Modifier.semantics { contentDescription = "设置" }, onClick = { tools = false; vm.tab(3) })
-    }
-    if (navigation) ReadingActionSheet("阅读跳转", { navigation = false }) {
-        FeedbackDropdownMenuItem(text = { Text("笔记内查找") }, onClick = { navigation = false; searching = true })
-        if (initial != null) FeedbackDropdownMenuItem(text = { Text("回到上次阅读") }, onClick = { navigation = false; goTo(restoredNoteIndex(initial, hash, labels), if (initial.contentHash == hash) initial.scroll else 0, anchor = initial.textAnchor?.takeIf { initial.contentHash == hash }) })
+        primaryTools { tools = false }
+        ReadingActionGroup("阅读位置")
+        if (initial != null) FeedbackDropdownMenuItem(text = { Text("回到上次阅读") }, onClick = { tools = false; goTo(restoredNoteIndex(initial, hash, labels), if (initial.contentHash == hash) initial.scroll else 0, anchor = initial.textAnchor?.takeIf { initial.contentHash == hash }) })
         if (segments.size > 1) {
-            FeedbackDropdownMenuItem(text = { Text("上一段") }, enabled = selected > 0, onClick = { navigation = false; goTo(selected - 1) })
-            FeedbackDropdownMenuItem(text = { Text("下一段") }, enabled = selected < segments.lastIndex, onClick = { navigation = false; goTo(selected + 1) })
+            FeedbackDropdownMenuItem(text = { Text("上一段") }, enabled = selected > 0, onClick = { tools = false; goTo(selected - 1) })
+            FeedbackDropdownMenuItem(text = { Text("下一段") }, enabled = selected < segments.lastIndex, onClick = { tools = false; goTo(selected + 1) })
         }
-        FeedbackDropdownMenuItem(text = { Text("本段顶部") }, onClick = { navigation = false; goTo(selected) })
-        FeedbackDropdownMenuItem(text = { Text("本段底部") }, onClick = { navigation = false; goTo(selected, end = true) })
-        FeedbackDropdownMenuItem(text = { Text("整本开头") }, onClick = { navigation = false; goTo(0, title = continuous) })
-        FeedbackDropdownMenuItem(text = { Text("整本末尾") }, onClick = { navigation = false; goTo(segments.lastIndex, end = true) })
+        FeedbackDropdownMenuItem(text = { Text("本段顶部") }, onClick = { tools = false; goTo(selected) })
+        FeedbackDropdownMenuItem(text = { Text("本段底部") }, onClick = { tools = false; goTo(selected, end = true) })
+        FeedbackDropdownMenuItem(text = { Text("整本开头") }, onClick = { tools = false; goTo(0, title = continuous) })
+        FeedbackDropdownMenuItem(text = { Text("整本末尾") }, onClick = { tools = false; goTo(segments.lastIndex, end = true) })
+        extraTools { tools = false }
+        ReadingActionGroup("应用")
+        FeedbackDropdownMenuItem(text = { Text("设置") }, leadingIcon = { Icon(Icons.Outlined.Settings, null) }, modifier = Modifier.semantics { contentDescription = "设置" }, onClick = { tools = false; vm.tab(3) })
     }
     if (preferences) ReadingActionSheet("阅读方式与字号", { preferences = false }) {
         NOTE_READING_MODES.forEach { (id, title) ->

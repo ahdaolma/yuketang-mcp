@@ -50,8 +50,7 @@ class ClassNoteEditingTest {
         compose.waitUntil(5000) { requested.count == 0L || vm.ui.value.classUi.paused }
         assertEquals(vm.ui.value.classUi.status, 0L, requested.count)
         render(vm)
-        compose.openNoteTool("笔记选项")
-        compose.onNodeWithText("编辑笔记", useUnmergedTree = true).performScrollTo().performClick()
+        compose.openNoteTool("编辑笔记")
         compose.onNodeWithText("Markdown 笔记").assertIsEnabled().performTextReplacement("# 并行编辑\n\n我修正后的定义。\n\n")
         compose.runOnIdle { release.countDown() }
         compose.waitUntil(10000) { vm.ui.value.data.classRun?.completed?.contains(page.key) == true }
@@ -103,8 +102,7 @@ class ClassNoteEditingTest {
         compose.onNodeWithText("写下自己的理解或疑问").performTextInput("我需要再确认模板链的方向。")
         compose.onNodeWithText("保存备注").performClick()
         compose.waitUntil(5000) { vm.ui.value.data.notes.single().annotations.size == 1 }
-        compose.openNoteTool("笔记选项")
-        compose.onNodeWithText("我的标记与备注").performScrollTo().performClick()
+        compose.openNoteTool("我的标记与备注")
         compose.onNodeWithText("我需要再确认模板链的方向。").assertExists().performClick()
         compose.onNodeWithText("我的备注").performTextReplacement("已经弄明白了。")
         compose.onNodeWithText("保存备注").performClick()
@@ -124,8 +122,7 @@ class ClassNoteEditingTest {
         compose.waitUntil(5000) { vm.ui.value.ready }
         compose.runOnIdle { vm.noteReader.open(note); vm.superFocusNotes(true) }
         render(vm)
-        compose.openNoteTool("阅读跳转")
-        compose.onNodeWithText("笔记内查找").performScrollTo().performClick()
+        compose.openNoteTool("笔记内查找")
         compose.onNodeWithText("查找完整正文").performTextInput("复制起点")
         compose.waitUntil(5000) { compose.onAllNodesWithText("找到 1 处").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("第 2 段").performClick()

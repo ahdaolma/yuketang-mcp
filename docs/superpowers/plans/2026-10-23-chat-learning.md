@@ -35,3 +35,10 @@
 
 ### 5. 追加：选区菜单定位
 - [ ] `NoteSelection.kt` replaces fixed bottom popup with selection bounds from TextView and window-aware PopupPositionProvider; preserve native actions and dynamic scroll/reflow positioning. Dedicated cloud selection test verifies placement near selection and screen-edge avoidance.
+
+### 6. 全应用流程合并
+- [ ] Merge reader action menus: `NotebookReader.kt` receives real note action content from `NotesScreen` and places it in the same bounded floating-tools sheet; direct note search entry, retain actual editor/lookup/confirmation dialogs. Update device helper to click real direct actions instead of obsolete nested menu.
+- [ ] In `RainScreen` connect system back to `backRainMaterials` only when a descendant course/lesson/deck is open; same parent snapshots as visible back button.
+- [ ] In model settings move current model input, catalog selection, image capability and save outside optional connection details; retain explicit save and stale-catalog invalidation. Cancel automatic popup intent on leaving model page/config or closing; delayed completion stays cached without re-opening.
+- [ ] `NotebookPicker` adds inline target-folder creation and optional child chapter without opening another tree; failed/blank creation keeps selection/input, success selects new target through existing onSelect. Existing folder manager remains for broader management.
+- [ ] Add actual cloud UI flows for direct reader actions, system back through course hierarchy, creating target during batch move, model switching without connection details, and delayed catalog completion after leaving. Re-run all existing responsive/reader/model regression suites.

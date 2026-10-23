@@ -112,12 +112,11 @@ class VisualReviewTest {
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).performClick()
         assertReadingArea()
         compose.onNodeWithTag("笔记原始标题").assertIsDisplayed()
-        compose.openNoteTool("阅读跳转")
-        compose.onNodeWithText("下一段").performScrollTo().performClick()
+        compose.openNoteTool("下一段")
         assertReadingArea()
         compose.onNodeWithTag("笔记吸顶标题").assertIsDisplayed()
         shot("sample-note-reading-compact")
-        compose.openNoteTool("笔记选项")
+        compose.ensureNoteTools()
         compose.onNodeWithText("编辑笔记").performScrollTo().assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithText("导出 Markdown").performScrollTo().assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithText("AI 讲解并保存新笔记").performScrollTo().assertIsDisplayed().assertIsEnabled()
@@ -134,8 +133,7 @@ class VisualReviewTest {
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).assertIsDisplayed(); shot("sample-notes-light")
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).performClick()
         compose.onNodeWithContentDescription("悬浮阅读工具").assertIsDisplayed(); verifyTableRows(); shot("sample-note-reading")
-        compose.openNoteTool("笔记选项")
-        compose.onNodeWithText("编辑笔记").performScrollTo().performClick()
+        compose.openNoteTool("编辑笔记")
         compose.onNode(hasSetTextAction()).performTextInput("\n新增草稿内容")
         compose.runOnIdle { state.value = state.value.copy(tab = 1) }
         compose.waitUntil(5000) {
@@ -179,7 +177,7 @@ class VisualReviewTest {
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(firstNote.title)); compose.onNodeWithText(firstNote.title).performClick()
         assertReadingArea()
         shot("sample-note-reading-large-text")
-        compose.openNoteTool("笔记选项")
+        compose.ensureNoteTools()
         compose.onNodeWithText("导出 Markdown").performScrollTo().assertIsDisplayed()
     }
     @Test fun darkScreensUseTheSameReadingAndSettingsHierarchy() {

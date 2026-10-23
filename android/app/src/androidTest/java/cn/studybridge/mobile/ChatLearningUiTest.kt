@@ -56,15 +56,19 @@ class ChatLearningUiTest {
             }
         }
     }
+    private fun materialChoice(label: String): SemanticsNodeInteraction {
+        compose.onNodeWithTag("学习资料列表").performScrollToNode(hasText(label))
+        return compose.onNodeWithText(label).performScrollTo()
+    }
     private fun openDeck() {
         compose.onNodeWithContentDescription("学习资料").performClick()
         compose.onNodeWithText("雨课堂课件").performClick()
         compose.waitUntil(5000) { !vm.ui.value.busy && vm.ui.value.courses.isNotEmpty() }
-        compose.onNodeWithText("生物化学").performScrollTo().performClick()
+        materialChoice("生物化学").performClick()
         compose.waitUntil(5000) { !vm.ui.value.busy && vm.ui.value.presentations.isNotEmpty() }
-        compose.onNodeWithText("酶学课堂").performScrollTo().performClick()
+        materialChoice("酶学课堂").performClick()
         compose.waitUntil(5000) { !vm.ui.value.busy && vm.ui.value.lesson != null }
-        compose.onNodeWithText("酶学课堂 · 课件 1").performScrollTo().performClick()
+        materialChoice("酶学课堂 · 课件 1").performClick()
         compose.waitUntil(5000) { !vm.ui.value.busy && vm.ui.value.slides.size == 2 }
     }
     @Test fun draftsRemainWithTheirConversationAcrossNavigationAndNewChat() {
@@ -91,7 +95,7 @@ class ChatLearningUiTest {
             prepare(Saved(providers = listOf(model), notes = listOf(Note(title = "酶的活性中心", content = "结合基团和催化基团", source = "合成笔记", model = "手写"))), store)
             compose.onNodeWithContentDescription("学习资料").performClick()
             compose.onNodeWithText("已有笔记").performClick()
-            compose.onNodeWithText("讲解并保存新笔记").performScrollTo().performClick()
+            materialChoice("讲解并保存新笔记").performClick()
             compose.waitUntil(10000) { !vm.ui.value.busy && vm.ui.value.data.chat().messages.size == 2 }
             assertEquals("酶的活性中心", vm.ui.value.data.chat().title)
             compose.onNodeWithContentDescription("会话").performClick()
@@ -104,22 +108,22 @@ class ChatLearningUiTest {
         try {
             prepare(Saved(providers = listOf(model), session = "synthetic-session", sessionVerified = true), store)
             openDeck()
-            compose.onNodeWithText("整份课件 · 2 页/段").performScrollTo().assertIsDisplayed()
+            materialChoice("整份课件 · 2 页/段").assertIsDisplayed()
             advancedUiShot(compose.activity, "chat-learning-whole-deck")
             compose.onNodeWithContentDescription("返回本节课件").performClick()
             compose.onNodeWithText("下一批").assertDoesNotExist()
             compose.onNodeWithContentDescription("返回课程活动").performClick()
             compose.onNodeWithTag("学习资料列表").performScrollToNode(hasText("下一批"))
             compose.onNodeWithText("下一批").assertIsDisplayed()
-            compose.onNodeWithText("酶学课堂").performScrollTo().performClick()
+            materialChoice("酶学课堂").performClick()
             compose.waitUntil(5000) { !vm.ui.value.busy && vm.ui.value.lesson != null }
-            compose.onNodeWithText("酶学课堂 · 课件 1").performScrollTo().performClick()
+            materialChoice("酶学课堂 · 课件 1").performClick()
             compose.waitUntil(5000) { !vm.ui.value.busy && vm.ui.value.slides.size == 2 }
-            compose.onNodeWithText("指定范围").performScrollTo().performClick()
-            compose.onNodeWithText("所选页面讲解并保存笔记").performScrollTo().assertIsNotEnabled()
+            materialChoice("指定范围").performClick()
+            materialChoice("所选页面讲解并保存笔记").assertIsNotEnabled()
             assertTrue(vm.ui.value.materialsOpen)
-            compose.onNodeWithText("整份课件 · 2 页/段").performScrollTo().performClick()
-            compose.onNodeWithText("整份讲解并保存笔记").performScrollTo().performClick()
+            materialChoice("整份课件 · 2 页/段").performClick()
+            materialChoice("整份讲解并保存笔记").performClick()
             compose.waitUntil(10000) { !vm.ui.value.busy && vm.ui.value.data.notes.isNotEmpty() }
             assertFalse(vm.ui.value.materialsOpen)
             val note = vm.ui.value.data.notes.single()
@@ -132,8 +136,8 @@ class ChatLearningUiTest {
         try {
             prepare(Saved(providers = listOf(model), session = "synthetic-session", sessionVerified = true), store, scale = 2f)
             openDeck()
-            compose.onNodeWithText("指定范围").performScrollTo().performClick()
-            compose.onNodeWithText("所选页面讲解并保存笔记").performScrollTo().assertIsDisplayed()
+            materialChoice("指定范围").performClick()
+            materialChoice("所选页面讲解并保存笔记").assertIsDisplayed()
             compose.onNodeWithContentDescription("关闭学习资料").assertIsDisplayed()
             advancedUiShot(compose.activity, "chat-learning-large-font")
             compose.onNodeWithContentDescription("关闭学习资料").performClick()
@@ -156,7 +160,7 @@ class ChatLearningUiTest {
             compose.onNodeWithText("编辑笔记").performClick()
             compose.onNode(hasSetTextAction()).performScrollTo().performTextReplacement("结合基团负责底物结合。\n\n我补充的催化机制：催化基团参与反应。")
             compose.onNodeWithText("保存修改").performClick()
-            compose.onNodeWithContentDescription("学习").performClick()
+            compose.openNoteTool("返回对话")
             compose.onNodeWithTag("学习正文").performScrollToNode(hasText("笔记 · 已保存新修改"))
             compose.onNodeWithText("笔记 · 已保存新修改").assertIsDisplayed()
             advancedUiShot(compose.activity, "chat-learning-note-edited")

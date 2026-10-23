@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-data class UiState(val data: Saved = Saved(), val tab: Int = 0, val settingsPage: String = "", val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val lesson: Presentation? = null, val courseActivities: List<Presentation> = emptyList(), val activityPage: Int = 0, val courseOrder: CourseOrder = CourseOrder.NEWEST, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val chatDrafts: Map<String, String> = emptyMap(), val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi(), val chatgptLoginActive: Boolean = false, val chatgptStage: String = "", val chatgptPlanWelcome: Boolean = false, val modelNames: Map<String, String> = emptyMap(), val modelListRequest: String = "", val materialsOpen: Boolean = false, val materialPane: String = "home", val materialReturnPane: String = "files", val localDocument: MaterialDocument? = null, val slideRecordedAt: String = "", val storageError: String = "", val noteDraftSaving: Boolean = false, val noteDraftSavedAt: Long = 0L, val noteDraftSaveError: String = "") { val locked get() = !ready || storageError.isNotBlank() || busy || chatgptLoginActive || (classUi.running && !classUi.paused) }
+data class UiState(val data: Saved = Saved(), val tab: Int = 0, val settingsPage: String = "", val notice: String = "", val busy: Boolean = false, val operation: String = "", val ready: Boolean = false, val qr: ByteArray? = null, val loginActive: Boolean = false, val courses: List<Course> = emptyList(), val course: Course? = null, val lesson: Presentation? = null, val courseActivities: List<Presentation> = emptyList(), val activityPage: Int = 0, val courseOrder: CourseOrder = CourseOrder.NEWEST, val presentations: List<Presentation> = emptyList(), val slides: List<Slide> = emptyList(), val slideTitle: String = "", val presentationId: String = "", val pending: Attachment? = null, val chatDrafts: Map<String, String> = emptyMap(), val noteChatOrigin: String? = null, val noteDraft: String = "", val modelListFor: String = "", val modelList: List<String> = emptyList(), val loginStage: String = "", val loginSteps: List<String> = emptyList(), val liveLessons: List<LiveLesson> = emptyList(), val classUi: ClassUi = ClassUi(), val chatgptLoginActive: Boolean = false, val chatgptStage: String = "", val chatgptPlanWelcome: Boolean = false, val modelNames: Map<String, String> = emptyMap(), val modelListRequest: String = "", val materialsOpen: Boolean = false, val materialPane: String = "home", val materialReturnPane: String = "files", val localDocument: MaterialDocument? = null, val slideRecordedAt: String = "", val storageError: String = "", val noteDraftSaving: Boolean = false, val noteDraftSavedAt: Long = 0L, val noteDraftSaveError: String = "") { val locked get() = !ready || storageError.isNotBlank() || busy || chatgptLoginActive || (classUi.running && !classUi.paused) }
 
 class StudyViewModel @JvmOverloads constructor(app: Application, private val rain: RainApi = RainApi(), private val ai: AiApi = AiApi()) : AndroidViewModel(app) {
     val noteReader = NoteReader(
@@ -438,8 +438,18 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         if (edit && !state.value.data.noteWritable(id)) { notice("课堂正在写入此笔记，请暂停并结束整理后再编辑。"); return false }
         if (noteReader.id != id) noteReader.open(note)
         if (edit) noteReader.beginEditing(note)
+        state.update { it.copy(noteChatOrigin = it.data.chat().id) }
         closeMaterials(); tab(2)
         return true
+    }
+    fun closeNoteReader() {
+        val origin = state.value.noteChatOrigin
+        noteReader.close()
+        state.update { it.copy(noteChatOrigin = null) }
+        if (origin != null) {
+            if (state.value.data.chat().id != origin) selectChat(origin)
+            tab(0)
+        }
     }
     private suspend fun appendSavedNoteResult(chatId: String, note: Note, label: String) {
         val ref = withContext(Dispatchers.Default) { chatNoteReference(note) }

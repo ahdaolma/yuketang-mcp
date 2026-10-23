@@ -121,8 +121,7 @@ class ReaderExperienceTest {
         compose.onNodeWithContentDescription("关闭阅读方式与字号").performClick()
     }
     private fun jump(label: String) {
-        compose.openNoteTool("阅读跳转")
-        compose.onNodeWithText(label).performScrollTo().performClick()
+        compose.openNoteTool(label)
     }
 
     @Test fun mixedImageAndShortLongPagesRemainReadableAcrossEveryModeAndBackwards() {
@@ -165,8 +164,7 @@ class ReaderExperienceTest {
 
     @Test fun switchingAllReadingModesKeepsTheCurrentParagraphVisible() = withReader(fullNote()) { _, vm ->
         val marker = "来源2段落3标记"
-        compose.openNoteTool("阅读跳转")
-        compose.onNodeWithText("笔记内查找").performScrollTo().performClick()
+        compose.openNoteTool("笔记内查找")
         compose.onNodeWithText("查找完整正文").performTextInput(marker)
         compose.waitUntil(5000) { compose.onAllNodesWithText("找到 1 处").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("第 2 段").performClick()
@@ -225,7 +223,7 @@ class ReaderExperienceTest {
         val first = compose.onNodeWithContentDescription("返回笔记列表").getUnclippedBoundsInRoot()
         val second = compose.onNodeWithContentDescription("目录跳转").getUnclippedBoundsInRoot()
         assertTrue("Reading actions must be vertical", second.top >= first.bottom)
-        listOf("返回笔记列表", "目录跳转", "阅读跳转", "阅读设置", "笔记选项", "设置").forEach {
+        listOf("返回笔记列表", "目录跳转", "笔记内查找", "阅读设置", "设置").forEach {
             compose.onNodeWithContentDescription(it).performScrollTo().assertIsDisplayed().assertIsEnabled()
         }
         compose.onNodeWithContentDescription("关闭阅读工具").performClick()
@@ -356,16 +354,13 @@ class ReaderExperienceTest {
 
     @Test fun endCommandsExposeTheFinalLineInContinuousAndPagedModes() = withReader(fullNote()) { _, vm ->
         fun jumpEnd() {
-            compose.openNoteTool("阅读跳转")
-            compose.onNodeWithText("整本末尾").performScrollTo().performClick()
+            compose.openNoteTool("整本末尾")
             compose.waitUntil(5000) { visibleMarkers(listOf(markers.last())).isNotEmpty() }
         }
         jumpEnd()
-        compose.openNoteTool("阅读跳转")
-        compose.onNodeWithText("本段顶部").performScrollTo().performClick()
+        compose.openNoteTool("本段顶部")
         compose.waitUntil(5000) { visibleMarkers(listOf("来源3段落1标记")).isNotEmpty() }
-        compose.openNoteTool("阅读跳转")
-        compose.onNodeWithText("本段底部").performScrollTo().performClick()
+        compose.openNoteTool("本段底部")
         compose.waitUntil(5000) { visibleMarkers(listOf(markers.last())).isNotEmpty() }
         compose.openNoteTool("阅读设置")
         compose.onNodeWithText("点击翻页").performScrollTo().performClick()
@@ -381,8 +376,7 @@ class ReaderExperienceTest {
         val filler = "先看定义，再理解配对、方向和机制。\n\n".repeat(18)
         val note = Note(title = "命中定位", content = hits.mapIndexed { index, marker -> "## 第 ${index + 1} 页\n\n" + filler + "$marker：$query。\n\n" + filler }.joinToString("\n\n"), source = "合成查找页", model = "fixture")
         withReader(note) { _, _ ->
-            compose.openNoteTool("阅读跳转")
-            compose.onNodeWithText("笔记内查找").performScrollTo().performClick()
+            compose.openNoteTool("笔记内查找")
             compose.onNodeWithText("查找完整正文").performTextInput(query)
             compose.waitUntil(5000) { compose.onAllNodesWithText("找到 3 处").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithText("找到 3 处").assertIsDisplayed()

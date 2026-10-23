@@ -61,12 +61,47 @@ import androidx.compose.ui.unit.dp
     }
 }
 
-@Composable fun NotebookPicker(data: Saved, selected: String?, title: String = "选择笔记本", allowAll: Boolean = true, onClose: () -> Unit, onSelect: (String?) -> Unit) {
+@OptIn(ExperimentalLayoutApi::class)
+@Composable fun NotebookPicker(data: Saved, selected: String?, title: String = "选择笔记本", allowAll: Boolean = true, onCreate: ((String, String) -> String?)? = null, canCreate: Boolean = true, onClose: () -> Unit, onSelect: (String?) -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var expanded by remember { mutableStateOf(emptySet<String>()) }
+    var creating by rememberSaveable { mutableStateOf(false) }
+    var section by rememberSaveable { mutableStateOf(false) }
+    var name by rememberSaveable { mutableStateOf("") }
+    var parent by rememberSaveable { mutableStateOf("") }
+    var createError by remember { mutableStateOf(false) }
+    fun beginCreation(child: Boolean) {
+        section = child; creating = true; name = ""; createError = false
+        val current = data.noteFolders.find { it.id == selected }
+        parent = if (current?.parentId?.isNotBlank() == true) current.parentId else current?.id.orEmpty()
+    }
     NotebookPanel(title, onClose) {
-        OutlinedTextField(query, { query = it.take(120) }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), singleLine = true, label = { Text("搜索笔记本或章节") }, leadingIcon = { Icon(Icons.Outlined.Search, null) })
-        NotebookTree(data, selected, query, expanded, { expanded = if (it in expanded) expanded - it else expanded + it }, allowAll, onSelect, Modifier.weight(1f, fill = false).fillMaxWidth().testTag("笔记本选择列表"))
+        if (creating) {
+            LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth().testTag("新建目标分类表单"), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { OutlinedTextField(name, { name = it.take(30); createError = false }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(if (section) "新章节名称" else "新笔记本名称") }, isError = createError) }
+                if (section) {
+                    item { Text("选择所属笔记本", style = MaterialTheme.typography.titleSmall) }
+                    items(data.noteFolders.filter { it.parentId.isEmpty() }, key = { it.id }) { root ->
+                        StudyChoiceRow({ parent = root.id; createError = false }, selected = parent == root.id, enabled = canCreate) { Text(root.name) }
+                    }
+                }
+                if (createError) item { Text("未能创建，请检查名称是否重复或分类是否仍可用。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+            }
+            FlowRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FeedbackTextButton(onClick = { creating = false }) { Text("取消新建") }
+                FeedbackButton(onClick = {
+                    val id = onCreate?.invoke(name.trim(), if (section) parent else "")
+                    if (id == null) createError = true else onSelect(id)
+                }, enabled = canCreate && name.isNotBlank() && (!section || data.noteFolders.any { it.id == parent && it.parentId.isEmpty() })) { Text(if (allowAll) "创建并进入" else "创建并移入") }
+            }
+        } else {
+            OutlinedTextField(query, { query = it.take(120) }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), singleLine = true, label = { Text("搜索笔记本或章节") }, leadingIcon = { Icon(Icons.Outlined.Search, null) })
+            if (onCreate != null) FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FeedbackTextButton(onClick = { beginCreation(false) }, enabled = canCreate) { Text("新建笔记本") }
+                if (data.noteFolders.any { it.parentId.isEmpty() }) FeedbackTextButton(onClick = { beginCreation(true) }, enabled = canCreate) { Text("新建章节") }
+            }
+            NotebookTree(data, selected, query, expanded, { expanded = if (it in expanded) expanded - it else expanded + it }, allowAll, onSelect, Modifier.weight(1f, fill = false).fillMaxWidth().testTag("笔记本选择列表"))
+        }
     }
 }
 
@@ -87,8 +122,14 @@ import androidx.compose.ui.unit.dp
         }
         FeedbackIconButton(onClick = { manager = true }) { Icon(Icons.Outlined.CreateNewFolder, "管理笔记分类") }
     }
-    if (picker) NotebookPicker(ui.data, selected, onClose = { picker = false }) { onSelect(it); picker = false }
+    if (picker) NotebookPicker(ui.data, selected, onCreate = { name, parent -> vm.createNotebookTarget(name, parent) }, canCreate = !ui.locked, onClose = { picker = false }) { onSelect(it); picker = false }
     if (manager) NotebookManager(ui, vm) { manager = false }
+}
+
+internal fun StudyViewModel.createNotebookTarget(name: String, parent: String): String? {
+    val before = ui.value.data.noteFolders.map { it.id }.toSet()
+    if (!saveNoteFolder(null, name, parent)) return null
+    return ui.value.data.noteFolders.firstOrNull { it.id !in before }?.id
 }
 
 @Composable fun NotebookSidebar(ui: UiState, vm: StudyViewModel, selected: String?, onSelect: (String?) -> Unit, modifier: Modifier = Modifier) {

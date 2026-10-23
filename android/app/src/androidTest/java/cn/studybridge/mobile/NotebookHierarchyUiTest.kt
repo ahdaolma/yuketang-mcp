@@ -151,4 +151,37 @@ class NotebookHierarchyUiTest {
             compose.onNodeWithContentDescription("关闭选择笔记本").assertIsDisplayed().performClick()
         }
     }
+    @Test fun batchMoveCanCreateItsDestinationWithoutOpeningAnotherManager() = library { _, vm ->
+        top(); compose.onNodeWithContentDescription("多选笔记").performClick()
+        listOf("a", "b").forEach { id ->
+            compose.onNodeWithTag("笔记列表").performScrollToNode(hasTestTag("笔记卡片 $id"))
+            compose.onNodeWithTag("笔记卡片 $id").performClick().assertIsSelected()
+        }
+        top(); compose.onNodeWithContentDescription("移动所选笔记").performClick()
+        compose.onNodeWithText("新建笔记本").performClick()
+        compose.onAllNodesWithTag("笔记本面板").assertCountEquals(1)
+        compose.onNodeWithText("取消新建").performClick()
+        compose.onNodeWithText("新建笔记本").performClick()
+        compose.onNodeWithText("新笔记本名称").performTextInput("遗传学")
+        compose.onNodeWithText("创建并移入").performClick()
+        compose.onNodeWithText("未能创建", substring = true).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("新笔记本名称").performScrollTo().performTextReplacement("期末专题")
+        compose.onNodeWithText("创建并移入").performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记本面板").fetchSemanticsNodes().isEmpty() }
+        val target = vm.ui.value.data.noteFolders.single { it.name == "期末专题" }
+        compose.runOnIdle { assertTrue(vm.ui.value.data.notes.filter { it.id in setOf("a", "b") }.all { it.folderId == target.id }) }
+        top(); compose.onNodeWithContentDescription("多选笔记").performClick()
+        compose.onNodeWithTag("笔记列表").performScrollToNode(hasTestTag("笔记卡片 c"))
+        compose.onNodeWithTag("笔记卡片 c").performClick()
+        top(); compose.onNodeWithContentDescription("移动所选笔记").performClick()
+        compose.onNodeWithText("新建章节").performClick()
+        compose.onNodeWithText("新章节名称").performTextInput("重点词汇")
+        compose.onNodeWithText("英语").performScrollTo().performClick()
+        compose.onNodeWithText("创建并移入").performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记本面板").fetchSemanticsNodes().isEmpty() }
+        val chapter = vm.ui.value.data.noteFolders.single { it.name == "重点词汇" }
+        assertEquals("eng", chapter.parentId)
+        assertEquals(chapter.id, vm.ui.value.data.notes.single { it.id == "c" }.folderId)
+        advancedUiShot(compose.activity, "sample-create-move-destination")
+    }
 }

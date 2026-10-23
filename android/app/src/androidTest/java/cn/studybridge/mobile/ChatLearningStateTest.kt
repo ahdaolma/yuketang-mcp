@@ -29,7 +29,7 @@ class ChatLearningStateTest {
         val legacy = Conversation("legacy", messages = listOf(Message("user", "", source = "历史课件 · 第 3 页"), Message("assistant", "旧解释")))
         val first = Conversation("first", title = "保留空会话名称")
         val second = Conversation("second")
-        Vault(app).save(Saved(conversations = listOf(first, second, legacy), currentChat = first.id))
+        Vault(app).save(Saved(conversations = listOf(first, second, legacy), currentChat = first.id, session = "fixture-session-123", sessionVerified = true))
         val store = ViewModelStore(); lateinit var vm: StudyViewModel
         try {
             compose.runOnUiThread { vm = noteTestViewModel(app, store, rain { "{\"title\":\"来源快照\",\"slides\":[{\"index\":1,\"text\":\"原文\"}]}" }, fixtureAiApi("回答")) }
@@ -104,7 +104,7 @@ class ChatLearningStateTest {
 
     @Test fun fullDeckSavesFiftyOnePagesAndFailedPreflightKeepsMaterialsOpen() {
         val app = noteTestApplication(compose.activity.applicationContext); val p = provider()
-        Vault(app).save(Saved(providers = listOf(p), selectedProvider = p.id))
+        Vault(app).save(Saved(providers = listOf(p), selectedProvider = p.id, session = "fixture-session-123", sessionVerified = true))
         val pages = (1..51).joinToString(",") { "{\"index\":${it * 2},\"text\":\"第 $it 段\"}" }
         val calls = AtomicInteger()
         val store = ViewModelStore(); lateinit var vm: StudyViewModel
@@ -131,7 +131,7 @@ class ChatLearningStateTest {
 
     @Test fun closedOrNavigatedMaterialsIgnoreInFlightReadsAndImportsButKeepImportedRecords() {
         val app = noteTestApplication(compose.activity.applicationContext)
-        Vault(app).save(Saved())
+        Vault(app).save(Saved(session = "fixture-session-123", sessionVerified = true))
         val requested = CountDownLatch(1); val release = CountDownLatch(1)
         val api = rain { requested.countDown(); check(release.await(30, TimeUnit.SECONDS)); """{"title":"晚到的课件","slides":[{"index":1,"text":"原文"}]}""" }
         val store = ViewModelStore(); lateinit var vm: StudyViewModel

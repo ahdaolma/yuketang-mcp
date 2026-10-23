@@ -57,13 +57,8 @@ fun ComposeContentTestRule.ensureNoteTools() {
 }
 
 fun ComposeContentTestRule.openNoteTool(label: String) {
-    if (onAllNodesWithContentDescription(label).fetchSemanticsNodes().isEmpty()) {
-        ensureNoteTools()
-        onNodeWithContentDescription(label).performScrollTo().assertIsDisplayed().performClick()
-    } else {
-        if (onAllNodesWithContentDescription("关闭阅读工具").fetchSemanticsNodes().isNotEmpty()) onNodeWithContentDescription(label).performScrollTo()
-        onNodeWithContentDescription(label).assertIsDisplayed().performClick()
-    }
+    ensureNoteTools()
+    onNode(hasContentDescription(label) or hasText(label)).performScrollTo().assertIsDisplayed().performClick()
 }
 
 class AdvancedNoteUiTest {
@@ -133,8 +128,7 @@ class AdvancedNoteUiTest {
         try {
             compose.waitUntil(5000) { vm.ui.value.ready }
             compose.runOnIdle { vm.tab(2); vm.noteReader.open(note) }
-            compose.openNoteTool("笔记选项")
-            compose.onNodeWithText("按页删除内容…").performScrollTo().performClick()
+            compose.openNoteTool("按页删除内容…")
             compose.onNodeWithText("第 2 页").performClick()
             compose.waitForIdle()
             compose.onNodeWithText("删除所选 1 页…").assertIsEnabled()
@@ -145,7 +139,7 @@ class AdvancedNoteUiTest {
             compose.onNodeWithText("删除所选 1 页…").performClick()
             compose.onNodeWithText("确认删除所选页").performClick()
             compose.waitUntil(5000) { vm.ui.value.data.notes.single { it.id == note.id }.content == firstPage }
-            compose.openNoteTool("笔记选项"); compose.onNodeWithText("编辑笔记").performScrollTo().performClick()
+            compose.openNoteTool("编辑笔记")
             compose.onNodeWithText("图片 1 ▾").performScrollTo().performClick()
             compose.onNodeWithText("旋转 90°").performScrollTo().performClick()
             compose.waitUntil(5000) { sourceImagePattern.find(vm.noteReader.draft)?.groupValues?.get(2) != image }

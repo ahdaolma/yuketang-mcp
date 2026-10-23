@@ -66,7 +66,7 @@ class ResponsiveReadingTest {
         val second = compose.onNodeWithContentDescription("目录跳转").getUnclippedBoundsInRoot()
         assertTrue("Notebook actions must be a vertical list", second.top >= first.bottom)
         assertEquals(first.left.value, second.left.value, 1f)
-        listOf("返回笔记列表", "目录跳转", "阅读跳转", "阅读设置", "笔记选项", "设置").forEach {
+        listOf("返回笔记列表", "目录跳转", "笔记内查找", "阅读设置", "设置").forEach {
             compose.onNodeWithContentDescription(it).performScrollTo().assertIsDisplayed().assertIsEnabled()
         }
     }
@@ -111,8 +111,7 @@ class ResponsiveReadingTest {
         val sourcePage = compose.onNodeWithContentDescription("当前阅读页码").fetchSemanticsNode().config[androidx.compose.ui.semantics.SemanticsProperties.StateDescription].substringAfter("阅读分段 ").substringBefore(" / ").toInt()
         assertNotebookToolSheet()
         shot("sample-note-floating-controls", system = true)
-        compose.openNoteTool("阅读跳转")
-        compose.onNodeWithText("下一段").performScrollTo().assertIsEnabled().performClick()
+        compose.openNoteTool("下一段")
         compose.onNodeWithTag("阅读操作面板").assertDoesNotExist()
         compose.onNodeWithContentDescription("悬浮阅读工具").assertIsDisplayed()
         compose.onNodeWithContentDescription("当前阅读页码").assert(
@@ -211,7 +210,7 @@ class ResponsiveReadingTest {
             compose.onNodeWithTag("按屏翻页栏").assertDoesNotExist()
             shot("sample-note-landscape")
             assertNotebookToolSheet()
-            compose.openNoteTool("笔记选项")
+            compose.ensureNoteTools()
             compose.onNodeWithText("编辑笔记").performScrollTo().assertIsDisplayed()
         } finally {
             compose.activityRule.scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }

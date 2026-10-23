@@ -67,7 +67,7 @@ class NoteToolsWorkflowTest {
             compose.onNodeWithText("待办").performScrollTo().performClick()
             assertEquals("- [ ] 正文独有关键词：复制起点。", vm.noteReader.draft)
             compose.onNodeWithText("保存修改").performClick()
-            compose.openNoteTool("笔记选项")
+            compose.ensureNoteTools()
             compose.onNodeWithText("重命名笔记").performScrollTo().assertIsDisplayed()
             val bitmap = compose.onNodeWithTag("阅读操作面板").captureToImage().asAndroidBitmap()
             val resolver = compose.activity.contentResolver
@@ -79,8 +79,7 @@ class NoteToolsWorkflowTest {
             compose.onNodeWithText("重命名笔记").performScrollTo().performClick()
             compose.onNodeWithText("笔记标题").performTextReplacement("我的遗传学复习")
             compose.onNodeWithText("保存标题").performClick()
-            compose.openNoteTool("笔记选项")
-            compose.onNodeWithText("置顶笔记").performScrollTo().performClick()
+            compose.openNoteTool("置顶笔记")
             compose.openNoteTool("返回笔记列表")
             compose.onNodeWithText("搜索笔记").performTextInput("复制起点")
             compose.waitUntil(5000) { compose.onAllNodesWithText("找到 1 份").fetchSemanticsNodes().isNotEmpty() && compose.onAllNodesWithText("我的遗传学复习").fetchSemanticsNodes().isNotEmpty() }

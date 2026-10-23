@@ -284,7 +284,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
         }
     }
     val landscapeInput = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    val keyboardBeside = inlineHeader && WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    val keyboardBeside = inlineHeader && (landscapeInput || WindowInsets.ime.getBottom(LocalDensity.current) > 0)
     ReadingChatLayout(keyboardBeside, Modifier.fillMaxSize().padding(horizontal = 14.dp), toolbar = {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("学习工具栏"), verticalAlignment = Alignment.CenterVertically) {
             Box { IconButton(onClick = { history = true }) { Icon(Icons.Outlined.Forum, "会话") }; if (history) ReadingActionSheet("会话", { history = false }) {
@@ -348,6 +348,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
 @Composable fun RainScreen(ui: UiState, vm: StudyViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    BackHandler(enabled = ui.course != null || ui.lesson != null || ui.presentationId.isNotBlank()) { vm.backRainMaterials() }
     var manualId by rememberSaveable { mutableStateOf("") }
     var versions by remember { mutableStateOf(false) }
     val exportQr = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
@@ -380,7 +381,6 @@ private fun preview(bytes: ByteArray): Bitmap? {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Icon(Icons.Outlined.School, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(RAIN_NAMES[ui.data.region] ?: "雨课堂", style = MaterialTheme.typography.titleMedium); Text(loginStatusText(ui.data, ui.loginActive, ui.loginStage), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                        ClassManagerButton()
                         IconButton(onClick = { vm.tab(3) }) { Icon(Icons.Outlined.Settings, "设置") }
                         if (ui.data.session.isNotBlank()) IconButton(onClick = { accountExpanded = !accountExpanded }) { Icon(if (accountExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, "管理雨课堂账号", Modifier.size(22.dp)) }
                     }
@@ -429,6 +429,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable fun NotesScreen(ui: UiState, vm: StudyViewModel) {
     val reader = vm.noteReader
+    val backLabel = if (ui.noteChatOrigin != null) "返回对话" else "返回笔记列表"
     val libraryState = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
     val chrome = LocalReadingChrome.current
     val inlineHeader = LocalInlineReadingHeader.current
@@ -450,7 +451,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val exportPdf = rememberNotePdfExport(vm)
-    fun requestClose() { if (note != null && reader.editing && reader.draft != note.content) leaving = true else reader.close() }
+    fun requestClose() { if (note != null && reader.editing && reader.draft != note.content) leaving = true else vm.closeNoteReader() }
     BackHandler(enabled = note != null) { requestClose() }
     LaunchedEffect(reader.closeRequested) { if (reader.closeRequested) { reader.closeRequested = false; requestClose() } }
     var exportSnapshot by remember { mutableStateOf<Pair<Note, String>?>(null) }
@@ -461,43 +462,45 @@ private fun preview(bytes: ByteArray): Bitmap? {
     if (note != null) {
         val writable = ui.noteEditable(note.id)
         val removable = !ui.locked && ui.data.noteWritable(note.id)
-        if (leaving) AlertDialog(onDismissRequest = { leaving = false }, title = { Text("保存这次修改？") }, text = { Text("切换底部标签会保留草稿。返回笔记列表前，可以保存或放弃这次修改。") }, confirmButton = { TextButton(onClick = { if (vm.editNote(note.id, reader.draft)) { reader.close(); leaving = false } }, enabled = writable) { Text("保存并返回") } }, dismissButton = { FlowRow { TextButton(onClick = { vm.discardNoteDraft(note.id); reader.close(); leaving = false }) { Text("放弃修改") }; TextButton(onClick = { leaving = false }) { Text("继续编辑") } } })
+        if (leaving) AlertDialog(onDismissRequest = { leaving = false }, title = { Text("保存这次修改？") }, text = { Text("切换底部标签会保留草稿。返回前，可以保存或放弃这次修改。") }, confirmButton = { TextButton(onClick = { if (vm.editNote(note.id, reader.draft)) { vm.closeNoteReader(); leaving = false } }, enabled = writable) { Text("保存并返回") } }, dismissButton = { FlowRow { TextButton(onClick = { vm.discardNoteDraft(note.id); vm.closeNoteReader(); leaving = false }) { Text("放弃修改") }; TextButton(onClick = { leaving = false }) { Text("继续编辑") } } })
         if (deletingPages) NotePageDeletion(note, vm, removable && !reader.editing) { deletingPages = false }
-        if (deleting) AlertDialog(onDismissRequest = { deleting = false }, title = { Text("删除这份笔记？") }, text = { Text("“${note.title}”将移到回收站，可以恢复。") }, confirmButton = { TextButton(onClick = { if (vm.deleteNote(note.id)) { reader.close(); deleting = false } }, enabled = removable, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("删除笔记") } }, dismissButton = { TextButton(onClick = { deleting = false }) { Text("保留笔记") } })
+        if (deleting) AlertDialog(onDismissRequest = { deleting = false }, title = { Text("删除这份笔记？") }, text = { Text("“${note.title}”将移到回收站，可以恢复。") }, confirmButton = { TextButton(onClick = { if (vm.deleteNote(note.id)) { vm.closeNoteReader(); deleting = false } }, enabled = removable, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("删除笔记") } }, dismissButton = { TextButton(onClick = { deleting = false }) { Text("保留笔记") } })
         if (renaming) AlertDialog(onDismissRequest = { renaming = false }, title = { Text("重命名笔记") }, text = {
             OutlinedTextField(titleDraft, { titleDraft = it.take(120) }, label = { Text("笔记标题") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         }, confirmButton = { TextButton(onClick = { if (vm.renameNote(note.id, titleDraft)) renaming = false }, enabled = writable && titleDraft.isNotBlank()) { Text("保存标题") } }, dismissButton = { TextButton(onClick = { renaming = false }) { Text("取消") } })
+        val notePrimaryActions: @Composable (() -> Unit) -> Unit = { dismiss ->
+            ReadingActionGroup("编辑与标记")
+            if (!reader.editing) DropdownMenuItem(text = { Text("编辑笔记") }, enabled = writable, onClick = { dismiss(); reader.beginEditing(note) })
+            DropdownMenuItem(text = { Text("我的标记与备注") }, onClick = { dismiss(); remarks = true })
+        }
+        val noteActions: @Composable (() -> Unit) -> Unit = { dismiss ->
+            ReadingActionGroup("整理笔记")
+            ClassManagerMenuItem { dismiss() }
+            DropdownMenuItem(text = { Text("标签与复习") }, enabled = writable, onClick = { dismiss(); libraryPane = "details" })
+            DropdownMenuItem(text = { Text("关联笔记") }, enabled = !reader.editing || reader.draft == note.content, onClick = { dismiss(); libraryPane = "links" })
+            DropdownMenuItem(text = { Text("历史版本") }, onClick = { dismiss(); libraryPane = "history" })
+            DropdownMenuItem(text = { Text(if (note.pinned) "取消置顶" else "置顶笔记") }, enabled = !ui.locked, onClick = { dismiss(); vm.toggleNotePin(note.id) })
+            DropdownMenuItem(text = { Text("重命名笔记") }, enabled = writable, onClick = { dismiss(); titleDraft = note.title; renaming = true })
+            DropdownMenuItem(text = { Text("移动到分类") }, enabled = !ui.locked, onClick = { dismiss(); initialListAction = "move"; actionNoteId = note.id })
+            ReadingActionGroup("导出与讲解")
+            DropdownMenuItem(text = { Text("导出 Markdown") }, enabled = !ui.locked, onClick = {
+                dismiss()
+                val text = if (reader.editing) reader.draft else note.content
+                if (ui.data.downloadTreeUri.isNotBlank()) vm.exportNote(note, text) else { exportSnapshot = note to text; export.launch(downloadName(note.title, "md")) }
+            })
+            DropdownMenuItem(text = { Text("带入 AI 对话") }, enabled = !ui.locked && (!reader.editing || reader.draft == note.content), onClick = { dismiss(); vm.attachNote(note) })
+            DropdownMenuItem(text = { Text("AI 讲解并保存新笔记") }, enabled = !ui.locked && (!reader.editing || reader.draft == note.content), onClick = { dismiss(); vm.explainNote(note) })
+            DropdownMenuItem(text = { Text("导出 PDF") }, enabled = !ui.locked, onClick = { dismiss(); exportPdf(note.copy(content = if (reader.editing) reader.draft else note.content)) })
+            ReadingActionGroup("标记与资料")
+            DropdownMenuItem(text = { Text("标记说明") }, onClick = { dismiss(); markLegend = true })
+            DropdownMenuItem(text = { Text("来源与模型") }, onClick = { dismiss(); details = true })
+            HorizontalDivider()
+            DropdownMenuItem(text = { Text("按页删除内容…") }, enabled = removable && !reader.editing, onClick = { dismiss(); deletingPages = true })
+            DropdownMenuItem(text = { Text("删除整份笔记…") }, enabled = removable, onClick = { dismiss(); deleting = true })
+        }
         val actions: @Composable () -> Unit = {
-            Box {
-                if (reader.editing) IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreHoriz, "笔记选项", Modifier.size(22.dp)) }
-                if (menu) ReadingActionSheet("笔记选项", { menu = false }) {
-                    ReadingActionGroup("整理与编辑")
-                    ClassManagerMenuItem { menu = false }
-                    DropdownMenuItem(text = { Text("标签与复习") }, enabled = writable, onClick = { menu = false; libraryPane = "details" })
-                    DropdownMenuItem(text = { Text("关联笔记") }, enabled = !reader.editing || reader.draft == note.content, onClick = { menu = false; libraryPane = "links" })
-                    DropdownMenuItem(text = { Text("历史版本") }, onClick = { menu = false; libraryPane = "history" })
-                    DropdownMenuItem(text = { Text(if (note.pinned) "取消置顶" else "置顶笔记") }, enabled = !ui.locked, onClick = { menu = false; vm.toggleNotePin(note.id) })
-                    DropdownMenuItem(text = { Text("重命名笔记") }, enabled = writable, onClick = { menu = false; titleDraft = note.title; renaming = true })
-                    DropdownMenuItem(text = { Text("移动到分类") }, enabled = !ui.locked, onClick = { menu = false; initialListAction = "move"; actionNoteId = note.id })
-                    if (!reader.editing) DropdownMenuItem(text = { Text("编辑笔记") }, enabled = writable, onClick = { menu = false; reader.beginEditing(note) })
-                    ReadingActionGroup("导出与讲解")
-                    DropdownMenuItem(text = { Text("导出 Markdown") }, enabled = !ui.locked, onClick = {
-                        menu = false
-                        val text = if (reader.editing) reader.draft else note.content
-                        if (ui.data.downloadTreeUri.isNotBlank()) vm.exportNote(note, text) else { exportSnapshot = note to text; export.launch(downloadName(note.title, "md")) }
-                    })
-                    DropdownMenuItem(text = { Text("带入 AI 对话") }, enabled = !ui.locked && (!reader.editing || reader.draft == note.content), onClick = { menu = false; vm.attachNote(note) })
-                    DropdownMenuItem(text = { Text("AI 讲解并保存新笔记") }, enabled = !ui.locked && (!reader.editing || reader.draft == note.content), onClick = { menu = false; vm.explainNote(note) })
-                    DropdownMenuItem(text = { Text("导出 PDF") }, enabled = !ui.locked, onClick = { menu = false; exportPdf(note.copy(content = if (reader.editing) reader.draft else note.content)) })
-                    ReadingActionGroup("标记与资料")
-                    DropdownMenuItem(text = { Text("我的标记与备注") }, onClick = { menu = false; remarks = true })
-                    DropdownMenuItem(text = { Text("标记说明") }, onClick = { menu = false; markLegend = true })
-                    DropdownMenuItem(text = { Text("来源与模型") }, onClick = { menu = false; details = true })
-                    HorizontalDivider()
-                    DropdownMenuItem(text = { Text("按页删除内容…") }, enabled = removable && !reader.editing, onClick = { menu = false; deletingPages = true })
-                    DropdownMenuItem(text = { Text("删除整份笔记…") }, enabled = removable, onClick = { menu = false; deleting = true })
-                }
-            }
+            IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreHoriz, "笔记选项", Modifier.size(22.dp)) }
+            if (menu) ReadingActionSheet("笔记选项", { menu = false }) { notePrimaryActions { menu = false }; noteActions { menu = false } }
         }
         if (remarks) NoteRemarksDialog(note, vm) { remarks = false }
         if (libraryPane == "details") NotebookNoteDetails(note, ui, vm) { libraryPane = "" }
@@ -508,7 +511,6 @@ private fun preview(bytes: ByteArray): Bitmap? {
             Text("来源：${note.source}\n\n模型：${note.model}", Modifier.verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodyMedium)
         }, confirmButton = { TextButton(onClick = { details = false }) { Text("关闭") } })
         Column(Modifier.fillMaxSize().testTag("笔记阅读页").padding(horizontal = 20.dp, vertical = 8.dp)) {
-            if (!reader.editing) actions()
             val heading: @Composable () -> Unit = {
                 Text(note.title, style = MaterialTheme.typography.titleLarge)
                 OriginalNotePages(note, ui, vm)
@@ -516,7 +518,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             }
             if (reader.editing) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    if (inlineHeader) IconButton(onClick = { requestClose() }) { Icon(Icons.Default.ArrowBack, "返回笔记列表") }
+                    if (inlineHeader) IconButton(onClick = { requestClose() }) { Icon(Icons.Default.ArrowBack, backLabel) }
                     Text("编辑笔记", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
                     TextButton(onClick = { if (vm.editNote(note.id, reader.draft)) reader.editing = false }, enabled = writable) { Text("保存修改") }
                     actions()
@@ -527,7 +529,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                     NoteImageEditor(reader.draft, { reader.draft = it }, vm.sourceImages, writable, vm::notice)
                     NoteEditor(reader.draft, { reader.draft = it }, writable)
                 }
-            } else NoteReadingSelection(note, vm, Modifier.weight(1f)) { readingModifier -> NotebookReader(note, ui, vm, readingModifier, extraHeader = { OriginalNotePages(note, ui, vm); HorizontalDivider() }, onOptions = { menu = true }, onBack = { requestClose() }) }
+            } else NoteReadingSelection(note, vm, Modifier.weight(1f)) { readingModifier -> NotebookReader(note, ui, vm, readingModifier, extraHeader = { OriginalNotePages(note, ui, vm); HorizontalDivider() }, primaryTools = notePrimaryActions, extraTools = noteActions, backLabel = backLabel, onBack = { requestClose() }) }
         }
     } else libraryState.SaveableStateProvider("notebook-library") {
         NotebookLibraryScreen(ui, vm, onOpen = { reader.open(it); details = false }, onActions = { initialListAction = "options"; actionNoteId = it.id })
@@ -699,9 +701,13 @@ private fun preview(bytes: ByteArray): Bitmap? {
     val catalogKey = modelCatalogKey(provider())
     val catalogMatches = ui.modelListFor == current.id && ui.modelListRequest == catalogKey
     val hasCatalog = catalogMatches && ui.modelList.isNotEmpty()
-    LaunchedEffect(catalogKey) { chooseModel = false; requestedCatalog = "" }
-    LaunchedEffect(ui.busy, ui.modelListRequest, requestedCatalog) {
-        if (requestedCatalog == catalogKey && !ui.busy) {
+    val modelsActive = ui.tab == 3 && ui.settingsPage == "models"
+    DisposableEffect(modelsActive, catalogKey) {
+        chooseModel = false; requestedCatalog = ""
+        onDispose { chooseModel = false; requestedCatalog = "" }
+    }
+    LaunchedEffect(ui.busy, ui.modelListRequest, requestedCatalog, modelsActive) {
+        if (modelsActive && requestedCatalog.isNotEmpty() && requestedCatalog == catalogKey && !ui.busy) {
             if (hasCatalog) { manualModel = false; modelQuery = ""; chooseModel = true }
             requestedCatalog = ""
         }
@@ -718,7 +724,8 @@ private fun preview(bytes: ByteArray): Bitmap? {
         Text("模型配置", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(ui.data.providers, key = { it.id }) { p -> FilterChip(selected = adding == null && current.id == p.id, onClick = { adding = null; vm.selectProvider(p.id) }, label = { Text(p.name) }, enabled = !ui.locked) } }
         TextButton(onClick = { adding = Provider(name = "自定义模型"); showConfig = true }, enabled = !ui.locked) { Text("添加模型配置（API 接入）") }
-        if (!showConfig) TextButton(onClick = { showConfig = true }, enabled = !ui.locked) { Text("配置连接") }
+        Text("当前服务：${current.name}", style = MaterialTheme.typography.labelLarge)
+        TextButton(onClick = { showConfig = !showConfig }, enabled = !ui.locked) { Text(if (showConfig) "收起连接详情" else "配置连接") }
         if (showConfig) {
             OutlinedTextField(name, { name = it }, label = { Text("配置名称") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !ui.locked)
             if (usingChatGpt) {
@@ -730,7 +737,9 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 OutlinedTextField(base, { if (base != it) { base = it; model = "" } }, label = { Text("API Base URL") }, placeholder = { Text("填写模型服务商的 HTTPS 地址") }, singleLine = true, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), enabled = !ui.locked)
                 OutlinedTextField(key, { if (key != it) { key = it; model = "" } }, label = { Text("API Key") }, singleLine = true, visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(), trailingIcon = { IconButton(onClick = { visible = !visible }) { Icon(if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility, "切换密钥显示") } }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), enabled = !ui.locked)
             }
+        }
             OutlinedButton(onClick = { requestedCatalog = catalogKey; vm.testProvider(provider()) }, enabled = !ui.locked && (if (usingChatGpt) ui.data.providerReady(current) else key.isNotBlank() && base.isNotBlank()), unavailableReason = "请先填写 API 地址和密钥，或完成账号授权。", modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Refresh, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(if (hasCatalog) "刷新模型列表" else "读取可用模型") }
+            if (requestedCatalog.isNotEmpty()) TextButton(onClick = { requestedCatalog = ""; chooseModel = false }) { Text("取消自动打开模型列表") }
             if (manualModel && !usingChatGpt) {
                 OutlinedTextField(model, { model = it }, label = { Text("模型 ID") }, placeholder = { Text("按服务商接口文档填写") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !ui.locked)
             } else OutlinedButton(onClick = { modelQuery = ""; chooseModel = true }, enabled = !ui.locked && hasCatalog, unavailableReason = "请先读取可用模型，再从列表选择。", modifier = Modifier.fillMaxWidth()) {
@@ -741,10 +750,10 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 Icon(Icons.Default.ExpandMore, null, Modifier.size(20.dp))
             }
             if (!usingChatGpt) TextButton(onClick = { manualModel = !manualModel }, enabled = !ui.locked) { Text(if (manualModel) "返回列表选择" else "手动填写模型 ID") }
-            if (chooseModel && hasCatalog) ModalBottomSheet(onDismissRequest = { chooseModel = false }) {
+            if (chooseModel && hasCatalog) ModalBottomSheet(onDismissRequest = { chooseModel = false; requestedCatalog = "" }) {
                 Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("选择可用模型", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                    IconButton(onClick = { chooseModel = false }) { Icon(Icons.Default.Close, "关闭模型列表") }
+                    IconButton(onClick = { chooseModel = false; requestedCatalog = "" }) { Icon(Icons.Default.Close, "关闭模型列表") }
                 }
                 OutlinedTextField(modelQuery, { modelQuery = it }, label = { Text("搜索模型") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp))
                 val candidates = remember(ui.modelList, modelQuery, ui.modelNames) { ui.modelList.filter { it.contains(modelQuery, ignoreCase = true) || ui.modelNames[it]?.contains(modelQuery, ignoreCase = true) == true } }
@@ -762,8 +771,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { if (vm.saveProvider(provider())) adding = null }, enabled = !ui.locked && model.isNotBlank()) { Text("保存并使用") }
             }
-            if (adding != null) TextButton(onClick = { adding = null }) { Text("取消新增") } else TextButton(onClick = { vm.removeProvider(current.id) }, enabled = !ui.locked && ui.data.providers.size > 1) { Text("删除此配置") }
-        }
+            if (adding != null) TextButton(onClick = { adding = null }) { Text("取消新增") } else if (showConfig) TextButton(onClick = { vm.removeProvider(current.id) }, enabled = !ui.locked && ui.data.providers.size > 1) { Text("删除此配置") }
 
             }
             "notes" -> {
