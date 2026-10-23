@@ -66,12 +66,29 @@ class NotebookLibraryUiTest {
         advancedUiShot(compose.activity, name)
     }
 
+    private fun clickSettledChoice(node: SemanticsNodeInteraction) {
+        node.performScrollTo()
+        // IME insets run on the platform clock, independently of Compose's
+        // test clock. A tap at pre-resize coordinates can hit another row.
+        var previous = node.getUnclippedBoundsInRoot()
+        var stableSince = android.os.SystemClock.uptimeMillis()
+        compose.waitUntil(5000) {
+            val bounds = node.getUnclippedBoundsInRoot()
+            val now = android.os.SystemClock.uptimeMillis()
+            if (bounds != previous) { previous = bounds; stableSince = now }
+            now - stableSince >= 200
+        }
+        node.assertIsDisplayed().performClick()
+    }
+
     @Test fun metadataFiltersRelatedNotesAndTemplateDraftWorkWithoutChangingExistingBody() {
         render(Saved(notes = listOf(first, other)))
         compose.onNodeWithText("编辑属性").performClick()
         compose.onNodeWithText("标签，用逗号分隔").performTextReplacement("生物,考试")
-        compose.onNodeWithText("已掌握").performScrollTo().performClick()
-        compose.onNodeWithTag("关联选项 other").performScrollTo().performClick()
+        clickSettledChoice(compose.onNodeWithText("已掌握"))
+        compose.onNodeWithText("已掌握").assertIsSelected()
+        clickSettledChoice(compose.onNodeWithTag("关联选项 other"))
+        compose.onNodeWithTag("关联选项 other").assertIsOn()
         shot("笔记详情面板", "sample-notebook-details")
         compose.onNodeWithText("保存标签与复习").assertIsDisplayed().performClick()
         compose.runOnIdle {

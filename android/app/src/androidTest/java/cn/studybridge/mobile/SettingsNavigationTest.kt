@@ -45,6 +45,11 @@ class SettingsNavigationTest {
         compose.onNodeWithText(PROJECT_URL).assertIsDisplayed()
         compose.onNodeWithTag("项目地址").assertHasClickAction()
         advancedUiShot(compose.activity, "sample-settings-about")
+        compose.onNodeWithText("开源与许可").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(PROJECT_SOURCE_STATEMENT).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("使用风险与责任").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(PROJECT_RISK_STATEMENT).performScrollTo().assertIsDisplayed()
+        advancedUiShot(compose.activity, "sample-settings-risk-statement")
         compose.onNodeWithContentDescription("返回设置").performClick()
         compose.onNodeWithText("模型与账号").assertIsDisplayed()
         compose.runOnIdle { assertEquals("", vm.ui.value.settingsPage); store.clear() }

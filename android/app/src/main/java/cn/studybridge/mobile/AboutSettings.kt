@@ -14,6 +14,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
 const val PROJECT_URL = "https://github.com/ahdaolma/yuketang-mcp"
+const val PROJECT_SOURCE_STATEMENT = "本项目完全开源，原创代码采用 MIT 许可证，允许使用、修改、再分发与商业使用，但须保留版权及许可说明。许可证全文见项目仓库 LICENSE；第三方依赖遵循各自的许可证。"
+const val PROJECT_RISK_STATEMENT = "本软件按现状提供，不对服务持续可用、AI 内容准确性或特定用途作保证。在适用法律允许的范围内，开发者不对因使用本软件产生的损失承担责任；依法不能免除的责任不受本声明影响。"
 
 @Composable fun AboutSettings(onOpenProject: () -> Unit) {
     val context = LocalContext.current
@@ -44,8 +46,13 @@ const val PROJECT_URL = "https://github.com/ahdaolma/yuketang-mcp"
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("项目声明", style = MaterialTheme.typography.titleSmall)
                 Text("本项目独立开发，非雨课堂官方客户端。仅处理你本人有权访问的课程与资料。", style = MaterialTheme.typography.bodyMedium)
+                Text("开源与许可", style = MaterialTheme.typography.titleSmall)
+                Text(PROJECT_SOURCE_STATEMENT, style = MaterialTheme.typography.bodyMedium)
                 Text("AI 生成内容用于辅助学习，请结合原始课件核对。", style = MaterialTheme.typography.bodyMedium)
                 Text("登录凭据和模型密钥加密保存在本机；发送的课件与提问由你配置的模型服务处理。", style = MaterialTheme.typography.bodyMedium)
+                Text("使用风险与责任", style = MaterialTheme.typography.titleSmall)
+                Text(PROJECT_RISK_STATEMENT, style = MaterialTheme.typography.bodyMedium)
+                Text("请自行评估使用风险，妥善保管账号与密钥，备份重要笔记；遵守课程资料授权、学校及相关平台的使用规则。因违规使用产生的后果由使用者承担。", style = MaterialTheme.typography.bodyMedium)
             }
         }
     }
