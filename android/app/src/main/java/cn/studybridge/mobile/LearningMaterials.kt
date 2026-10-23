@@ -19,6 +19,7 @@ import cn.studybridge.mobile.FeedbackCard as Card
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 
 @Composable fun MaterialsButton(ui: UiState, vm: StudyViewModel) {
@@ -46,7 +47,7 @@ import androidx.compose.ui.unit.dp
             IconButton(onClick = vm::closeMaterials) { Icon(Icons.Outlined.Close, "关闭学习资料") }
         }
         if (ui.materialPane in listOf("pages", "rain")) SlidePageControls(ui.slides, focusedPage) { focusedPage = it }
-        LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth().heightIn(max = expandedListHeight(680.dp)), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth().heightIn(max = expandedListHeight(680.dp)).testTag("学习资料列表"), contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             if (ui.busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()); Row { Text(ui.operation, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); TextButton(onClick = vm::stop) { Text("停止") } } }
             if (ui.notice.isNotBlank()) item { Text(ui.notice, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
             if (ui.materialPane == "home") {

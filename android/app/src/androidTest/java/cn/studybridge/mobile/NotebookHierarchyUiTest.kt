@@ -36,6 +36,9 @@ class NotebookHierarchyUiTest {
         try {
             compose.waitUntil(5000) { vm.ui.value.ready }
             compose.runOnIdle { vm.tab(2) }
+            compose.waitUntil(5000) {
+                androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars()) == false
+            }
             block(app, vm)
         } finally { InstrumentationRegistry.getInstrumentation().runOnMainSync { store.clear() } }
     }
@@ -46,7 +49,9 @@ class NotebookHierarchyUiTest {
         compose.onNodeWithTag("当前笔记本").performClick()
         if (id == "dna") compose.onNodeWithContentDescription("展开笔记本 遗传学").performClick()
         if (id == "words") compose.onNodeWithContentDescription("展开笔记本 英语").performClick()
-        compose.onNodeWithTag("选择分类 $id").performScrollTo().performClick()
+        compose.onNodeWithTag("笔记本选择列表").performScrollToNode(hasTestTag("选择分类 $id"))
+        compose.onNodeWithTag("选择分类 $id").performClick()
+        compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记本面板").fetchSemanticsNodes().isEmpty() }
     }
     @Test fun rootSectionFiltersBatchMoveAndReaderReturnPreserveOrganization() = library { app, vm ->
         chooseFolder("bio")

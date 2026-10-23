@@ -115,8 +115,26 @@ class PreviewNavigationTest {
         compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("目录跳转").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithContentDescription("目录跳转").performClick()
         compose.onNode(hasSetTextAction()).performTextInput("第 8 页")
-        compose.onNodeWithText("2. 第 8 页").performClick()
-        compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("第 8 页原图 缩略图").fetchSemanticsNodes().isNotEmpty() }
+        val destination = compose.onNodeWithText("2. 第 8 页")
+        destination.performScrollTo()
+        // The platform IME can still resize the sheet after Compose is idle.
+        // Tap the physical row only once its window position has settled.
+        var previous = destination.getUnclippedBoundsInRoot()
+        var stableSince = android.os.SystemClock.uptimeMillis()
+        compose.waitUntil(5000) {
+            val bounds = destination.getUnclippedBoundsInRoot()
+            val now = android.os.SystemClock.uptimeMillis()
+            if (bounds != previous) { previous = bounds; stableSince = now }
+            now - stableSince >= 200
+        }
+        destination.assertIsDisplayed().performClick()
+        try {
+            compose.waitUntil(5000) { compose.onAllNodesWithText("取消跳转").fetchSemanticsNodes().isEmpty() }
+            compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("第 8 页原图 缩略图").fetchSemanticsNodes().isNotEmpty() }
+        } catch (error: Throwable) {
+            advancedUiShot(compose.activity, "preview-directory-failure")
+            throw AssertionError("Directory jump failed: ${compose.onAllNodes(isRoot()).printToString(maxDepth = 14)}", error)
+        }
         compose.onNodeWithContentDescription("第 8 页原图 缩略图").assertIsDisplayed()
         compose.onNodeWithContentDescription("阅读跳转").performClick()
         compose.onNodeWithText("本段底部").performClick()

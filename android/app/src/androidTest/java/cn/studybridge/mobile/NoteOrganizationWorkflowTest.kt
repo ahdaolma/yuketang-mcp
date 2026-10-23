@@ -75,10 +75,10 @@ class NoteOrganizationWorkflowTest {
             listOf("编辑笔记", "重命名笔记", "取消置顶", "移动到分类", "删除笔记…").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
             shot("sample-note-longpress")
             compose.onNodeWithText("移动到分类").performClick()
-            compose.onNodeWithText("遗传学").performClick()
+            compose.onNodeWithTag("选择分类 ${vm.ui.value.data.noteFolders.single().id}").performClick()
             compose.waitUntil(5000) { vm.ui.value.data.notes.single { it.id == first.id }.folderId.isNotEmpty() }
             compose.onNodeWithTag("当前笔记本").performClick()
-            compose.onNodeWithText("遗传学").performClick()
+            compose.onNodeWithTag("选择分类 ${vm.ui.value.data.noteFolders.single().id}").performClick()
             compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记卡片 untouched").fetchSemanticsNodes().isEmpty() }
             assertEquals(first.copy(folderId = vm.ui.value.data.noteFolders.single().id), vm.ui.value.data.notes.single { it.id == first.id })
             compose.waitUntil(5000) { vault.load().noteFolders.singleOrNull()?.name == "遗传学" && vault.load().notes.single { it.id == first.id }.folderId.isNotEmpty() }

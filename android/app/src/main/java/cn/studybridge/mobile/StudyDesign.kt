@@ -84,17 +84,28 @@ private object SilentHapticFeedback : HapticFeedback {
     val regular = TextStyle(letterSpacing = 0.sp)
     val activity = androidx.activity.compose.LocalActivity.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(activity, lifecycle) {
+    val windowView = LocalView.current
+    val windowConfig = LocalConfiguration.current
+    DisposableEffect(activity, lifecycle, windowView, windowConfig.screenWidthDp, windowConfig.screenHeightDp, windowConfig.densityDpi) {
         fun hideStatusBar() { activity?.window?.let { window ->
             WindowCompat.getInsetsController(window, window.decorView).apply {
                 systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 hide(WindowInsetsCompat.Type.statusBars())
             }
         } }
-        hideStatusBar()
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) hideStatusBar() }
+        val hide = Runnable { hideStatusBar() }
+        // Window attachment/focus and tablet resizing can restore system bars
+        // after the initial composition. Reapply once the window is ready.
+        windowView.post(hide)
+        val focus = android.view.ViewTreeObserver.OnWindowFocusChangeListener { focused -> if (focused) windowView.post(hide) }
+        windowView.viewTreeObserver.addOnWindowFocusChangeListener(focus)
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) windowView.post(hide) }
         lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer) }
+        onDispose {
+            lifecycle.removeObserver(observer)
+            windowView.removeCallbacks(hide)
+            if (windowView.viewTreeObserver.isAlive) windowView.viewTreeObserver.removeOnWindowFocusChangeListener(focus)
+        }
     }
     SideEffect {
         activity?.window?.let { window ->

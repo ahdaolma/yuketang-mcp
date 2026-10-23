@@ -32,7 +32,7 @@ import cn.studybridge.mobile.FeedbackTextButton as TextButton
             Text("课件排列", Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
             TextButton(onClick = { open = false }) { Text("关闭排列") }
         }
-        LazyColumn(Modifier.fillMaxWidth().heightIn(max = expandedListHeight(420.dp)), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(Modifier.fillMaxWidth().heightIn(max = expandedListHeight(420.dp)).testTag("课件排列列表"), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(CourseOrder.entries) { choice ->
                 Card(onClick = { onOrder(choice); open = false }, modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = if (choice == order) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer)) {
                     Text((if (choice == order) "已选：" else "") + choice.label, Modifier.padding(16.dp))

@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.Density
@@ -23,6 +24,16 @@ class CourseLibraryUiTest {
     private fun prepare(ui: UiState) {
         compose.activityRule.scenario.onActivity { vm = ViewModelProvider(it)[StudyViewModel::class.java] }
         kotlinx.coroutines.runBlocking { ui.presentations.forEach { p -> vm.previews.load(vm.deckPreviewKey(ui, p)) { Attachment(syntheticSlideImage(), p.title, "") } } }
+    }
+    private fun diagnostic(name: String, block: () -> Unit) {
+        try { block() } catch (failure: Throwable) {
+            runCatching {
+                val roots = compose.onAllNodes(isRoot(), useUnmergedTree = true)
+                roots.fetchSemanticsNodes().indices.forEach { index -> android.util.Log.e("CourseLibraryUiTest", roots[index].printToString()) }
+            }
+            runCatching { advancedUiShot(compose.activity, "courseware-failure-$name") }
+            throw failure
+        }
     }
     @Test fun bothSurfacesUseSameSelectionScopeAndHonestLabels() {
         val fixture = fixture()
@@ -49,7 +60,7 @@ class CourseLibraryUiTest {
         compose.onNodeWithText("排列：按老师分组").performScrollTo().assertIsDisplayed()
         compose.onNodeWithContentDescription("关闭学习资料").assertIsDisplayed()
     }
-    @Test fun largeFontKeepsLastBatchAndFixedSheetCloseReachable() {
+    @Test fun largeFontKeepsLastBatchAndFixedSheetCloseReachable() = diagnostic("large-font") {
         val ui = fixture().copy(materialsOpen = true, materialPane = "rain")
         prepare(ui)
         compose.setContent {
@@ -58,31 +69,37 @@ class CourseLibraryUiTest {
                 StudyTheme(false) { Box(Modifier.widthIn(max = 340.dp).fillMaxHeight()) { LearningMaterialsHost(ui, vm) } }
             }
         }
-        compose.onNodeWithText("下一批").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("学习资料列表").performScrollToNode(hasText("下一批"))
+        compose.onNodeWithText("下一批").assertIsDisplayed()
         compose.onNodeWithContentDescription("关闭学习资料").assertIsDisplayed()
-        compose.onNodeWithTag("课件排序").performScrollTo().performClick()
-        compose.onNodeWithText("按老师分组").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("学习资料列表").performScrollToNode(hasTestTag("课件排序"))
+        compose.onNodeWithTag("课件排序").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("课件排列列表").performScrollToNode(hasText("按老师分组"))
+        compose.onNodeWithText("按老师分组").assertIsDisplayed()
         compose.onNodeWithText("关闭排列").assertIsDisplayed().performClick()
         compose.onNodeWithText("关闭排列").assertDoesNotExist()
     }
-    @Test fun splitWidthUsesSingleColumnWithoutClippingMetadataOrLastRow() {
+    @Test fun splitWidthUsesSingleColumnWithoutClippingMetadataOrLastRow() = diagnostic("split-width") {
         val ui = fixture()
         prepare(ui)
         compose.setContent {
             val density = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(density.density, 2f)) {
                 StudyTheme(false) {
-                    Box(Modifier.width(340.dp).fillMaxHeight()) {
-                        androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize()) { courseLibraryItems(ui, vm, courseLibraryColumns(340f, 2f)) }
+                    Box(Modifier.width(340.dp).fillMaxHeight().testTag("分屏课件容器")) {
+                        androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize().testTag("分屏课件列表")) { courseLibraryItems(ui, vm, courseLibraryColumns(340f, 2f)) }
                     }
                 }
             }
         }
         compose.onNodeWithText("最新课件").assertIsDisplayed()
+        val container = compose.onNodeWithTag("分屏课件容器").getUnclippedBoundsInRoot()
+        assertEquals("Fixture must constrain the actual content width", 340f, (container.right - container.left).value, 1f)
         val bounds = compose.onNodeWithText("创建时间：2026-10-21 08:00:02", substring = true).getUnclippedBoundsInRoot()
-        assertTrue(bounds.right <= 340.dp)
-        assertTrue(bounds.left >= 0.dp)
-        compose.onNodeWithText("下一批").performScrollTo().assertIsDisplayed()
+        assertTrue("Metadata right $bounds must remain inside actual container $container", bounds.right <= container.right)
+        assertTrue("Metadata left $bounds must remain inside actual container $container", bounds.left >= container.left)
+        compose.onNodeWithTag("分屏课件列表").performScrollToNode(hasText("下一批"))
+        compose.onNodeWithText("下一批").assertIsDisplayed()
     }
     @Test fun teacherHeadingsRetainFullNamesAndMissingTeachers() {
         val ui = fixture().copy(course = null, courseOrder = CourseOrder.TEACHER, presentations = emptyList(), courses = listOf(Course("1", "遗传学", teacher = "王 · 老师"), Course("2", "生物化学")))

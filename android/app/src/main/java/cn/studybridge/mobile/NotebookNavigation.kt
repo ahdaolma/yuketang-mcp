@@ -46,7 +46,7 @@ import androidx.compose.ui.unit.dp
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     StudyChoiceRow({ onSelect(root.id) }, Modifier.weight(1f).testTag("选择分类 ${root.id}"), selected = selected == root.id) {
                         Icon(Icons.Outlined.MenuBook, null); Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) { Text(root.name, maxLines = 2, overflow = TextOverflow.Ellipsis); Text("${data.folderNoteCount(root.id)} 份 · ${children.size} 个章节", style = MaterialTheme.typography.bodySmall) }
+                        Column(Modifier.weight(1f)) { Text(root.name, maxLines = 2, overflow = TextOverflow.Ellipsis); Text("${data.folderNoteCount(root.id)} 份 · ${children.size} 章", style = MaterialTheme.typography.bodySmall) }
                     }
                     if (children.isNotEmpty()) FeedbackIconButton(onClick = { onExpand(root.id) }) { Icon(if (open) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, "${if (open) "收起" else "展开"}笔记本 ${root.name}") }
                 }
@@ -66,7 +66,7 @@ import androidx.compose.ui.unit.dp
     var expanded by remember { mutableStateOf(emptySet<String>()) }
     NotebookPanel(title, onClose) {
         OutlinedTextField(query, { query = it.take(120) }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), singleLine = true, label = { Text("搜索笔记本或章节") }, leadingIcon = { Icon(Icons.Outlined.Search, null) })
-        NotebookTree(data, selected, query, expanded, { expanded = if (it in expanded) expanded - it else expanded + it }, allowAll, onSelect, Modifier.weight(1f, fill = false).fillMaxWidth())
+        NotebookTree(data, selected, query, expanded, { expanded = if (it in expanded) expanded - it else expanded + it }, allowAll, onSelect, Modifier.weight(1f, fill = false).fillMaxWidth().testTag("笔记本选择列表"))
     }
 }
 
