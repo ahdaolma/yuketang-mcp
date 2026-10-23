@@ -56,7 +56,7 @@ import androidx.compose.ui.unit.dp
                 item { StudySectionLabel("选择资料") }
                 item { MaterialRow("雨课堂课件", "选择课程、查看原名与时间，下载或讲解", !ui.locked, vm::browseRainMaterials) }
                 item { MaterialRow("本机资料", "${ui.data.materials.size} 份已导入文件", !ui.locked, { vm.materialPane("files") }) }
-                item { MaterialRow("已有笔记", "点击笔记直接生成讲解并保存；原笔记保留", !ui.locked, { vm.materialPane("notes") }) }
+                item { MaterialRow("已有笔记", "把原笔记带入对话，继续提问或修改", !ui.locked, { vm.materialPane("notes") }) }
                 item { StudySectionLabel("导入资料") }
                 item { FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) { OutlinedButton(onClick = { launchImport("courseware") }, enabled = !ui.locked) { Text("导入课件") }; OutlinedButton(onClick = { launchImport("notes") }, enabled = !ui.locked) { Text("导入笔记") } } }
                 item { Text("支持 PDF、PPTX、图片、DOCX、Markdown、TXT。PPTX/DOCX 提取文字和图片；复杂版式建议转为 PDF。每份最多 50 MB。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -67,7 +67,7 @@ import androidx.compose.ui.unit.dp
             }
             if (ui.materialPane == "notes") {
                 if (ui.data.notes.isEmpty()) item { Text("还没有笔记，可先导入笔记或保存 AI 讲解。") }
-                items(ui.data.notes, key = { it.id }) { n -> MaterialRow(n.title, "笔记 · ${readableTime(n.createdAt)}", !ui.locked, { vm.explainNote(n) }) }
+                items(ui.data.notes, key = { it.id }) { n -> MaterialRow(n.title, "笔记 · ${readableTime(n.createdAt)}", !ui.locked, { vm.attachNote(n) }) { MaterialNoteActions(n, ui, vm) } }
             }
             if (ui.materialPane == "rain") {
                 if (ui.presentationId.isBlank()) {
@@ -121,6 +121,14 @@ private fun materialLocation(ui: UiState): String = when (ui.materialPane) {
     "rain" -> listOfNotNull("雨课堂", ui.course?.title, ui.lesson?.title, ui.slideTitle.takeIf { ui.presentationId.isNotBlank() }).joinToString(" › ")
     "pages" -> "本机资料 › ${ui.slideTitle}"
     "files" -> "本机资料"
-    "notes" -> "已有笔记 · 选择后直接讲解并保存"
+    "notes" -> "已有笔记 · 选择原笔记带入对话"
     else -> "学习资料"
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable private fun MaterialNoteActions(note: Note, ui: UiState, vm: StudyViewModel) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = { vm.attachNote(note) }, enabled = !ui.locked) { Text("带入对话") }
+        OutlinedButton(onClick = { vm.explainNote(note) }, enabled = !ui.locked) { Text("讲解并保存新笔记") }
+    }
 }

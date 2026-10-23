@@ -84,7 +84,7 @@ class ResponsiveReadingTest {
         compose.waitUntil(5000) { androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars()) == false }
         compose.onNodeWithContentDescription("悬浮阅读工具").assertIsDisplayed().performClick()
         compose.onNodeWithTag("应用底部导航").assertIsDisplayed()
-        listOf("学习资料", "新对话", "生成笔记", "消息跳转", "设置", "课程").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
+        listOf("学习资料", "新对话", "对话笔记", "消息跳转", "设置", "课程").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
         shot("sample-chat-reading-narrow-bars", system = true)
         compose.onNodeWithContentDescription("消息跳转").performClick()
         compose.onNodeWithText("跳转消息").performClick()
@@ -121,7 +121,7 @@ class ResponsiveReadingTest {
     }
     @Test fun narrowLargeTextKeepsToolsReachableAndReferenceCanExpandWithoutChangingStoredText() {
         val state = mutableStateOf(sample()); render(state, width = 320, scale = 1.5f, dark = true)
-        listOf("学习资料", "新对话", "生成笔记", "消息跳转").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed() }
+        listOf("学习资料", "新对话", "对话笔记", "消息跳转").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed() }
         compose.onNodeWithContentDescription("消息跳转").performClick()
         compose.onNodeWithText("顶部").performClick()
         compose.onNodeWithText("展开原文").assertIsDisplayed()
@@ -141,7 +141,7 @@ class ResponsiveReadingTest {
             val body = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
             val screen = compose.onRoot().getUnclippedBoundsInRoot()
             assertTrue("Landscape body must keep most height", (body.bottom - body.top).value >= (screen.bottom - screen.top).value * 0.55f)
-            listOf("学习", "课程", "笔记", "学习资料", "新对话", "生成笔记", "消息跳转", "设置").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
+            listOf("学习", "课程", "笔记", "学习资料", "新对话", "对话笔记", "消息跳转", "设置").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
             shot("sample-chat-landscape")
             compose.runOnIdle { state.value = state.value.copy(pending = Attachment(null, "DNA 结构课件 · 第 1 页", "合成附件"), data = state.value.data.copy(providers = listOf(Provider(chatgptAccountId = "fixture-only")))) }
             compose.onNode(hasSetTextAction()).performTextInput("解释复制")
@@ -152,15 +152,15 @@ class ResponsiveReadingTest {
             shot("sample-chat-landscape-typing", system = true)
             compose.onNodeWithContentDescription("发送给所选模型").assertIsDisplayed().assertIsEnabled()
             compose.onNodeWithContentDescription("悬浮阅读工具").assertIsDisplayed().performClick()
-            listOf("学习", "课程", "笔记", "学习资料", "新对话", "生成笔记", "消息跳转", "设置").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
+            listOf("学习", "课程", "笔记", "学习资料", "新对话", "对话笔记", "消息跳转", "设置").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
             shot("sample-chat-floating-tools", system = true)
             compose.onNodeWithContentDescription("收起悬浮工具").performClick()
             val typingBody = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
             assertTrue("Landscape composer must leave a usable scroll viewport", (typingBody.bottom - typingBody.top).value > 48f)
             compose.onNodeWithContentDescription("附件与用量").performClick()
-            listOf("DNA 结构课件 · 第 1 页", "移除课件附件", "管理 ChatGPT 用量").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
-            compose.onNodeWithText("DNA 结构课件 · 第 1 页").performClick()
-            compose.onNode(hasSetTextAction()).assertTextEquals("解释复制")
+            listOf("DNA 结构课件 · 第 1 页", "移除课件附件", "管理 ChatGPT 用量").forEach { compose.onNodeWithText(it).performScrollTo().assertIsDisplayed() }
+            compose.onNodeWithText("DNA 结构课件 · 第 1 页").performScrollTo().performClick()
+            compose.onNode(hasSetTextAction()).assertChatDraftEquals("解释复制")
             compose.runOnIdle { state.value = state.value.copy(busy = true, operation = "合成生成测试") }
             compose.onNodeWithTag("应用顶部栏").assertDoesNotExist()
             if (compose.onAllNodesWithContentDescription("停止生成").fetchSemanticsNodes().isEmpty()) compose.onNodeWithContentDescription("悬浮阅读工具").performClick()
@@ -176,7 +176,7 @@ class ResponsiveReadingTest {
             compose.onNode(hasSetTextAction()).performClick()
             compose.onNode(hasSetTextAction()).performTextReplacement(longDraft)
             compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("悬浮阅读工具").fetchSemanticsNodes().isNotEmpty() }
-            compose.onNode(hasSetTextAction()).assertTextEquals(longDraft)
+            compose.onNode(hasSetTextAction()).assertChatDraftEquals(longDraft)
             compose.onNodeWithContentDescription("发送给所选模型").assertIsDisplayed().assertIsEnabled()
             val longDraftBody = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
             assertTrue("Long drafts must not consume the landscape viewport", (longDraftBody.bottom - longDraftBody.top).value > 48f)
@@ -192,7 +192,7 @@ class ResponsiveReadingTest {
             }
             compose.waitForIdle()
             compose.onNodeWithContentDescription("消息跳转").assertIsDisplayed().assertIsEnabled()
-            compose.onNode(hasSetTextAction()).assertTextEquals(longDraft)
+            compose.onNode(hasSetTextAction()).assertChatDraftEquals(longDraft)
             val restoredBody = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
             assertTrue("Closing the keyboard must restore the reading viewport", (restoredBody.bottom - restoredBody.top).value >= (screen.bottom - screen.top).value * 0.5f)
             shot("sample-chat-landscape-restored", system = true)

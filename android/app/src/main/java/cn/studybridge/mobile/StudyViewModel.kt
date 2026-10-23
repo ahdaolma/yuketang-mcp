@@ -317,13 +317,16 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         if (!s.data.providerReady(p) || p.model.isBlank()) { notice("请先在设置使用 ChatGPT 登录并选择模型，或填写其他服务的 API 配置。") ; tab(3); return false }
         if (!p.images && (a?.image != null || c.messages.any { it.image != null })) { notice("此对话包含课件图片，请选择并开启支持图片的模型，或新建纯文字对话。") ; return false }
         val user = Message("user", text + (a?.text?.takeIf { it.isNotBlank() }?.let { "\n\n课件原文：\n$it" } ?: ""), a?.image, a?.label)
-        val history = c.messages.takeLast(24) + user
+        val history = chatTranscriptMessages(c.messages).takeLast(24) + user
         updateChat(c.id) { it.copy(messages = it.messages + user + Message("assistant", "")).withAutomaticTitle() }
         state.update { it.copy(pending = null, chatDrafts = it.chatDrafts - c.id) }
         persist()
         operation("正在回答") {
             try {
-                ai.stream(authorizedProvider(p), tutorMessages(s.data.tutorPrompt, history, "本次上下文包含 ${history.count { it.image != null || it.source != null }} 条带课件图片或来源的消息。上课模式${if (s.classUi.running && !s.classUi.paused) "已开启" else "未运行或已暂停"}。读取动作由用户在应用界面触发，模型当前没有操作工具。", s.data.learnerProfile)) { chunk ->
+                val notebook = withContext(Dispatchers.Default) { chatNotebookContext(s.data, text, a?.noteId.orEmpty(), c.messages) }
+                updateChat(c.id) { chat -> chat.copy(messages = chat.messages.dropLast(1) + chat.messages.last().copy(noteRefs = notebook.references)) }
+                val input = if (notebook.text.isBlank()) history else history.dropLast(1) + Message("user", notebook.text) + history.last()
+                ai.stream(authorizedProvider(p), tutorMessages(s.data.tutorPrompt, input, "本次上下文包含 ${history.count { it.image != null || it.source != null }} 条带课件图片或来源的消息，实际检索了 ${notebook.references.size} 份本机已保存笔记。上课模式${if (s.classUi.running && !s.classUi.paused) "已开启" else "未运行或已暂停"}。", s.data.learnerProfile)) { chunk ->
                     updateChat(c.id) { chat -> chat.copy(messages = chat.messages.dropLast(1) + chat.messages.last().copy(text = chat.messages.last().text + chunk)) }
                 }
             } catch (e: Exception) {
@@ -419,7 +422,62 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
             if (s.data.autoNotes) generateNote(a, s.data)
         }
     }
-    fun notes() = operation("整理学习笔记") { generateNote(state.value.pending) }
+    fun attachNote(note: Note) {
+        if (state.value.locked || state.value.data.notes.none { it.id == note.id }) return
+        val current = state.value.data.notes.first { it.id == note.id }
+        closeMaterials()
+        state.update { it.copy(pending = Attachment(null, current.title, "", noteId = current.id), tab = 0, notice = "已选择原笔记；提问时将读取最新已保存内容。") }
+    }
+    fun openChatNote(id: String, edit: Boolean = false): Boolean {
+        if (state.value.locked) return false
+        val note = state.value.data.notes.find { it.id == id } ?: run { notice("这份笔记已删除或暂不可用。"); return false }
+        val open = state.value.data.notes.find { it.id == noteReader.id }
+        if (noteReader.id != id && noteReader.editing && noteReader.draft != open?.content) {
+            tab(2); notice("请先保存或取消当前笔记的修改，再打开另一份笔记。"); return false
+        }
+        if (edit && !state.value.data.noteWritable(id)) { notice("课堂正在写入此笔记，请暂停并结束整理后再编辑。"); return false }
+        if (noteReader.id != id) noteReader.open(note)
+        if (edit) noteReader.beginEditing(note)
+        closeMaterials(); tab(2)
+        return true
+    }
+    private suspend fun appendSavedNoteResult(chatId: String, note: Note, label: String) {
+        val ref = withContext(Dispatchers.Default) { chatNoteReference(note) }
+        checkpoint { saved -> saved.copy(conversations = saved.conversations.map { chat ->
+            if (chat.id == chatId) {
+                val named = chat.withAutomaticTitle()
+                val title = if (named.title == "新对话") note.title.replace(Regex("\\s+"), " ").trim().take(24).ifBlank { named.title } else named.title
+                named.copy(title = title, messages = chat.messages + Message("assistant", label, noteRefs = listOf(ref), kind = "note_result"))
+            } else chat
+        }) }
+    }
+    fun saveChatAsNote() {
+        val s = state.value
+        val chat = s.data.chat()
+        val input = chatTranscriptMessages(chat.messages)
+        if (s.locked || storageBlocked) return
+        if (input.isEmpty()) { notice("先进行对话，再保存原文。"); return }
+        operation("保存对话原文") {
+            val content = withContext(Dispatchers.IO) {
+                input.joinToString("\n\n") { message ->
+                    "## ${if (message.role == "user") "我" else "AI"}\n\n" + message.text +
+                        (message.source?.takeIf { it.isNotBlank() }?.let { "\n\n来源：$it" } ?: "") +
+                        (message.image?.let { sourceImageMarkdown(sourceImages.save(it), message.source ?: "对话中的资料") } ?: "")
+                }
+            }
+            val note = Note(title = chat.title, content = content, source = "对话原文：${chat.title}", model = "对话原文（未调用 AI）")
+            checkpoint { it.copy(notes = listOf(note) + it.notes) }
+            appendSavedNoteResult(chat.id, note, "对话原文已保存")
+            notice("对话原文已保存，可查看或编辑原笔记。")
+        }
+    }
+    fun notes() {
+        val snapshot = state.value
+        operation("整理学习笔记") {
+            val note = generateNote(snapshot.pending, snapshot.data)
+            appendSavedNoteResult(snapshot.data.chat().id, note, "AI 整理的笔记已保存")
+        }
+    }
     fun batchValidation(pages: List<Slide>): String? = batchNoteValidation(state.value.data, pages)
     fun batchAllNotes() {
         val s = state.value
@@ -463,15 +521,25 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
     }
     private suspend fun generateNote(a: Attachment?, request: Saved = state.value.data): Note {
         val s = request; val p = s.provider()
-        val input = a?.let { listOf(Message("user", it.text.ifBlank { "请根据课件图片整理笔记。" }, it.image, it.label)) } ?: s.chat().messages.takeLast(24)
+        val input = a?.let {
+            val attached = if (it.noteId.isBlank()) null else s.notes.find { note -> note.id == it.noteId }
+            require(it.noteId.isBlank() || attached != null) { "选择的笔记已删除或不可用，请重新选择。" }
+            val body = attached?.let { note -> withContext(Dispatchers.Default) { chatNoteReference(note).snapshot } } ?: it.text.ifBlank { "请根据课件图片整理笔记。" }
+            listOf(Message("user", body, it.image, it.label))
+        } ?: chatTranscriptMessages(s.chat().messages).takeLast(24)
         require(input.isNotEmpty()) { "先选择课件页面或进行对话，再整理笔记。" }
-        val source = a?.label ?: "对话：${s.chat().title}"
+        val selectedTitle = a?.takeIf { it.noteId.isNotBlank() }?.let { attachment -> s.notes.find { it.id == attachment.noteId }?.title } ?: a?.label
+        val source = selectedTitle ?: "对话：${s.chat().title}"
         val text = StringBuilder()
         state.update { it.copy(operation = "自动整理笔记", noteDraft = "正在阅读资料…") }
-        ai.stream(authorizedProvider(p), noteMessages(s.notesPrompt, input, source, s.learnerProfile, s.superFocusNotes)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
+        val notebook = if (a == null || a.noteId.isNotBlank()) withContext(Dispatchers.Default) {
+            chatNotebookContext(s, input.lastOrNull { it.role == "user" }?.text.orEmpty(), a?.noteId.orEmpty())
+        } else ChatNotebookContext()
+        val contextualInput = (if (notebook.text.isBlank()) emptyList() else listOf(Message("user", notebook.text))) + input
+        ai.stream(authorizedProvider(p), noteMessages(s.notesPrompt, contextualInput, source, s.learnerProfile, s.superFocusNotes)) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
         require(text.isNotBlank()) { "模型未生成笔记。" }
         val illustrations = if (a != null) sourceImageMarkdown(a.imageRef, a.label) else withContext(Dispatchers.IO) { input.filter { it.image != null }.distinctBy { it.image }.joinToString("") { sourceImageMarkdown(sourceImages.save(it.image!!), it.source ?: "对话中的资料") } }
-        val note = Note(title = a?.label ?: s.chat().title, content = illustrations + text.toString(), source = source, model = "${p.name} / ${p.model}")
+        val note = Note(title = selectedTitle ?: s.chat().title, content = illustrations + text.toString(), source = source, model = "${p.name} / ${p.model}")
         checkpoint { it.copy(notes = listOf(note) + it.notes) }
         notice("笔记已保存，可在笔记页编辑和导出。")
         return note
@@ -528,7 +596,8 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         closeMaterials()
         state.update { it.copy(tab = 0, pending = null) }
         val note = generateNote(a, s.data)
-        checkpoint { d -> d.copy(conversations = d.conversations.map { c -> if (c.id == s.data.chat().id) c.copy(messages = c.messages + Message("user", a.text, a.image, a.label) + Message("assistant", note.content)).withAutomaticTitle() else c }) }
+        val ref = withContext(Dispatchers.Default) { chatNoteReference(note) }
+        checkpoint { d -> d.copy(conversations = d.conversations.map { c -> if (c.id == s.data.chat().id) c.copy(messages = c.messages + Message("user", a.text, a.image, a.label) + Message("assistant", note.content, noteRefs = listOf(ref))).withAutomaticTitle() else c }) }
     }
     fun explainNote(note: Note) {
         val s = state.value

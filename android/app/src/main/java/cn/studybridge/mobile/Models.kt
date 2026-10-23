@@ -6,7 +6,8 @@ import java.util.UUID
 
 fun newId() = UUID.randomUUID().toString()
 data class Provider(val id: String = newId(), val name: String = "模型配置", val baseUrl: String = "", val key: String = "", val model: String = "", val images: Boolean = false, val protocol: String = "chat", val chatgptAccountId: String = "")
-data class Message(val role: String, val text: String, val image: String? = null, val source: String? = null)
+data class ChatNoteReference(val noteId: String, val title: String, val hash: String, val snapshot: String, val complete: Boolean)
+data class Message(val role: String, val text: String, val image: String? = null, val source: String? = null, val noteRefs: List<ChatNoteReference> = emptyList(), val kind: String = "")
 data class Conversation(val id: String = newId(), val title: String = "新对话", val messages: List<Message> = emptyList())
 data class Note(val id: String = newId(), val title: String, val content: String, val source: String, val model: String, val createdAt: Long = System.currentTimeMillis(), val materialId: String = "", val pinned: Boolean = false, val folderId: String = "", val classNotebook: ClassNotebookBinding? = null, val annotations: List<NoteAnnotation> = emptyList(), val tags: List<String> = emptyList(), val reviewState: String = "unreviewed", val relatedNoteIds: List<String> = emptyList())
 data class Saved(val providers: List<Provider> = listOf(Provider()), val selectedProvider: String = "", val conversations: List<Conversation> = listOf(Conversation()), val currentChat: String = "", val notes: List<Note> = emptyList(), val autoNotes: Boolean = false, val region: String = "standard", val session: String = "", val username: String = "", val tutorPrompt: String = TUTOR_PROMPT, val notesPrompt: String = NOTES_PROMPT, val sessionVerified: Boolean = false, val classRun: ClassRun? = null, val chatgptAccounts: List<ChatGptAccount> = emptyList(), val chatgptHostId: String = "", val chatgptDraftClients: List<String> = emptyList(), val chatgptWelcomeShown: Boolean = false, val learnerProfile: String = "", val materials: List<StudyMaterial> = emptyList(), val downloadTreeUri: String = "", val downloadDirectoryName: String = "", val noteFolders: List<NoteFolder> = emptyList(), val noteDrafts: List<NoteDraft> = emptyList(), val noteReadingPositions: List<NoteReadingPosition> = emptyList(), val superFocusNotes: Boolean = false, val noteTrash: List<TrashedNote> = emptyList(), val noteHistory: List<NoteRevision> = emptyList(), val noteModifiedTimes: Map<String, Long> = emptyMap(), val noteSort: String = "updated", val noteReadMode: String = "continuous", val noteFontSize: Int = 16) {
@@ -16,7 +17,7 @@ data class Saved(val providers: List<Provider> = listOf(Provider()), val selecte
 data class Course(val id: String, val title: String, val detail: String = "", val teacher: String = "", val term: String = "")
 data class Presentation(val id: String, val title: String, val lessonId: String = "", val isLesson: Boolean = false, val recordedAt: String = "", val teacher: String = "", val times: List<SourceTime> = emptyList())
 data class Slide(val page: Int, val cover: String, val text: String)
-data class Attachment(val image: String?, val label: String, val text: String, val imageRef: String = "")
+data class Attachment(val image: String?, val label: String, val text: String, val imageRef: String = "", val noteId: String = "")
 
 fun JSONObject.optional(key: String): String? = if (isNull(key)) null else optString(key).takeIf { it.isNotEmpty() }
 fun JSONArray.objects() = (0 until length()).map { getJSONObject(it) }
@@ -28,7 +29,7 @@ fun Saved.toJson(): JSONObject = JSONObject().apply {
     put("sessionVerified", sessionVerified); put("classRun", classRun?.json())
     put("chatgptAccounts", JSONArray(chatgptAccounts.map { it.json() })); put("chatgptHostId", chatgptHostId); put("chatgptDraftClients", JSONArray(chatgptDraftClients)); put("chatgptWelcomeShown", chatgptWelcomeShown)
     put("materials", JSONArray(materials.map { it.json() })); put("downloadTreeUri", downloadTreeUri); put("downloadDirectoryName", downloadDirectoryName); put("learnerProfile", learnerProfile); put("tutorPrompt", tutorPrompt); put("notesPrompt", notesPrompt)
-    put("conversations", JSONArray(conversations.map { c -> JSONObject().put("id", c.id).put("title", c.title).put("messages", JSONArray(c.messages.map { m -> JSONObject().put("role", m.role).put("text", m.text).put("image", m.image).put("source", m.source) })) }))
+    put("conversations", JSONArray(conversations.map { c -> JSONObject().put("id", c.id).put("title", c.title).put("messages", JSONArray(c.messages.map { m -> JSONObject().put("role", m.role).put("text", m.text).put("image", m.image).put("source", m.source).put("kind", m.kind.take(40)).put("noteRefs", JSONArray(m.noteRefs.take(CHAT_NOTE_LIMIT).map(::chatNoteReferenceJson))) })) }))
     put("noteReadingPositions", JSONArray(noteReadingPositions.map { JSONObject().put("noteId", it.noteId).put("index", it.index).put("scroll", it.scroll).put("anchor", it.anchor).put("contentHash", it.contentHash).put("textAnchor", it.textAnchor?.toJson()) }))
     put("noteDrafts", JSONArray(noteDrafts.map { JSONObject().put("noteId", it.noteId).put("content", it.content).put("updatedAt", it.updatedAt).put("baseContent", it.baseContent) }))
     put("noteFolders", JSONArray(noteFolders.map { it.json() }))
@@ -39,7 +40,7 @@ fun savedFromJson(o: JSONObject): Saved = Saved(
     noteReadMode = validNoteReadingMode(o.optString("noteReadMode")), noteFontSize = o.optInt("noteFontSize", 16).coerceIn(12, 28),
     noteTrash = notebookTrashFromJson(o), noteHistory = notebookHistoryFromJson(o), noteModifiedTimes = notebookModifiedTimesFromJson(o), noteSort = o.optString("noteSort", "updated").takeIf { it in NOTE_SORT_OPTIONS } ?: "updated",
     superFocusNotes = o.optBoolean("superFocusNotes", false), selectedProvider = o.optString("selectedProvider"),
-    conversations = o.getJSONArray("conversations").objects().map { c -> Conversation(c.getString("id"), c.getString("title"), c.getJSONArray("messages").objects().map { Message(it.getString("role"), it.getString("text"), it.optional("image"), it.optional("source")) }) }.ifEmpty { listOf(Conversation()) },
+    conversations = o.getJSONArray("conversations").objects().map { c -> Conversation(c.getString("id"), c.getString("title"), c.getJSONArray("messages").objects().map { Message(it.getString("role"), it.getString("text"), it.optional("image"), it.optional("source"), chatNoteReferencesFromJson(it.optJSONArray("noteRefs")), it.optString("kind").take(40)) }) }.ifEmpty { listOf(Conversation()) },
     currentChat = o.optString("currentChat"), notes = (o.optJSONArray("notes") ?: JSONArray()).objects().map(::notebookNoteFromJson),
     noteReadingPositions = (o.optJSONArray("noteReadingPositions") ?: JSONArray()).objects().map { NoteReadingPosition(it.getString("noteId"), it.optInt("index").coerceAtLeast(0), it.optInt("scroll").coerceAtLeast(0), it.optString("anchor"), it.optString("contentHash"), noteTextAnchorFromJson(it.optJSONObject("textAnchor"))) },
     noteDrafts = (o.optJSONArray("noteDrafts") ?: JSONArray()).objects().map { NoteDraft(it.getString("noteId"), it.getString("content"), it.getLong("updatedAt"), if (it.isNull("baseContent")) null else it.getString("baseContent")) },

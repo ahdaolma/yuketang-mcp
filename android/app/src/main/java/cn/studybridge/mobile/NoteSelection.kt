@@ -3,6 +3,11 @@ package cn.studybridge.mobile
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.Path
+import android.graphics.Rect
+import android.graphics.RectF
+import android.text.Selection
+import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextPaint
@@ -11,6 +16,7 @@ import android.view.ActionMode
 import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
+import android.view.ViewTreeObserver
 import android.widget.TextView
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -21,14 +27,24 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import kotlin.math.ceil
+import kotlin.math.floor
 
 data class NoteSelectionBlock(val source: String, val sourceStart: Int)
-data class NoteTextSelection(val view: NoteSelectableTextView, val block: NoteSelectionBlock, val start: Int, val end: Int, val quote: String) {
+data class NoteSelectionGeometry(val boundsInWindow: IntRect, val safeWindowBounds: IntRect)
+data class NoteTextSelection(val view: NoteSelectableTextView, val block: NoteSelectionBlock, val start: Int, val end: Int, val quote: String, val geometry: NoteSelectionGeometry? = null) {
     fun annotation(kind: String, comment: String = "") = NoteAnnotation(sourceStart = block.sourceStart, sourceLength = block.source.length, sourceHash = imageDigest(block.source.toByteArray()), start = start, end = end, quote = quote, kind = kind, comment = comment)
 }
 class NoteSelectionController {
@@ -38,6 +54,28 @@ class NoteSelectionController {
 val LocalNoteSelection = staticCompositionLocalOf<NoteSelectionController?> { null }
 val LocalNoteAnnotations = staticCompositionLocalOf { emptyList<NoteAnnotation>() }
 
+// Both native geometry and the PopupPositionProvider contract use window pixels,
+// not screen pixels or dp. Keep the measured toolbar beside the visible range.
+internal class NoteSelectionPositionProvider(private val geometry: NoteSelectionGeometry, private val gap: Int) : PopupPositionProvider {
+    override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize): IntOffset {
+        val selected = geometry.boundsInWindow
+        val safe = geometry.safeWindowBounds
+        val minX = safe.left + minOf(gap, ((safe.width - popupContentSize.width) / 2).coerceAtLeast(0))
+        val maxX = (safe.right - gap - popupContentSize.width).coerceAtLeast(minX)
+        val minY = safe.top + minOf(gap, ((safe.height - popupContentSize.height) / 2).coerceAtLeast(0))
+        val maxY = (safe.bottom - gap - popupContentSize.height).coerceAtLeast(minY)
+        val above = selected.top - gap - popupContentSize.height
+        val below = selected.bottom + gap
+        val y = when {
+            above >= minY -> above
+            below <= maxY -> below
+            selected.top - safe.top >= safe.bottom - selected.bottom -> above
+            else -> below
+        }.coerceIn(minY, maxY)
+        return IntOffset((selected.center.x - popupContentSize.width / 2).coerceIn(minX, maxX), y)
+    }
+}
+
 // Native text layout and drag handles remain accurate across fonts and line
 // wraps; all visible selection actions belong to the application's Compose UI.
 class NoteSelectableTextView(context: Context) : TextView(context) {
@@ -45,21 +83,73 @@ class NoteSelectableTextView(context: Context) : TextView(context) {
     var searchRevealKey: String? = null
     var block: NoteSelectionBlock? = null
     var controller: NoteSelectionController? = null
+    private var applicationActionMode: ActionMode? = null
+    private val selectionLayoutListener = ViewTreeObserver.OnPreDrawListener {
+        // Parent scrolling and window/IME changes do not call onSelectionChanged.
+        // Only refresh an existing selection, so dismissal cannot reopen it.
+        if (controller?.selection?.view === this) reportSelection()
+        true
+    }
     private var downX = 0f; private var downY = 0f; private var downAt = 0L
+    internal fun selectionGeometry(first: Int, last: Int): NoteSelectionGeometry? {
+        val textLayout = layout ?: return null
+        if (!isAttachedToWindow || !isShown || first < 0 || last <= first || last > text.length) return null
+        val root = rootView
+        val rootLocation = IntArray(2); root.getLocationInWindow(rootLocation)
+        val screenLocation = IntArray(2); root.getLocationOnScreen(screenLocation)
+        val visibleFrame = Rect(); root.getWindowVisibleDisplayFrame(visibleFrame)
+        // getWindowVisibleDisplayFrame is in screen coordinates (including IME
+        // clipping); convert once before combining it with window coordinates.
+        visibleFrame.offset(rootLocation[0] - screenLocation[0], rootLocation[1] - screenLocation[1])
+        val insets = ViewCompat.getRootWindowInsets(root)?.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+        val safe = Rect(rootLocation[0] + (insets?.left ?: 0), rootLocation[1] + (insets?.top ?: 0), rootLocation[0] + root.width - (insets?.right ?: 0), rootLocation[1] + root.height - (insets?.bottom ?: 0))
+        if (!safe.intersect(visibleFrame) || safe.isEmpty) return null
+        val visibleText = Rect()
+        // Global visible rects are root-relative, whereas text layout coordinates
+        // are local. This also excludes lines clipped by the scrolling reader.
+        if (!getGlobalVisibleRect(visibleText)) return null
+        visibleText.offset(rootLocation[0], rootLocation[1])
+        if (!visibleText.intersect(safe)) return null
+        val path = Path(); textLayout.getSelectionPath(first, last, path)
+        val bounds = RectF(); path.computeBounds(bounds, true)
+        if (bounds.isEmpty) {
+            val line = textLayout.getLineForOffset(first)
+            bounds.set(textLayout.getPrimaryHorizontal(first), textLayout.getLineTop(line).toFloat(), textLayout.getPrimaryHorizontal(first) + 1f, textLayout.getLineBottom(line).toFloat())
+        }
+        val location = IntArray(2); getLocationInWindow(location)
+        bounds.offset((location[0] + totalPaddingLeft - scrollX).toFloat(), (location[1] + totalPaddingTop - scrollY).toFloat())
+        if (!bounds.intersect(RectF(visibleText))) return null
+        return NoteSelectionGeometry(IntRect(floor(bounds.left).toInt(), floor(bounds.top).toInt(), ceil(bounds.right).toInt(), ceil(bounds.bottom).toInt()), IntRect(safe.left, safe.top, safe.right, safe.bottom))
+    }
     fun reportSelection() {
         val owner = controller ?: return
         val source = block ?: return
         val first = minOf(selectionStart, selectionEnd); val last = maxOf(selectionStart, selectionEnd)
-        if (first >= 0 && last > first && last <= text.length) owner.selection = NoteTextSelection(this, source, first, last, text.subSequence(first, last).toString())
+        if (first >= 0 && last > first && last <= text.length) owner.selection = NoteTextSelection(this, source, first, last, text.subSequence(first, last).toString(), selectionGeometry(first, last))
         else if (owner.selection?.view === this) owner.selection = null
     }
     override fun onSelectionChanged(selStart: Int, selEnd: Int) { super.onSelectionChanged(selStart, selEnd); post { reportSelection() } }
+    override fun onAttachedToWindow() { super.onAttachedToWindow(); viewTreeObserver.addOnPreDrawListener(selectionLayoutListener) }
+    override fun onDetachedFromWindow() {
+        viewTreeObserver.removeOnPreDrawListener(selectionLayoutListener)
+        if (controller?.selection?.view === this) controller?.selection = null
+        super.onDetachedFromWindow()
+    }
+    fun finishSelection() {
+        (text as? Spannable)?.let(Selection::removeSelection)
+        applicationActionMode?.finish()
+        clearFocus()
+        if (controller?.selection?.view === this) controller?.selection = null
+    }
     fun useApplicationMenu() {
         customSelectionActionModeCallback = object : ActionMode.Callback {
-            override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean { menu.clear(); post { reportSelection() }; return true }
+            override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean { applicationActionMode = mode; menu.clear(); post { reportSelection() }; return true }
             override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean { menu.clear(); post { reportSelection() }; return true }
             override fun onActionItemClicked(mode: ActionMode, item: MenuItem) = false
-            override fun onDestroyActionMode(mode: ActionMode) { post { if (controller?.selection?.view === this@NoteSelectableTextView) controller?.selection = null } }
+            override fun onDestroyActionMode(mode: ActionMode) {
+                if (applicationActionMode === mode) applicationActionMode = null
+                post { if (applicationActionMode == null && controller?.selection?.view === this@NoteSelectableTextView) controller?.selection = null }
+            }
         }
     }
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -95,15 +185,19 @@ fun renderPersonalAnnotations(parsed: Spanned, source: String, sourceStart: Int?
 @Composable fun NoteReadingSelection(note: Note, vm: StudyViewModel, modifier: Modifier = Modifier, content: @Composable (Modifier) -> Unit) {
     val controller = remember(note.id) { NoteSelectionController() }
     val context = LocalContext.current
+    val density = LocalDensity.current
     var adding by remember(note.id) { mutableStateOf<NoteAnnotation?>(null) }
     var comment by remember(note.id) { mutableStateOf("") }
     val currentUi by vm.ui.collectAsState()
-    fun clearSelection() { controller.selection?.view?.clearFocus(); controller.selection = null }
+    fun clearSelection() { controller.selection?.view?.finishSelection(); controller.selection = null }
     Box(modifier) {
         CompositionLocalProvider(LocalNoteSelection provides controller, LocalNoteAnnotations provides note.annotations) { content(Modifier.fillMaxSize()) }
         val selected = controller.selection
-        if (selected != null) Popup(alignment = Alignment.BottomCenter, offset = IntOffset(0, -96), properties = PopupProperties(focusable = false)) {
-            Surface(Modifier.padding(horizontal = 12.dp).widthIn(max = 560.dp).testTag("正文选词工具条"), shape = MaterialTheme.shapes.medium, shadowElevation = 8.dp, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        val geometry = selected?.geometry
+        if (selected != null && geometry != null) Popup(popupPositionProvider = NoteSelectionPositionProvider(geometry, with(density) { 8.dp.roundToPx() }), properties = PopupProperties(focusable = false, dismissOnClickOutside = false)) {
+            val availableWidth = with(density) { geometry.safeWindowBounds.width.toDp() } - 16.dp
+            val availableHeight = with(density) { geometry.safeWindowBounds.height.toDp() } - 16.dp
+            Surface(Modifier.widthIn(max = minOf(560.dp, availableWidth.coerceAtLeast(1.dp))).heightIn(max = availableHeight.coerceAtLeast(1.dp)).testTag("正文选词工具条"), shape = MaterialTheme.shapes.medium, shadowElevation = 8.dp, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     FeedbackTextButton(onClick = { (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("笔记文字", selected.quote)); clearSelection() }) { Text("复制") }
                     val canMark = currentUi.noteEditable(note.id) && selected.annotation("highlight").isAttached(note.content)

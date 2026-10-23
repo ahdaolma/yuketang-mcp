@@ -265,6 +265,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
     var input by rememberSaveable(chat.id) { mutableStateOf(ui.chatDrafts[chat.id].orEmpty()) }
     var composerDetails by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf(false) }
+    var notebookActions by remember { mutableStateOf(false) }
     var navigation by remember { mutableStateOf(false) }
     val chrome = LocalReadingChrome.current
     val inlineHeader = LocalInlineReadingHeader.current
@@ -294,7 +295,14 @@ private fun preview(bytes: ByteArray): Bitmap? {
             IconButton(onClick = vm::newChat, enabled = !ui.locked) { Icon(Icons.Outlined.AddComment, "新对话") }
             Spacer(Modifier.weight(1f))
             if (ui.busy && inlineHeader) IconButton(onClick = vm::stop) { Icon(Icons.Outlined.StopCircle, "停止生成") }
-            else IconButton(onClick = vm::notes, enabled = !ui.locked && (chat.messages.isNotEmpty() || ui.pending != null), unavailableReason = if (chat.messages.isEmpty() && ui.pending == null) "先选择一页课件或进行对话，再生成笔记。" else null) { Icon(Icons.Outlined.NoteAdd, "生成笔记") }
+            else Box {
+                IconButton(onClick = { notebookActions = true }, enabled = !ui.locked && (chat.messages.isNotEmpty() || ui.pending != null), unavailableReason = if (chat.messages.isEmpty() && ui.pending == null) "先添加资料或进行对话。" else null) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Outlined.NoteAdd, "对话笔记", Modifier.size(20.dp)); Text("笔记", style = MaterialTheme.typography.labelSmall) } }
+                if (notebookActions) ReadingActionSheet("对话笔记", { notebookActions = false }) {
+                    Text("选择保存原文，或让 AI 重新整理。笔记会以卡片返回当前对话。", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+                    DropdownMenuItem(text = { Text("保存对话原文") }, enabled = !ui.locked && chat.messages.any { it.kind != "note_result" && it.text.isNotBlank() }, onClick = { notebookActions = false; vm.saveChatAsNote() })
+                    DropdownMenuItem(text = { Text("AI 整理成笔记") }, enabled = !ui.locked, onClick = { notebookActions = false; vm.notes() })
+                }
+            }
             if (chat.messages.isNotEmpty()) Box {
                 IconButton(onClick = { navigation = true }) { Icon(Icons.Outlined.SwapVert, "消息跳转") }
                 if (navigation) ReadingActionSheet("消息跳转", { navigation = false }) {
@@ -309,18 +317,19 @@ private fun preview(bytes: ByteArray): Bitmap? {
     }, body = {
         LazyColumn(Modifier.fillMaxSize().testTag("学习正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(top = 8.dp, bottom = if (compactFraction > 0.5f) 72.dp else 8.dp)) {
             if (chat.messages.isEmpty()) item { StudyEmpty(Icons.Outlined.Description, "从一页课件开始", "连接雨课堂或导入文件，带入课件提问，也可以直接输入问题。", Modifier.padding(top = 24.dp)) { Spacer(Modifier.height(4.dp)); Button(onClick = vm::openMaterials, enabled = !ui.locked) { Icon(Icons.Outlined.FolderOpen, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("选择学习资料") } } }
-            itemsIndexed(chat.messages, key = { index, _ -> "${chat.id}:$index" }, contentType = { _, m -> m.role }) { index, m -> ChatMessageCard(m, "${chat.id}:$index", ui.data.provider().name, ui.busy && m.role == "assistant" && index == chat.messages.lastIndex) }
+            itemsIndexed(chat.messages, key = { index, _ -> "${chat.id}:$index" }, contentType = { _, m -> m.role }) { index, m -> ChatMessageCard(m, "${chat.id}:$index", ui.data.provider().name, ui.busy && m.role == "assistant" && index == chat.messages.lastIndex, ui.data.notes, { id, edit -> vm.openChatNote(id, edit) }, !ui.locked) }
         }
     }, composer = {
         Column {
-        if (!inlineHeader) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(ui.data.provider().model.ifBlank { "尚未选择模型" }, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant); TextButton(onClick = { vm.tab(3); vm.settingsPage("models") }, enabled = !ui.locked) { Text("切换模型") } }
         if (!inlineHeader) ui.pending?.let { a -> ElevatedCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) { Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.AttachFile, null); Text(a.label, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); IconButton(onClick = vm::clearAttachment, enabled = !ui.locked) { Icon(Icons.Default.Close, "移除课件附件") } } } }
         if (!inlineHeader && ui.data.provider().chatgptAccountId.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) { Text("使用 ChatGPT 套餐", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary); TextButton(onClick = { vm.openLink(CHATGPT_USAGE) }) { Text("管理用量") } }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-            OutlinedTextField(input, { if (it.length <= 20000) { input = it; vm.chatDraft(chat.id, it) } }, Modifier.weight(1f).onFocusChanged { chrome?.locked = it.isFocused }, placeholder = { Text(if (ui.pending != null) "想了解这份资料的什么？" else "输入问题，或先添加资料…", style = MaterialTheme.typography.bodyMedium) }, label = if (inlineHeader && ui.pending != null) ({ Text("已附加：${ui.pending.label}", maxLines = 1, overflow = TextOverflow.Ellipsis) }) else null, textStyle = MaterialTheme.typography.bodyMedium, shape = RoundedCornerShape(14.dp), singleLine = landscapeInput, maxLines = if (inlineHeader) 2 else 4, enabled = !ui.locked, trailingIcon = if (inlineHeader && (ui.pending != null || ui.data.provider().chatgptAccountId.isNotBlank())) ({
+            OutlinedTextField(input, { if (it.length <= 20000) { input = it; vm.chatDraft(chat.id, it) } }, Modifier.weight(1f).onFocusChanged { chrome?.locked = it.isFocused }, placeholder = { Text(if (ui.pending != null) "想了解这份资料的什么？" else "输入问题，或先添加资料…", style = MaterialTheme.typography.bodyMedium) }, label = { Text(ui.data.provider().model.ifBlank { "尚未选择模型" } + if (ui.pending != null) " · 已附加资料" else "", maxLines = 1, overflow = TextOverflow.Ellipsis) }, textStyle = MaterialTheme.typography.bodyMedium, shape = RoundedCornerShape(14.dp), singleLine = landscapeInput, maxLines = if (inlineHeader) 2 else 4, enabled = !ui.locked, trailingIcon = ({
                 Box {
-                    IconButton(onClick = { composerDetails = true }) { Icon(Icons.Outlined.MoreHoriz, "附件与用量") }
+                    IconButton(onClick = { composerDetails = true }) { Icon(if (ui.pending != null) Icons.Default.AttachFile else Icons.Outlined.MoreHoriz, "附件与用量") }
                     DropdownMenu(expanded = composerDetails, onDismissRequest = { composerDetails = false }, title = "附件与用量") {
+                        DropdownMenuItem(text = { Text("当前模型：${ui.data.provider().model.ifBlank { "未选择" }}") }, onClick = { composerDetails = false })
+                        DropdownMenuItem(text = { Text("切换模型") }, enabled = !ui.locked, onClick = { composerDetails = false; vm.tab(3); vm.settingsPage("models") })
                         ui.pending?.let { attachment ->
                             DropdownMenuItem(text = { Text(attachment.label) }, onClick = { composerDetails = false })
                             DropdownMenuItem(text = { Text("移除课件附件") }, enabled = !ui.locked, onClick = { composerDetails = false; vm.clearAttachment() })
@@ -328,7 +337,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                         if (ui.data.provider().chatgptAccountId.isNotBlank()) DropdownMenuItem(text = { Text("管理 ChatGPT 用量") }, onClick = { composerDetails = false; vm.openLink(CHATGPT_USAGE) })
                     }
                 }
-            }) else null)
+            }))
             FilledIconButton(onClick = { if (vm.send(input.trim())) input = "" }, enabled = !ui.locked && input.isNotBlank(), unavailableReason = if (input.isBlank()) "先输入你的问题，再发送。" else null) { Icon(Icons.Default.ArrowUpward, "发送给所选模型") }
         }
         }
@@ -477,7 +486,8 @@ private fun preview(bytes: ByteArray): Bitmap? {
                         val text = if (reader.editing) reader.draft else note.content
                         if (ui.data.downloadTreeUri.isNotBlank()) vm.exportNote(note, text) else { exportSnapshot = note to text; export.launch(downloadName(note.title, "md")) }
                     })
-                    DropdownMenuItem(text = { Text("AI 讲解") }, enabled = !ui.locked && (!reader.editing || reader.draft == note.content), onClick = { menu = false; vm.explainNote(note) })
+                    DropdownMenuItem(text = { Text("带入 AI 对话") }, enabled = !ui.locked && (!reader.editing || reader.draft == note.content), onClick = { menu = false; vm.attachNote(note) })
+                    DropdownMenuItem(text = { Text("AI 讲解并保存新笔记") }, enabled = !ui.locked && (!reader.editing || reader.draft == note.content), onClick = { menu = false; vm.explainNote(note) })
                     DropdownMenuItem(text = { Text("导出 PDF") }, enabled = !ui.locked, onClick = { menu = false; exportPdf(note.copy(content = if (reader.editing) reader.draft else note.content)) })
                     ReadingActionGroup("标记与资料")
                     DropdownMenuItem(text = { Text("我的标记与备注") }, onClick = { menu = false; remarks = true })

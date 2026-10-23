@@ -25,3 +25,13 @@
 - [ ] Spec review then quality review; resolve findings with source/diff evidence.
 - [ ] Push branch, inspect full Android/Python GitHub Actions results; retrieve XML, screenshots, inspect UI and correct failures. `git diff --check` is allowed locally; no local Gradle/emulator/ADB.
 - [ ] Only after all batch requirements pass, prepare next stable patch, verify fixed signing and published-baseline upgrade on Actions, publish with exact reports/artifact hashes. Record tested scope and real-device limitations.
+
+### 4. 追加：可交互笔记及修改上下文
+- [ ] `Models.kt` backwards-compatible Message note references with ID, hash and bounded original snapshot; optional app result kind. Retain existing fields, roundtrip backup tests.
+- [ ] `ChatNotebookContext.kt` local query/source/history retrieval, at most three bounded note texts, clear excerpt markers, current saved annotations, source IDs, change summaries vs last provided version. Treat stored note commands as quoted data, never system instructions. Never include trash or drafts.
+- [ ] `StudyViewModel.kt`: attach existing note without generating, send uses actual retrieved context and records references on answer, note saving distinguishes raw dialogue (no AI) and AI organization (returns real saved note card). Latest saved edits supplied on next question, no background sends.
+- [ ] `ChatMessageCard.kt` + `MainActivity.kt`: render live note cards with view/edit/updated/deleted states, notebook action sheet, existing-note attach action. Existing reader owns all editing and annotations; preserve unsaved draft handling.
+- [ ] Unit and cloud instrumentation for retrieval/update/raw save/result cards/backward serialization; review again before final CI and publication.
+
+### 5. 追加：选区菜单定位
+- [ ] `NoteSelection.kt` replaces fixed bottom popup with selection bounds from TextView and window-aware PopupPositionProvider; preserve native actions and dynamic scroll/reflow positioning. Dedicated cloud selection test verifies placement near selection and screen-edge avoidance.

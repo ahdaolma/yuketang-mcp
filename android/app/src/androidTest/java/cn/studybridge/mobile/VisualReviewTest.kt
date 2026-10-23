@@ -120,7 +120,7 @@ class VisualReviewTest {
         compose.openNoteTool("笔记选项")
         compose.onNodeWithText("编辑笔记").performScrollTo().assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithText("导出 Markdown").performScrollTo().assertIsDisplayed().assertIsEnabled()
-        compose.onNodeWithText("AI 讲解").performScrollTo().assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("AI 讲解并保存新笔记").performScrollTo().assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithText("来源与模型").performScrollTo().performClick()
         compose.onNodeWithText("关闭").performClick()
         assertReadingArea()
