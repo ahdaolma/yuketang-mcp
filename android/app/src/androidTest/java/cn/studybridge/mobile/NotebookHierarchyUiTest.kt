@@ -107,20 +107,21 @@ class NotebookHierarchyUiTest {
             val sidebar = compose.onNodeWithTag("平板笔记本目录").getUnclippedBoundsInRoot()
             val list = compose.onNodeWithTag("笔记列表").getUnclippedBoundsInRoot()
             assertTrue(list.left >= sidebar.right)
-            assertTrue(list.width.value <= 920f)
+            assertTrue((list.right - list.left).value <= 920f)
             compose.onNodeWithTag("选择分类 bio").performClick()
             compose.onNodeWithTag("笔记列表").performScrollToNode(hasTestTag("笔记卡片 b"))
             advancedUiShot(compose.activity, "sample-notebook-tablet-landscape")
             val screen = compose.onRoot().getUnclippedBoundsInRoot()
             compose.onNodeWithContentDescription("管理笔记分类").performClick()
             val panel = compose.onNodeWithTag("笔记本面板").getUnclippedBoundsInRoot()
-            assertTrue(panel.width.value <= 680f && panel.width < screen.width)
+            val panelWidth = panel.right - panel.left
+            assertTrue(panelWidth.value <= 680f && panelWidth < screen.right - screen.left)
             compose.onNodeWithContentDescription("关闭笔记本管理").assertIsDisplayed().performClick()
             compose.onNodeWithTag("笔记卡片 b").performClick()
             compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记正文").fetchSemanticsNodes().isNotEmpty() }
             val reader = compose.onNodeWithTag("笔记正文").getUnclippedBoundsInRoot()
-            assertTrue(reader.width.value <= 840f)
-            assertEquals(screen.center.x.value, reader.center.x.value, 2f)
+            assertTrue((reader.right - reader.left).value <= 840f)
+            assertEquals((screen.left.value + screen.right.value) / 2, (reader.left.value + reader.right.value) / 2, 2f)
             advancedUiShot(compose.activity, "sample-notebook-tablet-reader")
         }
     }
