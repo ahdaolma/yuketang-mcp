@@ -14,13 +14,13 @@ import cn.studybridge.mobile.FeedbackCard as Card
 import cn.studybridge.mobile.FeedbackTextButton as TextButton
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
-@Composable fun CourseLibraryControls(order: CourseOrder, page: Int?, enabled: Boolean, onOrder: (CourseOrder) -> Unit) {
+@Composable fun CourseLibraryControls(order: CourseOrder, page: Int?, enabled: Boolean, onOrder: (CourseOrder) -> Unit, lesson: Boolean = false) {
     var open by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             TextButton(onClick = { open = true }, enabled = enabled, modifier = Modifier.testTag("课件排序")) { Text("排列：${order.label}") }
         }
-        val scope = if (page != null) "仅当前第 ${page + 1} 批已加载记录；时间优先使用创建、发布、上课或记录时间。" else when (order) {
+        val scope = if (lesson) "仅排列本节已开放课件；时间按接口实际提供字段显示。" else if (page != null) "仅当前第 ${page + 1} 批已加载记录；时间优先使用创建、发布、上课或记录时间。" else when (order) {
             CourseOrder.TEACHER -> "课程按老师归类；未提供的老师单独列出。"
             CourseOrder.NAME -> "全部已加载课程按名称排列。"
             else -> "课程接口未提供可排序时间，保留接口顺序；进入课程后可按课件时间排列。"
@@ -45,7 +45,8 @@ import cn.studybridge.mobile.FeedbackTextButton as TextButton
 // Rows live in the parent's single LazyColumn so a wide layout never nests scrolling lists.
 @OptIn(ExperimentalLayoutApi::class)
 fun LazyListScope.courseLibraryItems(ui: UiState, vm: StudyViewModel, columns: Int) {
-    item(key = "library-order") { CourseLibraryControls(ui.courseOrder, ui.course?.let { ui.activityPage }, !ui.locked, vm::courseOrder) }
+    if (ui.lesson != null) item(key = "lesson-context") { Text("${ui.lesson.title} · ${ui.presentations.size} 份课件", style = MaterialTheme.typography.titleSmall) }
+    item(key = "library-order") { CourseLibraryControls(ui.courseOrder, ui.course?.takeIf { ui.lesson == null }?.let { ui.activityPage }, !ui.locked, vm::courseOrder, ui.lesson != null) }
     if (ui.course == null) {
         groupedCourses(ui.courses, ui.courseOrder).forEachIndexed { groupIndex, (teacher, courses) ->
             if (teacher.isNotBlank()) item(key = "teacher-$groupIndex") { StudySectionLabel(teacher) }
@@ -53,10 +54,12 @@ fun LazyListScope.courseLibraryItems(ui: UiState, vm: StudyViewModel, columns: I
                 CourseLibraryRow(columns, row) { c ->
                     Card(onClick = { vm.loadActivities(c) }, enabled = !ui.locked, modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("课程", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             Text(c.title, style = MaterialTheme.typography.titleSmall)
                             Text("老师：${c.teacher.ifBlank { "未提供" }}", style = MaterialTheme.typography.bodySmall)
                             val detail = c.term.ifBlank { c.detail }
                             if (detail.isNotBlank()) Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("查看课堂与课件 →", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
@@ -71,16 +74,18 @@ fun LazyListScope.courseLibraryItems(ui: UiState, vm: StudyViewModel, columns: I
                 CourseLibraryRow(columns, row) { p ->
                     Card(onClick = { vm.openPresentation(p) }, enabled = !ui.locked, modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(if (p.isLesson) "课堂记录" else "课件", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             Text(p.title, style = MaterialTheme.typography.titleSmall)
                             Text(presentationMetadata(p), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             DeckPreview(ui, p, vm)
+                            Text(if (p.isLesson) "查看本节课件 →" else "查看页面与 AI 讲解 →", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
             }
         }
-        if (ordered.isEmpty()) item { Text("当前批次没有可读取的课件，可查看下一批。") }
-        item(key = "library-pages") {
+        if (ordered.isEmpty()) item { Text(if (ui.lesson != null) "本节课未开放可读取的课件。" else "当前批次没有可读取的课件，可查看下一批。") }
+        if (ui.lesson == null) item(key = "library-pages") {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = { vm.loadActivities(ui.course, ui.activityPage - 1) }, enabled = !ui.locked && ui.activityPage > 0) { Text("上一批") }
                 Text("第 ${ui.activityPage + 1} 批", Modifier.padding(12.dp), style = MaterialTheme.typography.labelMedium)

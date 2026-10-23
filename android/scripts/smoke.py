@@ -75,7 +75,7 @@ adb('install','-r',os.environ.get('RAIN_SMOKE_APK', 'app/build/outputs/apk/relea
 adb('logcat','-c')
 adb('shell','am','start','-W','-n','cn.studybridge.mobile/.MainActivity')
 time.sleep(3)
-shot('study-native', ['从一页课件开始', '选择课程'])
+shot('study-native', ['从一页课件开始', '选择学习资料'])
 tap('课程'); shot('courses', ['尚未连接账号'])
 tap('笔记'); shot('notes', ['0 份笔记', '生成笔记'])
 tap('设置'); shot('settings-overview', ['模型与账号', '笔记生成', '学习偏好', '文件与下载'])
@@ -106,7 +106,7 @@ logs = adb('logcat','-d','-s','AndroidRuntime:E').decode(errors='replace')
 (out / 'runtime.txt').write_text(logs)
 assert 'FATAL EXCEPTION' not in logs, logs
 tap('返回设置'); tap('返回学习')
-tap('学习'); shot('study-native', ['从一页课件开始', '选择课程'])
+tap('学习'); shot('study-native', ['从一页课件开始', '选择学习资料'])
 print('APK native study, grouped settings and authorization controls passed.')
 # Review actual release UI in dark mode and a narrow viewport with larger text.
 tap('设置')
@@ -124,7 +124,7 @@ try:
     shot('settings-narrow-bottom', ['学习助手提示词'])
     tap('返回设置'); tap('返回学习')
     tap('学习')
-    shot('study-native-narrow-large', ['从一页课件开始', '选择课程'])
+    shot('study-native-narrow-large', ['从一页课件开始', '选择学习资料'])
 finally:
     adb('shell', 'wm', 'size', 'reset')
     adb('shell', 'settings', 'put', 'system', 'font_scale', '1.0')

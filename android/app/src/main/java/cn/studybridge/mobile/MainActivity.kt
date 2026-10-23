@@ -261,7 +261,8 @@ private fun preview(bytes: ByteArray): Bitmap? {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable fun ChatScreen(ui: UiState, vm: StudyViewModel) {
-    var input by rememberSaveable { mutableStateOf("") }
+    val chat = ui.data.chat()
+    var input by rememberSaveable(chat.id) { mutableStateOf(ui.chatDrafts[chat.id].orEmpty()) }
     var composerDetails by remember { mutableStateOf(false) }
     var history by remember { mutableStateOf(false) }
     var navigation by remember { mutableStateOf(false) }
@@ -269,7 +270,6 @@ private fun preview(bytes: ByteArray): Bitmap? {
     val inlineHeader = LocalInlineReadingHeader.current
     val compactFraction = LocalReadingCompactFraction.current
     DisposableEffect(chrome) { onDispose { chrome?.locked = false } }
-    val chat = ui.data.chat()
     val latestMessages by rememberUpdatedState(chat.messages)
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -288,7 +288,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("学习工具栏"), verticalAlignment = Alignment.CenterVertically) {
             Box { IconButton(onClick = { history = true }) { Icon(Icons.Outlined.Forum, "会话") }; if (history) ReadingActionSheet("会话", { history = false }) {
                 ClassManagerMenuItem { history = false }
-                ui.data.conversations.forEach { c -> DropdownMenuItem(text = { Text(c.title) }, onClick = { vm.selectChat(c.id); history = false }, trailingIcon = { IconButton(onClick = { vm.deleteChat(c.id); history = false }, enabled = !ui.locked) { Icon(Icons.Default.DeleteOutline, "删除对话") } }) }
+                ui.data.conversations.forEach { c -> DropdownMenuItem(text = { Text(c.title, maxLines = 2, overflow = TextOverflow.Ellipsis) }, enabled = !ui.locked, onClick = { vm.selectChat(c.id); history = false }, trailingIcon = { IconButton(onClick = { vm.deleteChat(c.id); history = false }, enabled = !ui.locked) { Icon(Icons.Default.DeleteOutline, "删除对话") } }) }
             } }
             MaterialsButton(ui, vm)
             IconButton(onClick = vm::newChat, enabled = !ui.locked) { Icon(Icons.Outlined.AddComment, "新对话") }
@@ -308,15 +308,16 @@ private fun preview(bytes: ByteArray): Bitmap? {
         }
     }, body = {
         LazyColumn(Modifier.fillMaxSize().testTag("学习正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(top = 8.dp, bottom = if (compactFraction > 0.5f) 72.dp else 8.dp)) {
-            if (chat.messages.isEmpty()) item { StudyEmpty(Icons.Outlined.Description, "从一页课件开始", "选择一页课件，提问或整理笔记。", Modifier.padding(top = 24.dp)) { Spacer(Modifier.height(4.dp)); OutlinedButton(onClick = { vm.tab(1) }) { Text("选择课程") } } }
+            if (chat.messages.isEmpty()) item { StudyEmpty(Icons.Outlined.Description, "从一页课件开始", "连接雨课堂或导入文件，带入课件提问，也可以直接输入问题。", Modifier.padding(top = 24.dp)) { Spacer(Modifier.height(4.dp)); Button(onClick = vm::openMaterials, enabled = !ui.locked) { Icon(Icons.Outlined.FolderOpen, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("选择学习资料") } } }
             itemsIndexed(chat.messages, key = { index, _ -> "${chat.id}:$index" }, contentType = { _, m -> m.role }) { index, m -> ChatMessageCard(m, "${chat.id}:$index", ui.data.provider().name, ui.busy && m.role == "assistant" && index == chat.messages.lastIndex) }
         }
     }, composer = {
         Column {
+        if (!inlineHeader) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(ui.data.provider().model.ifBlank { "尚未选择模型" }, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant); TextButton(onClick = { vm.tab(3); vm.settingsPage("models") }, enabled = !ui.locked) { Text("切换模型") } }
         if (!inlineHeader) ui.pending?.let { a -> ElevatedCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) { Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.AttachFile, null); Text(a.label, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); IconButton(onClick = vm::clearAttachment, enabled = !ui.locked) { Icon(Icons.Default.Close, "移除课件附件") } } } }
         if (!inlineHeader && ui.data.provider().chatgptAccountId.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) { Text("使用 ChatGPT 套餐", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary); TextButton(onClick = { vm.openLink(CHATGPT_USAGE) }) { Text("管理用量") } }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-            OutlinedTextField(input, { if (it.length <= 20000) input = it }, Modifier.weight(1f).onFocusChanged { chrome?.locked = it.isFocused }, placeholder = { Text("问问这页课件…", style = MaterialTheme.typography.bodyMedium) }, textStyle = MaterialTheme.typography.bodyMedium, shape = RoundedCornerShape(14.dp), singleLine = landscapeInput, maxLines = if (inlineHeader) 2 else 4, enabled = !ui.locked, trailingIcon = if (inlineHeader && (ui.pending != null || ui.data.provider().chatgptAccountId.isNotBlank())) ({
+            OutlinedTextField(input, { if (it.length <= 20000) { input = it; vm.chatDraft(chat.id, it) } }, Modifier.weight(1f).onFocusChanged { chrome?.locked = it.isFocused }, placeholder = { Text(if (ui.pending != null) "想了解这份资料的什么？" else "输入问题，或先添加资料…", style = MaterialTheme.typography.bodyMedium) }, label = if (inlineHeader && ui.pending != null) ({ Text("已附加：${ui.pending.label}", maxLines = 1, overflow = TextOverflow.Ellipsis) }) else null, textStyle = MaterialTheme.typography.bodyMedium, shape = RoundedCornerShape(14.dp), singleLine = landscapeInput, maxLines = if (inlineHeader) 2 else 4, enabled = !ui.locked, trailingIcon = if (inlineHeader && (ui.pending != null || ui.data.provider().chatgptAccountId.isNotBlank())) ({
                 Box {
                     IconButton(onClick = { composerDetails = true }) { Icon(Icons.Outlined.MoreHoriz, "附件与用量") }
                     DropdownMenu(expanded = composerDetails, onDismissRequest = { composerDetails = false }, title = "附件与用量") {
@@ -340,8 +341,6 @@ private fun preview(bytes: ByteArray): Bitmap? {
     val scope = rememberCoroutineScope()
     var manualId by rememberSaveable { mutableStateOf("") }
     var versions by remember { mutableStateOf(false) }
-    var fromPage by rememberSaveable(ui.presentationId) { mutableStateOf("1") }
-    var toPage by rememberSaveable(ui.presentationId, ui.slides.size) { mutableStateOf(minOf(ui.slides.maxOfOrNull { it.page } ?: 1, 50).toString()) }
     val exportQr = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("image/png")) { uri ->
         val bytes = ui.qr
         if (uri != null && bytes != null) scope.launch { runCatching { withContext(Dispatchers.IO) { val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: error("二维码无法读取。"); context.contentResolver.openOutputStream(uri)?.use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) } ?: error("无法写入文件。") } }.fold({ vm.notice("二维码已导出。") }, { vm.notice("二维码保存失败。") }) }
@@ -394,27 +393,21 @@ private fun preview(bytes: ByteArray): Bitmap? {
         }
         if (ui.data.session.isNotBlank() || ui.hasClassSession()) item { ClassModePanel(ui, vm) }
         if (ui.data.session.isNotBlank()) {
-            item { Row(verticalAlignment = Alignment.CenterVertically) { Text(if (ui.course == null) "我的课程" else ui.course.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f)); if (ui.course != null) TextButton(onClick = vm::allCourses, enabled = !ui.locked) { Text("返回课程") } else TextButton(onClick = vm::loadCourses, enabled = !ui.locked && !ui.loginActive) { Text("刷新") } } }
+            item { Row(verticalAlignment = Alignment.CenterVertically) { Text(if (ui.course == null) "我的课程" else ui.course.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f)); if (ui.course != null || ui.presentationId.isNotBlank()) TextButton(onClick = vm::backRainMaterials) { Text(ui.rainBackLabel) } else TextButton(onClick = vm::loadCourses, enabled = !ui.locked && !ui.loginActive) { Text("刷新") } } }
             if (ui.courses.isEmpty() && ui.course == null) item { StudyEmpty(Icons.Outlined.MenuBook, "还没有读取课程", "点击右上方刷新，读取你已加入的课程。") }
-            if (ui.slides.isEmpty()) courseLibraryItems(ui, vm, libraryColumns)
-            if (ui.slides.isNotEmpty()) item {
+            if (ui.presentationId.isBlank()) courseLibraryItems(ui, vm, libraryColumns)
+            if (ui.presentationId.isNotBlank()) item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(ui.slideTitle, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Text(ui.slideRecordedAt.ifBlank { "创建时间：未提供" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("${ui.slides.size} 个已开放页面 · 选择范围生成一份讲解笔记", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedTextField(fromPage, { if (it.length <= 5 && it.all(Char::isDigit)) fromPage = it }, label = { Text("开始页") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), enabled = !ui.locked)
-                        OutlinedTextField(toPage, { if (it.length <= 5 && it.all(Char::isDigit)) toPage = it }, label = { Text("结束页") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f), enabled = !ui.locked)
-                    }
-                    Button(onClick = { vm.batchNotes(fromPage, toPage) }, enabled = !ui.locked && fromPage.isNotBlank() && toPage.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("连续整理并讲解") }
-                    Text("每次最多 50 页，按当前学习方式逐页整理并保存。", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    MaterialStudyControls(ui, vm)
                 }
             }
             items(ui.slides.filter { focusedPage == 0 || it.page == focusedPage }, key = { it.page }) { slide -> StudyPanel { Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("第 ${slide.page} 页", style = MaterialTheme.typography.titleSmall)
                 PagePreview(vm.pagePreviewKey(ui, slide), "${ui.slideTitle} · 第 ${slide.page} 页", vm.previews) { vm.previewPage(ui, slide) }
                 if (slide.text.isNotBlank()) Text(notePreview(slide.text), maxLines = 2, style = MaterialTheme.typography.bodySmall)
-                Row { TextButton(onClick = { vm.attach(slide) }, enabled = !ui.locked) { Text("带入学习") }; TextButton(onClick = { vm.explainPage(slide) }, enabled = !ui.locked) { Text("讲解并保存") } }
+                MaterialPageActions(slide, ui, vm)
             } } }
             item { TextButton(onClick = { advanced = !advanced }) { Text(if (advanced) "收起高级入口" else "高级：按课件编号读取") }; if (advanced) { OutlinedTextField(manualId, { if (it.length <= 24 && it.all(Char::isDigit)) manualId = it }, label = { Text("课件编号 presentation_id") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth()); TextButton(onClick = { vm.loadSlides(manualId) }, enabled = !ui.locked && manualId.isNotBlank()) { Text("读取课件") } } }
         }
