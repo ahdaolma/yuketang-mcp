@@ -24,7 +24,7 @@
 ### 3. 验证与交付
 - [x] Spec review then quality review; resolve findings with source/diff evidence.
 - [x] Push branch, inspect full Android/Python GitHub Actions results; retrieve XML, screenshots, inspect UI and correct failures. `git diff --check` is allowed locally; no local Gradle/emulator/ADB.
-- [ ] Only after all batch requirements pass, prepare next stable patch, verify fixed signing and published-baseline upgrade on Actions, publish with exact reports/artifact hashes. Record tested scope and real-device limitations.
+- [x] Only after all batch requirements pass, prepare next stable patch, verify fixed signing and published-baseline upgrade on Actions, publish with exact reports/artifact hashes. Record tested scope and real-device limitations. Final evidence: `docs/releases/1.0.2-verification.md`, release `v1.0.2`, tested source `c354699`.
 
 ### 4. 追加：可交互笔记及修改上下文
 - [x] `Models.kt` backwards-compatible Message note references with ID, hash and bounded original snapshot; optional app result kind. Retain existing fields, roundtrip backup tests.
