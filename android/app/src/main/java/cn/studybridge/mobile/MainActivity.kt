@@ -441,6 +441,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
     var remarks by remember { mutableStateOf(false) }
     var renaming by remember { mutableStateOf(false) }
     var titleDraft by remember { mutableStateOf("") }
+    var libraryPane by remember { mutableStateOf("") }
     var actionNoteId by rememberSaveable { mutableStateOf<String?>(null) }
     var initialListAction by rememberSaveable { mutableStateOf("options") }
     NoteListActions(ui, vm, actionNoteId, initialListAction) { actionNoteId = null }
