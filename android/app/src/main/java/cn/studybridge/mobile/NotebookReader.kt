@@ -464,6 +464,11 @@ private fun Modifier.noteScreenSwipe(mode: String, slop: Float, longPress: Long,
                     val change = event.changes.find { it.id == down.id } ?: break
                     val delta = change.position - down.position
                     dx = delta.x
+                    // Compose represents ACTION_CANCEL as an already-consumed
+                    // synthetic UP. Inspect before consuming our own drag UP;
+                    // cancellation must never commit a prepared destination.
+                    val canceledRelease = !change.pressed && change.isConsumed
+                    if (canceledRelease) canceled = true
                     if (moves++ < 2 || !change.pressed) currentTrace("event mode=$mode pressed=${change.pressed} dx=$dx dy=${delta.y} consumed=${change.isConsumed} age=${change.uptimeMillis - down.uptimeMillis} owner=$owner canceled=$canceled")
                     if (event.changes.count { it.pressed } > 1 || owner == null && change.uptimeMillis - down.uptimeMillis >= longPress) canceled = true
                     if (owner == null && abs(delta.y) > slop && abs(delta.y) > abs(delta.x)) canceled = true
@@ -482,7 +487,10 @@ private fun Modifier.noteScreenSwipe(mode: String, slop: Float, longPress: Long,
                     if (!change.pressed) {
                         val releasedOwner = owner
                         owner = null // finally must not release/cancel it twice.
-                        if (releasedOwner != null) currentOnRelease(releasedOwner, dx, !canceled && abs(dx) >= distance)
+                        if (releasedOwner != null) {
+                            if (canceledRelease) currentOnCancel(releasedOwner)
+                            else currentOnRelease(releasedOwner, dx, !canceled && abs(dx) >= distance)
+                        }
                         else if (!canceled && mode == "buttons" && final?.isConsumed == false && delta.getDistance() < slop) {
                             currentOnTurn(if (down.position.x >= size.width / 2f) 1 else -1)
                         }

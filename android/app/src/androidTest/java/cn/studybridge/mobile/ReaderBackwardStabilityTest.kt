@@ -44,6 +44,23 @@ class ReaderBackwardStabilityTest {
             }
         } }
     }
+    private fun backwardTextTap(): Offset {
+        val bounds = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow
+        return native { views ->
+            val x = bounds.left + bounds.width * .1f
+            val point = views.firstNotNullOfOrNull { view ->
+                val layout = view.layout
+                val position = IntArray(2); view.getLocationInWindow(position)
+                if (!view.isAttachedToWindow || !view.isShown || view.alpha < .99f || layout == null || x !in position[0].toFloat()..(position[0] + view.width).toFloat()) null
+                else (0 until layout.lineCount).firstNotNullOfOrNull { line ->
+                    val top = position[1] + view.totalPaddingTop - view.scrollY + layout.getLineTop(line)
+                    val bottom = position[1] + view.totalPaddingTop - view.scrollY + layout.getLineBottom(line)
+                    if (top >= bounds.top && bottom <= bounds.bottom) Offset(x - bounds.left, (top + bottom) / 2f - bounds.top) else null
+                }
+            }
+            requireNotNull(point) { "Backward tap needs a visible native text line; an original-image tap belongs to preview" }
+        }
+    }
     private fun exercise(mode: String) {
         val image = syntheticSlideImage()
         val imageId = imageDigest(android.util.Base64.decode(image.substringAfter(','), android.util.Base64.DEFAULT))
@@ -116,9 +133,19 @@ class ReaderBackwardStabilityTest {
                 }
                 for (attempt in 0 until 8) {
                     if (markerVisible("第一页回退标记")) break
+                    // The large source image occupies the old fixed midpoint.
+                    // Target measured text so this tests paging ownership rather
+                    // than correctly opening the original-image preview.
+                    val tap = if (mode == "buttons") backwardTextTap() else null
+                    if (mode == "buttons" && attempt == 0) {
+                        val body = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow
+                        val images = compose.onAllNodesWithContentDescription("回退原图 缩略图").fetchSemanticsNodes().map { it.boundsInWindow }
+                        android.util.Log.i("ReaderBackTarget", "trigger=$trigger legacyMidpoint=${Offset(body.left + body.width * .1f, body.top + body.height * .5f)} images=$images textTarget=$tap body=$body")
+                        advancedUiShot(compose.activity, "reader-back-target-$trigger")
+                    }
                     compose.onNodeWithTag("笔记正文").performTouchInput {
                         when (mode) {
-                            "buttons" -> click(Offset(width * .1f, height * .5f))
+                            "buttons" -> click(requireNotNull(tap))
                             "swipe" -> swipeRight(durationMillis = 180)
                             else -> { down(Offset(width * .5f, height * .25f)); moveTo(Offset(width * .5f, height * .85f), 300); advanceEventTime(200); up() }
                         }
@@ -133,6 +160,7 @@ class ReaderBackwardStabilityTest {
                     val page = compose.onNodeWithContentDescription("当前阅读页码").fetchSemanticsNode().config[SemanticsProperties.StateDescription]
                     assertTrue("Counter must remain on the visible first source page: $page", page.contains("分段 1 / 2"))
                 }
+                if (trigger == "resume") advancedUiShot(compose.activity, "reader-audit-backward-$mode")
             }
         } finally { compose.runOnIdle { store.clear() } }
     }
