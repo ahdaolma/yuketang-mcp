@@ -198,20 +198,25 @@ class MainActivity : ComponentActivity() {
             }).build()
     }
     val dark = colors.background.luminance() < 0.5f
-    val formatted by produceState<Triple<String, android.text.Spanned, Int>?>(null, text, renderer, density, dark, syntheticPrefixLength) {
+    val personalMarks = LocalNoteAnnotations.current
+    val annotationContent = LocalNoteAnnotationContent.current
+    val formatted by produceState<Triple<String, android.text.Spanned, Int>?>(null, text, renderer, density, dark, syntheticPrefixLength, personalMarks, annotationContent, annotationSource) {
         val parsed = withContext(Dispatchers.Default) { synchronized(renderer) {
             val body = renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(text)), density, dark)
             // TablePlugin owns mutable visitor state. Render prefix context in
             // the same worker sequence, never concurrently on the UI thread.
             val prefix = if (syntheticPrefixLength == 0) "" else renderer.toMarkdown(markdownForStudyMarks(text.take(syntheticPrefixLength))).toString().trimEnd('\r', '\n')
-            Triple(text, body, if (body.toString().startsWith(prefix)) prefix.length else Int.MAX_VALUE)
+            val annotationStart = if (body.toString().startsWith(prefix)) prefix.length else Int.MAX_VALUE
+            val decorated = renderPersonalAnnotations(body, annotationSource?.source.orEmpty(), annotationSource?.sourceStart, personalMarks, annotationContent, annotationStart, text.take(syntheticPrefixLength)) { raw ->
+                renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(raw)), density, dark).toString()
+            }
+            Triple(text, decorated, annotationStart)
         } }
         // AndroidView updates must stay on the UI thread even when a test's
         // unconfined frame clock resumes the producer on its worker thread.
         withContext(Dispatchers.Main.immediate) { value = parsed }
     }
     val selectionController = LocalNoteSelection.current
-    val personalMarks = LocalNoteAnnotations.current
     val searchQuery = LocalNoteSearchQuery.current
     val searchTarget = LocalNoteSearchTarget.current
     val revealSearch = LocalNoteSearchReveal.current
@@ -219,10 +224,10 @@ class MainActivity : ComponentActivity() {
     val registerText = LocalNoteTextRegistered.current
     val contentWidth = LocalNoteContentWidth.current
     val onPageTap = LocalNotePageTap.current
-    val annotationBlock = remember(formatted, text, annotationSource) {
-        annotationSource?.copy(annotationStart = formatted?.takeIf { it.first == text }?.third ?: Int.MAX_VALUE)
+    val annotationBlock = remember(formatted, text, annotationSource, syntheticPrefixLength) {
+        annotationSource?.copy(annotationStart = formatted?.takeIf { it.first == text }?.third ?: Int.MAX_VALUE, renderPrefix = text.take(syntheticPrefixLength))
     }
-    val decorated = remember(formatted, text, annotationBlock, personalMarks, searchQuery) { formatted?.takeIf { it.first == text }?.second?.let { searchHighlight(renderPersonalAnnotations(it, annotationBlock?.source.orEmpty(), annotationBlock?.sourceStart, personalMarks), searchQuery) as android.text.Spanned } }
+    val decorated = remember(formatted, text, searchQuery) { formatted?.takeIf { it.first == text }?.second?.let { searchHighlight(it, searchQuery) as android.text.Spanned } }
     val locatedSearch by produceState<Pair<NoteSearchTarget, Int>?>(null, searchTarget, formatted, text, sourceOffset, renderer, density, dark) {
         value = null
         val target = searchTarget ?: return@produceState

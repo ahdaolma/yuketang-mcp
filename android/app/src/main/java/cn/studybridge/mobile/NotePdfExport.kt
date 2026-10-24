@@ -45,7 +45,11 @@ fun writeNotePdf(context: Context, note: Note, images: SourceImages, output: Out
                 for (segment in noteReadingSegments(raw)) {
                     val shown = segment.display(raw)
                     val parsed = renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(shown)), 0.75f, false)
-                    writer.text(renderPersonalAnnotations(parsed, raw.substring(segment.start, segment.end), sourceStart + segment.start, note.annotations))
+                    val prefix = if (segment.prefix.isEmpty()) "" else renderer.toMarkdown(markdownForStudyMarks(segment.prefix)).toString().trimEnd('\r', '\n')
+                    val annotationStart = if (parsed.toString().startsWith(prefix)) prefix.length else Int.MAX_VALUE
+                    writer.text(renderPersonalAnnotations(parsed, raw.substring(segment.start, segment.end), sourceStart + segment.start, note.annotations, note.content, annotationStart, segment.prefix) { source ->
+                        renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(source)), 0.75f, false).toString()
+                    })
                 }
             }
             writer.text(note.title.ifBlank { "学习笔记" }, size = 22f, bold = true)

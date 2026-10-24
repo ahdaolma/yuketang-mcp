@@ -45,10 +45,10 @@ import androidx.core.view.WindowInsetsCompat
 import kotlin.math.ceil
 import kotlin.math.floor
 
-data class NoteSelectionBlock(val source: String, val sourceStart: Int, val annotationStart: Int = 0)
+data class NoteSelectionBlock(val source: String, val sourceStart: Int, val annotationStart: Int = 0, val renderPrefix: String = "")
 data class NoteSelectionGeometry(val boundsInWindow: IntRect, val safeWindowBounds: IntRect)
 data class NoteTextSelection(val view: NoteSelectableTextView, val block: NoteSelectionBlock, val start: Int, val end: Int, val quote: String, val geometry: NoteSelectionGeometry? = null) {
-    fun annotation(kind: String, comment: String = "") = NoteAnnotation(sourceStart = if (start >= block.annotationStart) block.sourceStart else -1, sourceLength = block.source.length, sourceHash = imageDigest(block.source.toByteArray()), start = start, end = end, quote = quote, kind = kind, comment = comment)
+    fun annotation(kind: String, comment: String = "") = NoteAnnotation(sourceStart = if (start >= block.annotationStart) block.sourceStart else -1, sourceLength = block.source.length, sourceHash = imageDigest(block.source.toByteArray()), start = start, end = end, quote = quote, kind = kind, comment = comment, renderPrefix = block.renderPrefix)
 }
 class NoteSelectionController {
     var selection by mutableStateOf<NoteTextSelection?>(null)
@@ -56,6 +56,7 @@ class NoteSelectionController {
 }
 val LocalNoteSelection = staticCompositionLocalOf<NoteSelectionController?> { null }
 val LocalNoteAnnotations = staticCompositionLocalOf { emptyList<NoteAnnotation>() }
+val LocalNoteAnnotationContent = staticCompositionLocalOf<String?> { null }
 
 // Both native geometry and the PopupPositionProvider contract use window pixels,
 // not screen pixels or dp. Keep the measured toolbar beside the visible range.
@@ -229,12 +230,16 @@ class NoteAnnotationSpan(val annotation: NoteAnnotation) : CharacterStyle() {
         }
     }
 }
-fun renderPersonalAnnotations(parsed: Spanned, source: String, sourceStart: Int?, annotations: List<NoteAnnotation>): Spanned {
-    if (sourceStart == null || annotations.isEmpty()) return parsed
-    val hash = imageDigest(source.toByteArray())
-    val relevant = annotations.filter { it.sourceStart == sourceStart && it.sourceHash == hash && it.start >= 0 && it.end > it.start && it.end <= parsed.length && parsed.subSequence(it.start, it.end).toString() == it.quote }
+fun renderPersonalAnnotations(parsed: Spanned, source: String, sourceStart: Int?, annotations: List<NoteAnnotation>, content: String? = null, annotationStart: Int = 0, renderPrefix: String = "", render: ((String) -> String)? = null): Spanned {
+    val relevant = projectNoteAnnotations(parsed.toString(), source, sourceStart, annotations, content, annotationStart, renderPrefix, render)
     if (relevant.isEmpty()) return parsed
-    return SpannableStringBuilder(parsed).apply { relevant.forEach { setSpan(NoteAnnotationSpan(it), it.start, it.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) } }
+    return SpannableStringBuilder(parsed).apply { relevant.forEach { setSpan(NoteAnnotationSpan(it.annotation), it.start, it.end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) } }
+}
+
+fun noteAnnotationIdsInSelection(text: CharSequence, start: Int, end: Int): Set<String> {
+    if (text !is Spanned || start < 0 || end <= start || end > text.length) return emptySet()
+    return text.getSpans(start, end, NoteAnnotationSpan::class.java)
+        .filter { text.getSpanStart(it) < end && text.getSpanEnd(it) > start }.map { it.annotation.id }.toSet()
 }
 
 @Composable fun NoteReadingSelection(note: Note, vm: StudyViewModel, modifier: Modifier = Modifier, content: @Composable (Modifier) -> Unit) {
@@ -246,7 +251,7 @@ fun renderPersonalAnnotations(parsed: Spanned, source: String, sourceStart: Int?
     val currentUi by vm.ui.collectAsState()
     fun clearSelection() { controller.selection?.view?.finishSelection(); controller.selection = null }
     Box(modifier) {
-        CompositionLocalProvider(LocalNoteSelection provides controller, LocalNoteAnnotations provides note.annotations) { content(Modifier.fillMaxSize()) }
+        CompositionLocalProvider(LocalNoteSelection provides controller, LocalNoteAnnotations provides note.annotations, LocalNoteAnnotationContent provides note.content) { content(Modifier.fillMaxSize()) }
         val selected = controller.selection
         val geometry = selected?.geometry
         if (selected != null && geometry != null) Popup(popupPositionProvider = NoteSelectionPositionProvider(geometry, with(density) { 8.dp.roundToPx() }), properties = PopupProperties(focusable = false, dismissOnClickOutside = false)) {
@@ -260,7 +265,7 @@ fun renderPersonalAnnotations(parsed: Spanned, source: String, sourceStart: Int?
                     FeedbackTextButton(onClick = { if (vm.saveNoteAnnotation(note.id, selected.annotation("highlight"))) clearSelection() }, enabled = canMark) { Text("重点高亮") }
                     FeedbackTextButton(onClick = { if (vm.saveNoteAnnotation(note.id, selected.annotation("underline"))) clearSelection() }, enabled = canMark) { Text("下划线") }
                     FeedbackTextButton(onClick = { adding = selected.annotation("remark"); comment = ""; clearSelection() }, enabled = canMark) { Text("添加备注") }
-                    val overlapping = note.annotations.filter { it.sourceStart == selected.block.sourceStart && it.sourceHash == selected.annotation("").sourceHash && it.start < selected.end && it.end > selected.start }.map { it.id }.toSet()
+                    val overlapping = noteAnnotationIdsInSelection(selected.view.text, selected.start, selected.end)
                     FeedbackTextButton(onClick = { vm.removeNoteAnnotations(note.id, overlapping); clearSelection() }, enabled = canMark && overlapping.isNotEmpty()) { Text("取消标记") }
                   }
                   FeedbackIconButton(onClick = { clearSelection() }) { Icon(Icons.Outlined.Close, "关闭选词工具") }

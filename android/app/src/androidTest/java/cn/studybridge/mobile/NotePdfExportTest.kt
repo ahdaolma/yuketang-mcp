@@ -121,6 +121,40 @@ class NotePdfExportTest {
         } finally { directory.deleteRecursively() }
     }
 
+    @Test fun attached102HighlightIsPaintedInPdfAfterImageBoundaryMoves() {
+        val directory = File(context.cacheDir, "note-pdf-legacy-${newId()}").apply { mkdirs() }
+        val file = File(directory, "legacy-note.pdf")
+        val store = images(directory)
+        try {
+            val imageId = store.save(syntheticSlideImage())
+            val prefix = "LEGACY_MARK " + "x".repeat(11958)
+            assertEquals(11970, prefix.length)
+            val content = prefix + sourceImageMarkdown(imageId, "原图").trim() + "尾文"
+            val mark = NoteAnnotation(id = "legacy-pdf-highlight", sourceStart = 0, sourceLength = 12000,
+                sourceHash = imageDigest(content.take(12000).toByteArray()), start = 0, end = 11,
+                quote = "LEGACY_MARK", kind = "highlight")
+            assertTrue(mark.isAttached(content))
+            assertEquals(11970, noteReadingSegments(content).first().end)
+            val note = Note(title = "旧版标记导出", content = content, source = "fixture", model = "fixture", annotations = listOf(mark))
+            file.outputStream().use { writeNotePdf(context, note, store, it) }
+            render(file) { pdf ->
+                pdf.openPage(0).use { page ->
+                    val bitmap = screenshot(page, "sample-note-pdf-legacy-highlight")
+                    try {
+                        var highlighted = 0
+                        for (y in 0 until bitmap.height) for (x in 0 until bitmap.width) {
+                            val color = bitmap.getPixel(x, y)
+                            if (Color.red(color) > 210 && Color.green(color) in 170..245 && Color.blue(color) in 100..210 && Color.red(color) - Color.blue(color) > 40) highlighted++
+                        }
+                        assertTrue("The original attached highlight must paint the PDF body, not just appear in the appendix", highlighted > 100)
+                    } finally { bitmap.recycle() }
+                    assertTrue(page.textContents.joinToString("") { it.text }.contains("LEGACY_MARK"))
+                }
+            }
+            assertEquals(listOf(mark), note.annotations)
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test fun missingSourceImageReportsTheRealFailureAndCallerOwnsTheStream() {
         val directory = File(context.cacheDir, "note-pdf-missing-${newId()}").apply { mkdirs() }
         val output = object : ByteArrayOutputStream() {

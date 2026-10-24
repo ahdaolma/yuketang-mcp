@@ -63,6 +63,8 @@ class ReaderSourceAnnotationTest {
             assertEquals("原始后续正文", mark.quote)
             assertEquals(part.start, mark.sourceStart)
             assertEquals(text.substring(part.start, part.end).length, mark.sourceLength)
+            assertEquals("New marks must retain the virtual context that determined their rendered offsets", part.prefix, mark.renderPrefix)
+            assertEquals(mark, noteAnnotationFromJson(mark.json()))
             val remarkStart = native.toString().indexOf("个人备注")
             Selection.setSelection(native, remarkStart, remarkStart + "个人备注".length)
             view.reportSelection()
