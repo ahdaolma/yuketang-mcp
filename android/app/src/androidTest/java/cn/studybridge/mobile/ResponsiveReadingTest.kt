@@ -129,6 +129,44 @@ class ResponsiveReadingTest {
         compose.onNodeWithText("收起原文").assertExists()
         compose.runOnIdle { assertEquals(original, state.value.data.chat().messages.first().text) }
     }
+    @Test fun shortWindowKeepsComposerCompactAfterImeTargetClosesAndGenerationLocksInput() {
+        val draft = "解释复制：保留模板方向与配对关系"
+        val state = mutableStateOf(sample().copy(chatDrafts = mapOf("responsive" to draft)))
+        val height = mutableStateOf(112.dp)
+        compose.activityRule.scenario.onActivity { vm = ViewModelProvider(it)[StudyViewModel::class.java] }
+        compose.setContent {
+            val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+            val density = LocalDensity.current
+            CompositionLocalProvider(
+                androidx.compose.ui.platform.LocalConfiguration provides Configuration(configuration).apply { orientation = Configuration.ORIENTATION_LANDSCAPE },
+                LocalDensity provides Density(density.density, 1f),
+                LocalInlineReadingHeader provides true
+            ) {
+                StudyTheme(false) { Box(Modifier.fillMaxWidth().height(height.value)) { ChatScreen(state.value, vm) } }
+            }
+        }
+        // A closing IME can report hidden while the window still measures only
+        // 112dp. Reproduce that state directly without waiting for more space.
+        compose.runOnIdle {
+            androidx.core.view.WindowInsetsControllerCompat(compose.activity.window, compose.activity.window.decorView).hide(androidx.core.view.WindowInsetsCompat.Type.ime())
+        }
+        compose.waitUntil(5000) { androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime()) == false }
+        compose.onNode(hasSetTextAction()).assertChatDraftEquals(draft)
+        compose.onNodeWithText("提问 ·", substring = true).assertDoesNotExist()
+        val shortBody = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
+        assertTrue("A 112dp window must retain more than one reading line after IME target closes", (shortBody.bottom - shortBody.top).value > 48f)
+        compose.runOnIdle { state.value = state.value.copy(busy = true, operation = "合成生成测试") }
+        compose.onNodeWithText("提问 ·", substring = true).assertDoesNotExist()
+        val busyBody = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
+        assertTrue("Disabling the composer must retain the short-window reading viewport", (busyBody.bottom - busyBody.top).value > 48f)
+        shot("sample-chat-short-window-ime-closed")
+        compose.runOnIdle { state.value = state.value.copy(busy = false, operation = ""); height.value = 260.dp }
+        compose.onNodeWithContentDescription("消息跳转").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("提问 ·", substring = true).assertIsDisplayed()
+        compose.onNode(hasSetTextAction()).assertChatDraftEquals(draft)
+        val restored = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
+        assertTrue("Actual window restoration must reclaim reading space", (restored.bottom - restored.top).value > 100f)
+    }
     @Test fun actualLandscapeHasOneToolbarSideNavigationAndUsableBody() {
         compose.activityRule.scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
         try {

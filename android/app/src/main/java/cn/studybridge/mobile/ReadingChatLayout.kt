@@ -19,6 +19,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 
+// The composer must follow measured space while IME visibility is already
+// changing to its target, but the window has not finished resizing yet.
+val LocalReadingShortWindow = staticCompositionLocalOf { false }
+
 // Keep each slot mounted when the IME opens, preserving input focus and drafts.
 // In short landscape windows, tools share the composer's row to leave room to read.
 @Composable fun ReadingChatLayout(beside: Boolean, modifier: Modifier = Modifier, toolbar: @Composable () -> Unit, body: @Composable () -> Unit, composer: @Composable () -> Unit) {
@@ -41,7 +45,7 @@ import androidx.compose.ui.window.PopupProperties
             if (floating || compactTools) FloatingReadingTools(panelWidth, toolbar) else toolbar()
         }
         Box { body() }
-        Box { composer() }
+        Box { CompositionLocalProvider(LocalReadingShortWindow provides floating) { composer() } }
     }) { children, constraints ->
         val width = constraints.maxWidth
         val height = constraints.maxHeight

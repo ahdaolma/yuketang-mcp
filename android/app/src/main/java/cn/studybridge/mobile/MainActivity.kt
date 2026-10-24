@@ -313,7 +313,6 @@ private fun preview(bytes: ByteArray): Bitmap? {
     }
     val landscapeInput = androidx.compose.ui.platform.LocalConfiguration.current.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
     val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
-    val compactComposer = landscapeInput && imeVisible
     val keyboardBeside = inlineHeader && (landscapeInput || imeVisible)
     ReadingChatLayout(keyboardBeside, Modifier.fillMaxSize().padding(horizontal = 14.dp), toolbar = {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("学习工具栏"), verticalAlignment = Alignment.CenterVertically) {
@@ -350,11 +349,13 @@ private fun preview(bytes: ByteArray): Bitmap? {
             itemsIndexed(chat.messages, key = { index, _ -> "${chat.id}:$index" }, contentType = { _, m -> m.role }) { index, m -> ChatMessageCard(m, "${chat.id}:$index", ui.data.provider().name, ui.busy && m.role == "assistant" && index == chat.messages.lastIndex, ui.data.notes, { id, edit -> vm.openChatNote(id, edit) }, !ui.locked) }
         }
     }, composer = {
+        val shortWindow = LocalReadingShortWindow.current
+        val compactComposer = shortWindow || (landscapeInput && imeVisible)
         Column {
         if (!inlineHeader) ui.pending?.let { a -> ElevatedCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) { Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.AttachFile, null); Text(a.label, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); IconButton(onClick = vm::clearAttachment, enabled = !ui.locked) { Icon(Icons.Default.Close, "移除课件附件") } } } }
         if (!inlineHeader && ui.data.provider().chatgptAccountId.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically) { Text("使用 ChatGPT 套餐", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary); TextButton(onClick = { vm.openLink(CHATGPT_USAGE) }) { Text("管理用量") } }
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
-            OutlinedTextField(input, { if (it.length <= 20000) { input = it; vm.chatDraft(chat.id, it) } }, Modifier.weight(1f).onFocusChanged { chrome?.locked = it.isFocused }, placeholder = { Text(if (ui.pending != null) "想了解这份资料的什么？" else "输入问题，或先添加资料…", style = MaterialTheme.typography.bodyMedium) }, label = if (compactComposer) null else ({ Text("提问 · " + ui.data.provider().model.ifBlank { "尚未选择模型" } + if (ui.pending != null) " · 已附加资料" else "", maxLines = 1, overflow = TextOverflow.Ellipsis) }), textStyle = MaterialTheme.typography.bodyMedium, shape = RoundedCornerShape(14.dp), singleLine = landscapeInput, maxLines = if (inlineHeader) 2 else 4, enabled = !ui.locked, trailingIcon = ({
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = if (shortWindow) 0.dp else 8.dp)) {
+            OutlinedTextField(input, { if (it.length <= 20000) { input = it; vm.chatDraft(chat.id, it) } }, Modifier.weight(1f).onFocusChanged { chrome?.locked = it.isFocused }, placeholder = { Text(if (ui.pending != null) "想了解这份资料的什么？" else "输入问题，或先添加资料…", style = MaterialTheme.typography.bodyMedium) }, label = if (compactComposer) null else ({ Text("提问 · " + ui.data.provider().model.ifBlank { "尚未选择模型" } + if (ui.pending != null) " · 已附加资料" else "", maxLines = 1, overflow = TextOverflow.Ellipsis) }), textStyle = MaterialTheme.typography.bodyMedium, shape = RoundedCornerShape(14.dp), singleLine = landscapeInput || shortWindow, maxLines = if (inlineHeader) 2 else 4, enabled = !ui.locked, trailingIcon = ({
                 Box {
                     IconButton(onClick = { composerDetails = true }) { Icon(if (ui.pending != null) Icons.Default.AttachFile else Icons.Outlined.MoreHoriz, "附件与用量") }
                     DropdownMenu(expanded = composerDetails, onDismissRequest = { composerDetails = false }, title = "附件与用量") {
