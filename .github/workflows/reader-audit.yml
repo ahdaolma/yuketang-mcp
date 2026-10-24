@@ -11,7 +11,7 @@ on:
         description: Reader, isolated paper or hardware editor checks
         type: choice
         default: reader
-        options: [reader, paper, editor]
+        options: [reader, paper, editor, echo]
 permissions:
   contents: read
 concurrency:
