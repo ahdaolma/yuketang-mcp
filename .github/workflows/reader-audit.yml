@@ -8,10 +8,10 @@ on:
         default: '35'
         options: ['26', '29', '35']
       suite:
-        description: Reader or isolated paper compatibility checks
+        description: Reader, isolated paper or hardware editor checks
         type: choice
         default: reader
-        options: [reader, paper]
+        options: [reader, paper, editor]
 permissions:
   contents: read
 concurrency:
