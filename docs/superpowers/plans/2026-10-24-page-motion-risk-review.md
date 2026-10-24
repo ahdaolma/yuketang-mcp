@@ -20,3 +20,5 @@
 `ab6ba62` 的 API 35 / [40090386092](https://github.com/ahdaolma/yuketang-mcp/actions/runs/40090386092) 与 API 26 / [40090387965](https://github.com/ahdaolma/yuketang-mcp/actions/runs/40090387965) 各完成 187 单元、8 项纸页操作，0 失败/跳过。两组截图已取回，最低系统实际卷页中间帧和 API 35 深色覆盖回翻原图已打开复查。报告 ZIP SHA-256 分别为 `22389e796b51db65e69d517733c7c50dcf3ea9b1551090cbc793d1987a616b5f` / `90f281d7918c1706ff9dff4ad5f6d5e57f1e19fb60cd738c209ff7ad0d95eddb`。这些是专项证据，不替代上列同位置跳转修订后的正式包全量验收。
 
 最终发布仍需同一源码的全量 Android/Python、固定签名 R8、升级、实际截图核验；不将独立原语、部分专项或旧版的通过结果拼成最终通过。
+
+`c080211` 正式 R8 / [40093257934](https://github.com/ahdaolma/yuketang-mcp/actions/runs/40093257934) 未通过烟测，未发布。失败画面、无障碍正文与页码确认已到第二页，但期望 `R8_SECOND` 实际显示 `R8_SECND`（缺少 O），第二页正文完整；报告 artifact `12559609685`，ZIP SHA-256 `4023620b26b8af218cc2fdfa8f8bff9bcfae3faf707ed75daf95c9f442aa8943`。暂不将此归因于缓存或调整断言；补充真实硬件按键流的笔记编辑器/普通 Compose 输入框对照，调查输入、保存与渲染链路。该源码最低 API 26 的 187 单元与 8 纸页专项成功不替代这项失败。

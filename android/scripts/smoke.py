@@ -113,12 +113,20 @@ tap('学习'); shot('study-native', ['从一页课件开始', '选择学习资�
 # No debug fixture component or private-data injection is used.
 assert adb('shell', 'getprop', 'ro.kernel.qemu').decode().strip() == '1', 'Reader fixture is emulator-only'
 tap('笔记'); tap('新建笔记'); tap('Markdown 笔记')
-for index, line in enumerate(('## R8_FIRST', '', 'release_first_body', '', '## R8_SECOND', '', 'release_second_body')):
+reader_source_lines = ('## R8_FIRST', '', 'release_first_body', '', '## R8_SECOND', '', 'release_second_body')
+for index, line in enumerate(reader_source_lines):
     if index:
         adb('shell', 'input', 'keyevent', 'KEYCODE_ENTER')
     if line:
         adb('shell', 'input text ' + shlex.quote(line.replace(' ', '%s')))
 adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+# Do not misdiagnose a malformed hardware-input fixture as a paging failure.
+# The actual editor must retain the complete source before it can be saved.
+fixture_nodes = nodes()
+fixture_editors = [n.get('text', '') for n in fixture_nodes if n.get('class') == 'android.widget.EditText']
+(out / 'release-editor-source.txt').write_text('\n--- editor ---\n'.join(fixture_editors))
+assert '\n'.join(reader_source_lines) in fixture_editors, 'Hardware-entered Markdown source changed before saving'
+shot('release-editor-source', ['R8_FIRST', 'R8_SECOND', 'release_first_body', 'release_second_body'])
 tap('保存修改')
 size = adb('shell', 'wm', 'size').decode()
 reader_width, reader_height = map(int, re.findall(r'(\d+)x(\d+)', size)[-1])
