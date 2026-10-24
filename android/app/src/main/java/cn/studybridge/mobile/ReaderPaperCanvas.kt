@@ -30,6 +30,16 @@ import kotlin.math.sin
 
 data class ReaderPaperImages(val current: ImageBitmap, val target: ImageBitmap)
 
+internal fun Modifier.readerMotionTouchShield() = pointerInput(Unit) {
+    // A new pointer must never reach an invisible native frame, including
+    // while the target is still preparing its first snapshot.
+    awaitEachGesture {
+        val down = awaitFirstDown(false); down.consume()
+        do { val event = awaitPointerEvent(); event.changes.forEach { it.consume() } }
+        while (event.changes.any { it.pressed })
+    }
+}
+
 private fun paperPath(points: List<PaperPoint>, fold: PaperFold? = null, bow: Float = 0f): Path = Path().apply {
     if (points.isNotEmpty()) {
         moveTo(points[0].x, points[0].y)
@@ -46,30 +56,28 @@ private fun paperPath(points: List<PaperPoint>, fold: PaperFold? = null, bow: Fl
 }
 
 /** Only the moving paper is rasterized; resting pages retain native selection and images. */
-@Composable fun ReaderPaperCanvas(images: ReaderPaperImages, animation: String, progress: Float, direction: Int,
-    bottom: Boolean, touchY: Float, paper: Color, modifier: Modifier = Modifier) {
+@Composable fun ReaderPaperCanvas(images: ReaderPaperImages, animation: String, progress: () -> Float, direction: Int,
+    bottom: Boolean, touchY: () -> Float, paper: Color, modifier: Modifier = Modifier) {
     val bitmapPaint = remember { Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG) }
     val shadePaint = remember { Paint(Paint.ANTI_ALIAS_FLAG) }
     val front = if (direction > 0) images.current.asAndroidBitmap() else images.target.asAndroidBitmap()
     val underneath = if (direction > 0) images.target.asAndroidBitmap() else images.current.asAndroidBitmap()
     Canvas(modifier.testTag("笔记翻页画面").semantics {
         contentDescription = "正在翻页"
-        stateDescription = "${NOTE_PAGE_ANIMATIONS[animation]} · ${if (direction > 0) "向后阅读" else "向前阅读"} · ${(progress * 100).toInt()}%"
-    }.pointerInput(Unit) {
+        stateDescription = "${NOTE_PAGE_ANIMATIONS[animation]} · ${if (direction > 0) "向后阅读" else "向前阅读"} · ${(progress() * 100).toInt()}%"
+    }.readerMotionTouchShield()) {
         // A newly started pointer cannot select hidden text during completion.
         // The already-owned drag keeps its original hit path on the parent.
-        awaitEachGesture {
-            val down = awaitFirstDown(false); down.consume()
-            do { val event = awaitPointerEvent(); event.changes.forEach { it.consume() } }
-            while (event.changes.any { it.pressed })
-        }
-    }) {
         val w = size.width; val h = size.height
-        val p = progress.coerceIn(0f, 1f)
+        // Read motion state in drawing, keeping native text composition out of
+        // the per-finger-move / per-animation-frame path.
+        val p = progress().coerceIn(0f, 1f)
         drawIntoCanvas { composeCanvas ->
             val canvas = composeCanvas.nativeCanvas
             val saved = canvas.save(); canvas.clipRect(0f, 0f, w, h)
             bitmapPaint.alpha = 255; bitmapPaint.shader = null
+            shadePaint.color = android.graphics.Color.BLACK
+            shadePaint.style = Paint.Style.FILL
             canvas.drawColor(paper.toArgb())
             canvas.drawBitmap(underneath, null, RectF(0f, 0f, w, h), bitmapPaint)
             if (animation == "cover") {
@@ -82,7 +90,7 @@ private fun paperPath(points: List<PaperPoint>, fold: PaperFold? = null, bow: Fl
                 canvas.drawBitmap(front, null, RectF(x, 0f, x + w, h), bitmapPaint)
             } else {
                 val q = if (direction > 0) p else 1f - p
-                val fold = readerPaperFold(w, h, q, bottom, touchY)
+                val fold = readerPaperFold(w, h, q, bottom, touchY())
                 val bow = 14.dp.toPx() * sin(PI * q).toFloat()
                 val nx = fold.normal.x; val ny = fold.normal.y
                 val ax = nx * fold.offset; val ay = ny * fold.offset
@@ -100,7 +108,9 @@ private fun paperPath(points: List<PaperPoint>, fold: PaperFold? = null, bow: Fl
                 if (fold.back.isNotEmpty()) {
                     val reflection = Matrix().apply { setValues(floatArrayOf(1f - 2f * nx * nx, -2f * nx * ny, 2f * nx * fold.offset,
                         -2f * nx * ny, 1f - 2f * ny * ny, 2f * ny * fold.offset, 0f, 0f, 1f)) }
-                    val back = paperPath(fold.folded, fold, bow).apply { transform(reflection) }
+                    // The reflected control point must meet the same bowed
+                    // crease as the front; otherwise a slit opens in the paper.
+                    val back = paperPath(fold.folded, fold, -bow).apply { transform(reflection) }
                     val clipped = canvas.save(); canvas.clipPath(back)
                     canvas.drawColor(paper.toArgb())
                     bitmapPaint.alpha = 38

@@ -5,6 +5,8 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.background
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,7 +29,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.layer.GraphicsLayer
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -46,11 +51,13 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.collect
@@ -63,6 +70,7 @@ private class ReadingFrame(val page: Int, val token: Int) {
     val scroll = ScrollState(0)
     val text = ReaderTextRegistry()
     var positioned by mutableStateOf(false)
+    var layer: GraphicsLayer? = null
 }
 
 private class ReadingDrag(val generation: Int, val direction: Int) {
@@ -82,6 +90,9 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
     val initial = remember(note.id) { vm.readingMemory.position(note.id) }
     val mode = validNoteReadingMode(ui.data.noteReadMode)
     val continuous = mode == "continuous"
+    val pageAnimation = validNotePageAnimation(ui.data.notePageAnimation)
+    // Changing an unused animation must not reset continuous reading.
+    val motionStyle = if (continuous) "" else pageAnimation
     var index by rememberSaveable(note.id) { mutableIntStateOf(restoredNoteIndex(initial, hash, labels)) }
     // Offscreen native TextViews must not be premeasured at zero width: their
     // cached text layouts can outlive the later full-width Compose placement.
@@ -106,7 +117,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
     val chrome = LocalReadingChrome.current
     var fontSize by remember { mutableIntStateOf(ui.data.noteFontSize) }
     var bodyWidth by remember { mutableIntStateOf(0) }
-    var restored by remember(note.id, mode, hash, fontSize, bodyWidth) { mutableStateOf(false) }
+    var restored by remember(note.id, mode, hash, fontSize, bodyWidth, motionStyle) { mutableStateOf(false) }
     var readyMode by remember(note.id) { mutableStateOf("") }
     var viewport by remember { mutableIntStateOf(1) }
     var bodyTop by remember { mutableFloatStateOf(0f) }
@@ -114,6 +125,10 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
     var dragOffset by remember { mutableFloatStateOf(0f) }
     var transitionDirection by remember { mutableIntStateOf(0) }
     var dragSession by remember { mutableStateOf<ReadingDrag?>(null) }
+    var paperImages by remember { mutableStateOf<ReaderPaperImages?>(null) }
+    var foldBottom by remember { mutableStateOf(true) }
+    var foldTouchY by remember { mutableFloatStateOf(0f) }
+    val paperColor = MaterialTheme.colorScheme.background
     val selectionController = LocalNoteSelection.current
     var titleHeight by remember { mutableIntStateOf(1) }
     var tools by remember { mutableStateOf(false) }
@@ -157,6 +172,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
     }
     // Readiness, restoration and motion have one cancellable owner.
     fun discardIncoming() {
+        paperImages = null
         incomingFrame = null
         readyFrames.keys.retainAll(setOf(activeFrame.token))
     }
@@ -195,21 +211,46 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
     }
     suspend fun commitPage(destination: ReadingFrame?, direction: Int = 0) {
         if (destination != null) {
-            if (direction != 0) {
-                animate(dragOffset, -direction * bodyWidth.toFloat(), animationSpec = tween(240)) { value, _ -> dragOffset = value }
+            if (direction != 0 && paperImages != null) {
+                val remaining = (1f - abs(dragOffset) / bodyWidth.coerceAtLeast(1)).coerceIn(0f, 1f)
+                animate(dragOffset, -direction * bodyWidth.toFloat(), animationSpec = tween((160 + 180 * remaining).toInt(), easing = FastOutSlowInEasing)) { value, _ -> dragOffset = value }
             }
             // Commit with no suspension after the final animation frame.
-            activeFrame = destination; index = destination.page; incomingFrame = null; dragOffset = 0f
+            activeFrame = destination; index = destination.page; incomingFrame = null; paperImages = null; dragOffset = 0f
             traceMotion("commit gen=${commands.generation} page=${destination.page} frame=${destination.token}")
             readyFrames.keys.retainAll(setOf(destination.token))
+        }
+    }
+    suspend fun capturePaper(destination: ReadingFrame) {
+        // Both full viewport layers are recorded after the target's final
+        // scroll position. No capture/Markdown parsing runs on pointer moves.
+        withFrameNanos { }; withFrameNanos { }
+        val currentLayer = requireNotNull(activeFrame.layer)
+        val targetLayer = requireNotNull(destination.layer)
+        traceMotion("capture gen=${commands.generation} current=${activeFrame.token} target=${destination.token}")
+        try {
+            val currentImage = currentLayer.toImageBitmap()
+            val targetImage = targetLayer.toImageBitmap()
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            paperImages = ReaderPaperImages(currentImage, targetImage)
+        } catch (cancel: CancellationException) { throw cancel }
+        catch (error: OutOfMemoryError) {
+            // A GPU allocation failure must not crash reading or commit a
+            // different screen; finish the already-computed target directly.
+            android.util.Log.w("ReaderMotion", "Paper allocation unavailable; using native page", error)
+        } catch (error: IllegalStateException) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            android.util.Log.w("ReaderMotion", "Paper layer unavailable; using native page", error)
         }
     }
     suspend fun placePage(page: Int, offset: Int = 0, end: Boolean = false, anchor: NoteTextAnchor? = null, title: Boolean = false,
         direction: Int = 0) {
         transitionDirection = direction
-        commitPage(preparePage(page, offset, end, anchor, title), direction)
+        val destination = preparePage(page, offset, end, anchor, title)
+        if (destination != null && direction != 0) capturePaper(destination)
+        commitPage(destination, direction)
     }
-    LaunchedEffect(note.id, mode, hash, fontSize, bodyWidth) {
+    LaunchedEffect(note.id, mode, hash, fontSize, bodyWidth, viewport, motionStyle) {
         if (bodyWidth <= 0 || viewport <= 1) return@LaunchedEffect
         val position = if (readyMode.isEmpty()) initial else vm.readingMemory.position(note.id)
         restored = false
@@ -245,6 +286,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
     fun turn(direction: Int) {
         if (!canTurn()) return
         rememberPosition()
+        foldBottom = true; foldTouchY = viewport * .7f
         val current = activeFrame
         val nextOffset = nextReadingScreen(current.scroll.value, current.scroll.maxValue, viewport, direction)
         val nextPage = if (nextOffset != current.scroll.value) selected else (selected + direction).coerceIn(segments.indices)
@@ -257,10 +299,11 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
             }
         }
     }
-    fun beginDrag(displacement: Float): Int? {
+    fun beginDrag(displacement: Float, touchY: Float): Int? {
         traceMotion("begin dx=$displacement mode=$mode gen=${commands.generation}/${commands.settled} busy=${commands.busy} restored=$restored ready=$renderReady selection=${selectionController?.selection != null}")
         if (!canTurn() || selectionController?.selection != null) return null
         rememberPosition()
+        foldBottom = touchY >= viewport / 2f; foldTouchY = touchY
         val direction = if (displacement < 0) 1 else -1
         val current = activeFrame
         val nextOffset = nextReadingScreen(current.scroll.value, current.scroll.maxValue, viewport, direction)
@@ -275,10 +318,10 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
             dragOffset = displacement.coerceIn(-bodyWidth.toFloat(), bodyWidth.toFloat())
             coroutineScope {
                 // Start once at horizontal recognition, including the real-width
-                // layout wait; moves only update translation of these two frames.
+                // layout and capture wait; moves only redraw the paper canvas.
                 val prepared = if (hasDestination) async(start = CoroutineStart.UNDISPATCHED) {
                     preparePage(nextPage, offset = if (nextPage == current.page) nextOffset else 0,
-                        end = nextPage != current.page && direction < 0)
+                        end = nextPage != current.page && direction < 0)?.also { capturePaper(it) }
                 } else null
                 if (session.release.await() && prepared != null) commitPage(prepared.await(), direction)
                 else {
@@ -289,9 +332,10 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         }
         return generation
     }
-    fun moveDrag(generation: Int, displacement: Float) {
+    fun moveDrag(generation: Int, displacement: Float, touchY: Float = foldTouchY) {
         val session = dragSession?.takeIf { it.generation == generation && commands.generation == generation } ?: return
         dragOffset = if (session.direction > 0) displacement.coerceIn(-bodyWidth.toFloat(), 0f) else displacement.coerceIn(0f, bodyWidth.toFloat())
+        foldTouchY = touchY.coerceIn(0f, viewport.toFloat())
     }
     fun releaseDrag(generation: Int, displacement: Float, commit: Boolean) {
         traceMotion("release gen=$generation current=${commands.generation} session=${dragSession?.generation} dx=$displacement commit=$commit")
@@ -359,6 +403,15 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         }
         Text("点击翻页：点正文右侧前进一屏，左侧返回一屏。横滑：向左前进，向右返回。先看完当前页每一屏，再进入下一页。", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
         HorizontalDivider()
+        ReadingActionGroup("翻页动画")
+        NOTE_PAGE_ANIMATIONS.forEach { (id, title) ->
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(pageAnimation == id, role = Role.RadioButton,
+                onClick = { rememberPosition(); vm.updateNotebookState { it.copy(notePageAnimation = id) } }), verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(pageAnimation == id, null); Text(title)
+            }
+        }
+        Text("用于点击翻页和横向滑屏，连续滚动保持自然滑动。", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+        HorizontalDivider()
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             FeedbackTextButton(onClick = { rememberPosition(); fontSize = (fontSize - 1).coerceAtLeast(12); vm.updateNotebookState { it.copy(noteFontSize = fontSize) } }, enabled = fontSize > 12) { Text("减小字号") }
             Text("$fontSize sp", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
@@ -411,25 +464,30 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
                     // Local function-reference equality ignores captured
                     // composition values. Fresh lambdas keep the remembered
                     // gesture callbacks on the current readiness/restore state.
-                    onBegin = { beginDrag(it) }, onDrag = { generation, dx -> moveDrag(generation, dx) },
+                    onBegin = { dx, y -> beginDrag(dx, y) }, onDrag = { generation, dx, y -> moveDrag(generation, dx, y) },
                     onRelease = { generation, dx, commit -> releaseDrag(generation, dx, commit) },
                     onCancel = { cancelDrag(it) }, onTurn = { turn(it) })) {
                     // Stable keys preserve the incoming native view when it
                     // becomes active; neither viewport height nor text reflows.
-                    listOfNotNull(activeFrame, incomingFrame).forEach { frame -> key(frame.token) {
-                        val active = frame === activeFrame
-                        Column(Modifier.fillMaxSize().graphicsLayer {
-                            // Keep the outgoing page intact until the real
-                            // destination layout and its reading offset exist.
-                            val displacement = if (incomingFrame?.positioned == false) 0f else dragOffset
-                            translationX = if (active) displacement else transitionDirection * bodyWidth.toFloat() + displacement
-                            alpha = if (active || transitionDirection != 0 && frame.positioned) 1f else 0f
-                        }.verticalScroll(frame.scroll), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    listOfNotNull(incomingFrame, activeFrame).forEach { frame -> key(frame.token) {
+                        val layer = rememberGraphicsLayer()
+                        SideEffect { frame.layer = layer }
+                        DisposableEffect(frame) { onDispose { frame.layer = null } }
+                        Column(Modifier.fillMaxSize().drawWithContent {
+                            layer.record { this@drawWithContent.drawContent() }
+                            drawLayer(layer)
+                        }.background(paperColor).verticalScroll(frame.scroll), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                             if (frame.page == 0) heading()
                             segment(frame.page, frame)
                             Spacer(Modifier.height(72.dp))
                         }
                     } }
+                    paperImages?.let { images ->
+                        ReaderPaperCanvas(images, pageAnimation, { abs(dragOffset) / bodyWidth.coerceAtLeast(1) },
+                            transitionDirection, foldBottom, { foldTouchY }, paperColor, Modifier.fillMaxSize())
+                    }
+                    if (turning && transitionDirection != 0 && paperImages == null)
+                        Box(Modifier.fillMaxSize().readerMotionTouchShield())
                 }
                 Surface(Modifier.align(Alignment.BottomEnd).padding(8.dp), shape = MaterialTheme.shapes.medium, shadowElevation = 4.dp, color = MaterialTheme.colorScheme.primaryContainer) {
                     FeedbackIconButton(onClick = { tools = true }, modifier = Modifier.size(48.dp).testTag("笔记悬浮工具")) { Icon(Icons.Outlined.Tune, "悬浮阅读工具") }
@@ -441,7 +499,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
 
 private fun Modifier.noteScreenSwipe(mode: String, slop: Float, longPress: Long, distance: Float,
     trace: (String) -> Unit,
-    enabled: () -> Boolean, onBegin: (Float) -> Int?, onDrag: (Int, Float) -> Unit,
+    enabled: () -> Boolean, onBegin: (Float, Float) -> Int?, onDrag: (Int, Float, Float) -> Unit,
     onRelease: (Int, Float, Boolean) -> Unit, onCancel: (Int) -> Unit, onTurn: (Int) -> Unit): Modifier = composed {
     val currentEnabled by rememberUpdatedState(enabled)
     val currentTrace by rememberUpdatedState(trace)
@@ -473,14 +531,14 @@ private fun Modifier.noteScreenSwipe(mode: String, slop: Float, longPress: Long,
                     if (event.changes.count { it.pressed } > 1 || owner == null && change.uptimeMillis - down.uptimeMillis >= longPress) canceled = true
                     if (owner == null && abs(delta.y) > slop && abs(delta.y) > abs(delta.x)) canceled = true
                     if (!canceled && owner == null && abs(dx) > slop && abs(dx) > abs(delta.y) * 1.4f) {
-                        owner = currentOnBegin(dx)
+                        owner = currentOnBegin(dx, down.position.y)
                         currentTrace("recognized mode=$mode owner=$owner dx=$dx")
                         if (owner == null) canceled = true
                     }
                     val movingOwner = owner
                     if (movingOwner != null && !canceled) {
                         change.consume()
-                        currentOnDrag(movingOwner, dx)
+                        currentOnDrag(movingOwner, dx, change.position.y)
                     }
                     // Child clicks decide ownership before an unconsumed gap.
                     val final = awaitPointerEvent(PointerEventPass.Final).changes.firstOrNull { it.id == down.id }

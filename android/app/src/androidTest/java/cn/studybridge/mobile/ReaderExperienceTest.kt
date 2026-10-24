@@ -2,6 +2,7 @@ package cn.studybridge.mobile
 
 import android.app.Application
 import android.graphics.Rect
+import android.graphics.Bitmap
 import android.text.Spanned
 import android.text.style.BackgroundColorSpan
 import android.view.View
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.text.TextLayoutResult
@@ -249,15 +251,25 @@ class ReaderExperienceTest {
         }
         val beforeX = pageX()
         val beforeOffset = readingOffset()
+        val beforePaper = compose.onNodeWithTag("笔记正文").captureToImage().asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false)!!
         compose.onNodeWithTag("笔记正文").performTouchInput {
             down(Offset(width * .5f, height * .5f))
             moveTo(Offset(width * .42f, height * .5f), 160)
         }
         compose.waitForIdle()
         try {
-            assertTrue("A held horizontal gesture must move the native reading page with the finger", pageX() < beforeX - 5)
+            compose.waitUntil(8000) { compose.onAllNodesWithTag("笔记翻页画面").fetchSemanticsNodes().isNotEmpty() }
+            val held = compose.onNodeWithTag("笔记翻页画面").captureToImage().asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false)!!
+            try {
+                assertEquals(beforePaper.width, held.width); assertEquals(beforePaper.height, held.height)
+                var changed = 0
+                for (y in 0 until held.height step 4) for (x in 0 until held.width step 4)
+                    if (held.getPixel(x, y) != beforePaper.getPixel(x, y)) changed++
+                assertTrue("A held gesture must visibly fold the actual full-width paper before release", changed > 50)
+                assertEquals("Native text must not reflow or move independently under the folded snapshot", beforeX, pageX())
+            } finally { held.recycle() }
             advancedUiShot(compose.activity, "reader-audit-held-short-swipe")
-        } finally { compose.onNodeWithTag("笔记正文").performTouchInput { up() } }
+        } finally { beforePaper.recycle(); compose.onNodeWithTag("笔记正文").performTouchInput { up() } }
         compose.waitForIdle()
         assertEquals("Short drag must return to its exact origin", beforeX, pageX())
         assertEquals("Short drag must not commit another reading screen", beforeOffset, readingOffset(), 2f)
