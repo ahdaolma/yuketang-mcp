@@ -71,6 +71,7 @@ private class ReadingFrame(val page: Int, val token: Int) {
     val text = ReaderTextRegistry()
     var positioned by mutableStateOf(false)
     var layer: GraphicsLayer? = null
+    var draws = 0
 }
 
 private class ReadingDrag(val generation: Int, val direction: Int) {
@@ -228,7 +229,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         withFrameNanos { }; withFrameNanos { }
         val currentLayer = requireNotNull(activeFrame.layer)
         val targetLayer = requireNotNull(destination.layer)
-        traceMotion("capture gen=${commands.generation} current=${activeFrame.token} target=${destination.token}")
+        traceMotion("capture gen=${commands.generation} current=${activeFrame.token}/${activeFrame.draws} target=${destination.token}/${destination.draws} ready=${readyFrames[destination.token]}")
         try {
             val currentImage = currentLayer.toImageBitmap()
             val targetImage = targetLayer.toImageBitmap()
@@ -476,6 +477,10 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
                         DisposableEffect(frame) { onDispose { frame.layer = null } }
                         Column(Modifier.fillMaxSize().drawWithContent {
                             layer.record { this@drawWithContent.drawContent() }
+                            frame.draws++
+                            androidx.compose.runtime.snapshots.Snapshot.withoutReadObservation {
+                                traceMotion("draw frame=${frame.token} count=${frame.draws} ready=${readyFrames[frame.token]} scroll=${frame.scroll.value}")
+                            }
                             drawLayer(layer)
                         }.background(paperColor).verticalScroll(frame.scroll), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                             if (frame.page == 0) heading()

@@ -27,6 +27,7 @@ class ReaderPaperVisualTest {
         val canvas = Canvas(this)
         canvas.drawText(label, 45f, 120f, ink)
         ink.color = AndroidColor.YELLOW; canvas.drawRect(35f, 35f, 100f, 70f, ink)
+        canvas.drawRect(500f, 35f, 565f, 70f, ink)
     }
     private fun pixels() = compose.onNodeWithTag("笔记翻页画面").captureToImage().asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false)!!
     private fun colorAt(bitmap: Bitmap, x: Float, y: Float) = bitmap.getPixel((bitmap.width * x).toInt(), (bitmap.height * y).toInt())

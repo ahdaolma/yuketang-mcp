@@ -39,7 +39,7 @@ class ReaderMotionPreviewTest {
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes); bitmap.recycle()
         return "data:image/png;base64," + android.util.Base64.encodeToString(bytes.toByteArray(), android.util.Base64.NO_WRAP)
     }
-    private fun assertActualPaperColors() {
+    private fun assertActualPaperColors(label: String) {
         val bitmap = compose.onNodeWithTag("笔记翻页画面").captureToImage().asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false)!!
         try {
             var blue = 0; var green = 0
@@ -48,8 +48,10 @@ class ReaderMotionPreviewTest {
                 if (Color.blue(color) > 180 && Color.red(color) < 50 && Color.green(color) in 40..100) blue++
                 if (Color.green(color) > 130 && Color.red(color) < 60 && Color.blue(color) in 55..110) green++
             }
-            assertTrue("Current real source image must be drawn on the moving paper", blue > 1000)
-            assertTrue("Neighbor real source image must be revealed, not an empty placeholder", green > 1000)
+            android.util.Log.i("ReaderPaperPixels", "$label blue=$blue green=$green size=${bitmap.width}x${bitmap.height}")
+            advancedUiShot(compose.activity, label)
+            assertTrue("Current real source image must be drawn on the moving paper: blue=$blue green=$green", blue > 1000)
+            assertTrue("Neighbor real source image must be revealed, not an empty placeholder: blue=$blue green=$green", green > 1000)
         } finally { bitmap.recycle() }
     }
 
@@ -85,9 +87,8 @@ class ReaderMotionPreviewTest {
                 moveTo(Offset(width * .2f, height * .5f), 160)
             }
             compose.waitUntil(8000) { compose.onAllNodesWithTag("笔记翻页画面").fetchSemanticsNodes().isNotEmpty() }
-            assertActualPaperColors()
+            assertActualPaperColors("reader-motion-$style-forward-${if (dark) "dark" else "light"}")
             assertEquals("Native text remains full-width behind the canvas rather than reflowing into a strip", origin, pageX("首页正文标记"))
-            advancedUiShot(compose.activity, "reader-motion-$style-forward-${if (dark) "dark" else "light"}")
             compose.runOnIdle {
                 assertEquals("A preview does not commit its source page", "第 1 / 2 页", progress?.text)
                 assertEquals("A preview does not save the incoming source page", 0, vm.readingMemory.position(note.id)?.index)
@@ -104,8 +105,7 @@ class ReaderMotionPreviewTest {
                 down(Offset(width * .2f, height * .3f)); moveTo(Offset(width * .8f, height * .3f), 160)
             }
             compose.waitUntil(8000) { compose.onAllNodesWithTag("笔记翻页画面").fetchSemanticsNodes().isNotEmpty() }
-            assertActualPaperColors()
-            advancedUiShot(compose.activity, "reader-motion-$style-backward-${if (dark) "dark" else "light"}")
+            assertActualPaperColors("reader-motion-$style-backward-${if (dark) "dark" else "light"}")
             compose.onNodeWithTag("笔记正文").performTouchInput { up() }
             compose.waitUntil(5000) { readViews { views -> views.none { it.isAttachedToWindow && it.text.contains("相邻页正文标记") } } }
             repeat(8) { compose.mainClock.advanceTimeBy(100); compose.waitForIdle(); assertEquals("Backward completion cannot snap back to page 2", origin, pageX("首页正文标记")) }
