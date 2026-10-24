@@ -304,9 +304,17 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
     LaunchedEffect(ui.data.noteFontSize) { fontSize = ui.data.noteFontSize }
     fun goTo(segment: Int, offset: Int = 0, end: Boolean = false, anchor: NoteTextAnchor? = null, title: Boolean = false) {
         rememberPosition()
+        val page = segment.coerceIn(segments.indices)
+        val current = activeFrame
+        val destinationOffset = if (end) current.scroll.maxValue else offset.coerceIn(0, current.scroll.maxValue)
+        // Reopening an already-positioned native page creates a needless busy
+        // window and drops the reader's next tap. Search/anchor repositioning
+        // still owns a new command and its exact reveal as before.
+        if (!continuous && restored && !commands.busy && renderReady && query.isBlank() && anchor == null &&
+            page == current.page && current.scroll.value == destinationOffset) return
         operate {
             renderEpoch++
-            placePage(segment.coerceIn(segments.indices), offset, end, anchor, title)
+            placePage(page, offset, end, anchor, title)
             readyMode = mode; restored = true
         }
     }

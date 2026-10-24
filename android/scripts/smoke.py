@@ -6,6 +6,7 @@ import subprocess
 import time
 import xml.etree.ElementTree as ET
 import sys
+import shlex
 
 out = pathlib.Path('smoke-artifacts')
 out.mkdir(exist_ok=True)
@@ -107,7 +108,41 @@ logs = adb('logcat','-d','-s','AndroidRuntime:E').decode(errors='replace')
 assert 'FATAL EXCEPTION' not in logs, logs
 tap('返回设置'); tap('返回学习')
 tap('学习'); shot('study-native', ['从一页课件开始', '选择学习资料'])
+
+# Exercise the actual minified, fixed-signature APK through public UI only.
+# No debug fixture component or private-data injection is used.
+assert adb('shell', 'getprop', 'ro.kernel.qemu').decode().strip() == '1', 'Reader fixture is emulator-only'
+tap('笔记'); tap('新建笔记'); tap('Markdown 笔记')
+for index, line in enumerate(('## R8_FIRST', '', 'release_first_body', '', '## R8_SECOND', '', 'release_second_body')):
+    if index:
+        adb('shell', 'input', 'keyevent', 'KEYCODE_ENTER')
+    if line:
+        adb('shell', 'input text ' + shlex.quote(line.replace(' ', '%s')))
+adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+tap('保存修改')
+size = adb('shell', 'wm', 'size').decode()
+reader_width, reader_height = map(int, re.findall(r'(\d+)x(\d+)', size)[-1])
+
+def reader_settings():
+    tap('悬浮阅读工具'); tap('阅读方式与字号')
+
+def reader_page(name, present, absent):
+    shot(name, [present])
+    text = '\n'.join(n.get('text', '') for n in nodes())
+    assert absent not in text, f'{name}: stale native source page remains attached'
+
+for style, label in (('cover', '覆盖翻页'), ('curl', '仿真翻页')):
+    reader_settings()
+    tap('点击翻页'); tap(label); tap('关闭阅读方式与字号')
+    reader_page(f'release-reader-{style}-first', 'R8_FIRST', 'R8_SECOND')
+    adb('shell', 'input', 'tap', str(round(reader_width * .9)), str(round(reader_height * .55)))
+    reader_page(f'release-reader-{style}-forward', 'R8_SECOND', 'R8_FIRST')
+    adb('shell', 'input', 'tap', str(round(reader_width * .1)), str(round(reader_height * .55)))
+    reader_page(f'release-reader-{style}-backward', 'R8_FIRST', 'R8_SECOND')
+tap('悬浮阅读工具'); tap('返回笔记列表'); tap('学习')
+shot('study-after-reader', ['从一页课件开始', '选择学习资料'])
 print('APK native study, grouped settings and authorization controls passed.')
+print('Actual APK reader: curl/cover forward and backward native source pages passed.')
 # Review actual release UI in dark mode and a narrow viewport with larger text.
 tap('设置')
 try:
