@@ -124,6 +124,120 @@ class ReaderExperienceTest {
         compose.openNoteTool(label)
     }
 
+    @Test fun tapsInsideBothReadingHalvesAdvanceAndReturnInsteadOfFallingIntoADeadZone() = withReader(fullNote()) { _, vm ->
+        setMode(vm, "buttons", "点击翻页")
+        jump("整本开头")
+        for ((right, left) in listOf(.60f to .40f, .74f to .26f, .92f to .08f)) {
+            val before = readingOffset()
+            compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * right, height * .5f)) }
+            try { compose.waitUntil(3000) { readingOffset() > before + 10f } }
+            catch (e: Throwable) { advancedUiShot(compose.activity, "reader-audit-dead-zone-$right"); throw AssertionError("Right half x=$right did not advance", e) }
+            compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * left, height * .5f)) }
+            compose.waitUntil(3000) { kotlin.math.abs(readingOffset() - before) < 2f }
+        }
+    }
+
+    @Test fun tappingAnOriginalImageOpensPreviewWithoutAlsoTurningTheReader() {
+        val image = syntheticSlideImage()
+        val id = imageDigest(android.util.Base64.decode(image.substringAfter(','), android.util.Base64.DEFAULT))
+        val note = Note(title = "图片点击归属", content = "## 第 1 页\n\n" + sourceImageMarkdown(id, "可点击原图") +
+            "图片之后的说明。".repeat(350) + "\n\n## 第 2 页\n\n下一原页。", source = "合成图片", model = "fixture")
+        withReader(note, { SourceImages(it).save(image) }) { _, vm ->
+            setMode(vm, "buttons", "点击翻页")
+            jump("整本开头")
+            compose.waitUntil(5000) { compose.onAllNodesWithContentDescription("可点击原图 缩略图").fetchSemanticsNodes().isNotEmpty() }
+            val before = readingOffset()
+            compose.onNodeWithContentDescription("可点击原图 缩略图").performTouchInput { click(Offset(width * .92f, height * .5f)) }
+            compose.waitUntil(5000) { compose.onAllNodesWithText("关闭预览").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("关闭预览").performClick()
+            compose.waitForIdle()
+            assertEquals("An image tap belongs to preview and must not advance the text behind it", before, readingOffset(), 2f)
+        }
+    }
+
+    @Test fun anExistingTextSelectionDoesNotAlsoTriggerAnEdgePageTurn() = withReader(fullNote()) { _, vm ->
+        setMode(vm, "buttons", "点击翻页")
+        jump("整本开头")
+        nativeSnapshot { views ->
+            val view = views.first { it.text.contains(markers.first()) }
+            android.text.Selection.setSelection(view.text as android.text.Spannable, 0, 6)
+            view.reportSelection()
+        }
+        compose.onNodeWithTag("正文选词工具条").assertIsDisplayed()
+        val before = readingOffset()
+        compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * .92f, height * .65f)) }
+        compose.waitForIdle()
+        assertEquals("Dismiss/select text interaction must not turn the page underneath", before, readingOffset(), 2f)
+    }
+
+    @Test fun everyRenderedNativeLineRemainsReachableAtLargeFontInEachMode() {
+        val note = fullNote()
+        withReader(note) { _, vm ->
+            compose.runOnIdle { vm.updateNotebookState { it.copy(noteFontSize = 28) } }
+            for ((mode, label) in NOTE_READING_MODES) {
+                setMode(vm, mode, label)
+                jump("整本开头")
+                val expected = mutableSetOf<Pair<Int, Int>>()
+                val seen = mutableSetOf<Pair<Int, Int>>()
+                var lastLineSeen = false
+                for (attempt in 0 until 100) {
+                    nativeSnapshot { views -> views.forEach { view ->
+                        val source = view.block?.sourceStart
+                        val layout = view.layout
+                        if (source != null && layout != null && view.alpha >= .99f && layout.width == view.width - view.compoundPaddingLeft - view.compoundPaddingRight) {
+                            for (line in 0 until layout.lineCount) {
+                                val offset = layout.getLineStart(line)
+                                if (view.text.subSequence(offset, layout.getLineEnd(line)).isNotBlank()) {
+                                    val key = source to offset
+                                    expected += key
+                                    if (lineVisible(view, offset)) seen += key
+                                }
+                            }
+                        }
+                    } }
+                    lastLineSeen = lastLineSeen || markers.last() in visibleMarkers(listOf(markers.last()))
+                    if (lastLineSeen && seen.containsAll(expected)) break
+                    compose.onNodeWithTag("笔记正文").performTouchInput {
+                        when (mode) {
+                            "buttons" -> click(Offset(width * .92f, height * .5f))
+                            "swipe" -> swipeLeft(durationMillis = 220)
+                            else -> { down(Offset(center.x, height * .80f)); moveTo(Offset(center.x, height * .25f), 600); advanceEventTime(250); up() }
+                        }
+                    }
+                    compose.waitForIdle()
+                }
+                assertTrue("Must actually inspect substantial native line layouts in $mode", expected.size > 100)
+                assertTrue("Must reach final original page in $mode", lastLineSeen)
+                assertEquals("No rendered text line can fall between screens in $mode; missing=${expected - seen}", expected, seen)
+            }
+        }
+    }
+
+    @Test fun twoShortPagesSettleAtBothEndsWithoutChangingLayoutAfterTheGesture() {
+        val note = Note(title = "两页短笔记", content = "## 第 1 页\n\n短首页。\n\n## 第 2 页\n\n短末页。", source = "合成两页", model = "fixture")
+        withReader(note) { _, vm ->
+            for ((mode, label) in NOTE_READING_MODES) {
+                setMode(vm, mode, label)
+                jump("整本开头")
+                repeat(6) {
+                    compose.onNodeWithTag("笔记正文").performTouchInput {
+                        when (mode) {
+                            "buttons" -> click(Offset(width * .92f, height * .5f))
+                            "swipe" -> swipeLeft(durationMillis = 180)
+                            else -> swipeUp(durationMillis = 180)
+                        }
+                    }
+                }
+                compose.waitForIdle()
+                val before = compose.onNodeWithContentDescription("当前阅读页码").fetchSemanticsNode().config[SemanticsProperties.StateDescription]
+                val offset = readingOffset()
+                repeat(8) { compose.mainClock.advanceTimeBy(120); compose.waitForIdle(); assertEquals("Two-page reader must settle in $mode", offset, readingOffset(), 1f) }
+                assertEquals(before, compose.onNodeWithContentDescription("当前阅读页码").fetchSemanticsNode().config[SemanticsProperties.StateDescription])
+                advancedUiShot(compose.activity, "reader-audit-two-short-$mode")
+            }
+        }
+    }
+
     @Test fun mixedImageAndShortLongPagesRemainReadableAcrossEveryModeAndBackwards() {
         val image = syntheticSlideImage()
         val id = imageDigest(android.util.Base64.decode(image.substringAfter(','), android.util.Base64.DEFAULT))
