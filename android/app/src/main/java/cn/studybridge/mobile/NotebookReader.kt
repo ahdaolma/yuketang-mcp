@@ -126,6 +126,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
     var transitionDirection by remember { mutableIntStateOf(0) }
     var dragSession by remember { mutableStateOf<ReadingDrag?>(null) }
     var paperImages by remember { mutableStateOf<ReaderPaperImages?>(null) }
+    var motionAnimation by remember { mutableStateOf(pageAnimation) }
     var foldBottom by remember { mutableStateOf(true) }
     var foldTouchY by remember { mutableFloatStateOf(0f) }
     val paperColor = MaterialTheme.colorScheme.background
@@ -286,7 +287,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
     fun turn(direction: Int) {
         if (!canTurn()) return
         rememberPosition()
-        foldBottom = true; foldTouchY = viewport * .7f
+        foldBottom = true; foldTouchY = viewport * .7f; motionAnimation = pageAnimation
         val current = activeFrame
         val nextOffset = nextReadingScreen(current.scroll.value, current.scroll.maxValue, viewport, direction)
         val nextPage = if (nextOffset != current.scroll.value) selected else (selected + direction).coerceIn(segments.indices)
@@ -303,7 +304,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         traceMotion("begin dx=$displacement mode=$mode gen=${commands.generation}/${commands.settled} busy=${commands.busy} restored=$restored ready=$renderReady selection=${selectionController?.selection != null}")
         if (!canTurn() || selectionController?.selection != null) return null
         rememberPosition()
-        foldBottom = touchY >= viewport / 2f; foldTouchY = touchY
+        foldBottom = touchY >= viewport / 2f; foldTouchY = touchY; motionAnimation = pageAnimation
         val direction = if (displacement < 0) 1 else -1
         val current = activeFrame
         val nextOffset = nextReadingScreen(current.scroll.value, current.scroll.maxValue, viewport, direction)
@@ -483,7 +484,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
                         }
                     } }
                     paperImages?.let { images ->
-                        ReaderPaperCanvas(images, pageAnimation, { abs(dragOffset) / bodyWidth.coerceAtLeast(1) },
+                        ReaderPaperCanvas(images, motionAnimation, { abs(dragOffset) / bodyWidth.coerceAtLeast(1) },
                             transitionDirection, foldBottom, { foldTouchY }, paperColor, Modifier.fillMaxSize())
                     }
                     if (turning && transitionDirection != 0 && paperImages == null)

@@ -35,7 +35,7 @@ class ReaderExperienceTest {
         }, source = "三个合成来源页", model = "fixture"
     )
 
-    private fun withReader(note: Note, setup: (Application) -> Unit = {}, widthFraction: State<Float>? = null, block: (Application, StudyViewModel) -> Unit) {
+    private fun withReader(note: Note, setup: (Application) -> Unit = {}, widthFraction: State<Float>? = null, heightFraction: State<Float>? = null, block: (Application, StudyViewModel) -> Unit) {
         val app = noteTestApplication(compose.activity.applicationContext)
         setup(app)
         Vault(app).save(Saved(notes = listOf(note)))
@@ -46,7 +46,7 @@ class ReaderExperienceTest {
             val ui by vm.ui.collectAsState()
             StudyTheme(false) {
                 StudyFrame(ui, vm::tab, { vm.noteReader.closeRequested = true }, vm::stop, noteOpen = vm.noteReader.id != null) { padding ->
-                    Box(Modifier.fillMaxHeight().fillMaxWidth(widthFraction?.value ?: 1f).padding(padding).consumeWindowInsets(padding).imePadding()) { NotesScreen(ui, vm) }
+                    Box(Modifier.fillMaxHeight(heightFraction?.value ?: 1f).fillMaxWidth(widthFraction?.value ?: 1f).padding(padding).consumeWindowInsets(padding).imePadding()) { NotesScreen(ui, vm) }
                 }
             }
         }
@@ -172,10 +172,10 @@ class ReaderExperienceTest {
         assertEquals("Dismiss/select text interaction must not turn the page underneath", before, readingOffset(), 2f)
     }
 
-    @Test fun everyRenderedNativeLineRemainsReachableAtLargeFontInEachMode() {
+    private fun inspectEveryNativeLine(animation: String) {
         val note = fullNote()
         withReader(note) { _, vm ->
-            compose.runOnIdle { vm.updateNotebookState { it.copy(noteFontSize = 28) } }
+            compose.runOnIdle { vm.updateNotebookState { it.copy(noteFontSize = 28, notePageAnimation = animation) } }
             for ((mode, label) in NOTE_READING_MODES) {
                 setMode(vm, mode, label)
                 jump("整本开头")
@@ -215,6 +215,9 @@ class ReaderExperienceTest {
         }
     }
 
+    @Test fun everyRenderedNativeLineRemainsReachableAtLargeFontInEachMode() = inspectEveryNativeLine("curl")
+    @Test fun coverKeepsEveryRenderedNativeLineReachableAtLargeFontInEachMode() = inspectEveryNativeLine("cover")
+
     @Test fun twoShortPagesSettleAtBothEndsWithoutChangingLayoutAfterTheGesture() {
         val note = Note(title = "两页短笔记", content = (1..2).joinToString("\n\n") { page ->
             "## 第 $page 页\n\n" + (1..7).joinToString("\n\n") { "第${page}页短段落${it}。" }
@@ -242,7 +245,7 @@ class ReaderExperienceTest {
         }
     }
 
-    @Test fun horizontalDragMovesTheActualPageBeforeReleaseAndAShortDragReturnsInPlace() = withReader(fullNote()) { _, vm ->
+    @Test fun horizontalDragFoldsTheActualPaperBeforeReleaseAndAShortDragReturnsInPlace() = withReader(fullNote()) { _, vm ->
         setMode(vm, "swipe", "横向滑屏")
         jump("整本开头")
         fun pageX(): Int = nativeSnapshot { views ->
@@ -291,6 +294,54 @@ class ReaderExperienceTest {
         compose.waitUntil(5000) { readingOffset() > before + 10f }
         assertEquals("buttons", vm.ui.value.data.noteReadMode)
         assertReaderChrome()
+    }
+
+    @Test fun switchingEitherAnimationDuringItsHeldPaperCancelsTheOldCommandAndPersistsTheChoice() = withReader(fullNote()) { app, vm ->
+        setMode(vm, "swipe", "横向滑屏")
+        for ((style, title) in NOTE_PAGE_ANIMATIONS) {
+            jump("整本开头")
+            compose.openNoteTool("阅读设置")
+            compose.onNodeWithText(title).performScrollTo().performClick()
+            compose.onNodeWithContentDescription("关闭阅读方式与字号").performClick()
+            compose.waitForIdle()
+            val before = readingOffset()
+            compose.onNodeWithTag("笔记正文").performTouchInput {
+                down(Offset(width * .8f, height * .6f)); moveTo(Offset(width * .35f, height * .6f), 160)
+            }
+            compose.waitUntil(8000) { compose.onAllNodesWithTag("笔记翻页画面").fetchSemanticsNodes().isNotEmpty() }
+            val other = NOTE_PAGE_ANIMATIONS.keys.first { it != style }
+            try { compose.runOnIdle { vm.updateNotebookState { it.copy(notePageAnimation = other) } } }
+            finally { compose.onNodeWithTag("笔记正文").performTouchInput { up() } }
+            compose.waitUntil(8000) { compose.onAllNodesWithTag("笔记翻页画面").fetchSemanticsNodes().isEmpty() }
+            compose.waitForIdle()
+            repeat(6) { compose.mainClock.advanceTimeBy(100); compose.waitForIdle(); assertEquals("Old animation cannot later commit its screen", before, readingOffset(), 2f) }
+            compose.waitUntil(5000) { Vault(app).load().notePageAnimation == other }
+            compose.onNodeWithTag("笔记正文").performTouchInput { swipeLeft(durationMillis = 220) }
+            compose.waitUntil(5000) { readingOffset() > before + 10f }
+            assertReaderChrome()
+        }
+    }
+
+    @Test fun shrinkingOnlyViewportHeightDuringCoverPreviewCancelsTheOldScreenGeometry() {
+        val viewportHeightFraction = mutableStateOf(1f)
+        withReader(fullNote(), heightFraction = viewportHeightFraction) { _, vm ->
+            setMode(vm, "swipe", "横向滑屏")
+            compose.runOnIdle { vm.updateNotebookState { it.copy(notePageAnimation = "cover") } }
+            jump("整本开头")
+            val originalHeight = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow.height
+            compose.onNodeWithTag("笔记正文").performTouchInput {
+                down(Offset(width * .8f, height * .5f)); moveTo(Offset(width * .35f, height * .5f), 160)
+            }
+            compose.waitUntil(8000) { compose.onAllNodesWithTag("笔记翻页画面").fetchSemanticsNodes().isNotEmpty() }
+            try { compose.runOnIdle { viewportHeightFraction.value = .65f } }
+            finally { compose.onNodeWithTag("笔记正文").performTouchInput { up() } }
+            compose.waitUntil(8000) { compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow.height < originalHeight * .75f }
+            compose.waitForIdle()
+            compose.onNodeWithTag("笔记翻页画面").assertDoesNotExist()
+            val before = readingOffset()
+            compose.onNodeWithTag("笔记正文").performTouchInput { swipeLeft(durationMillis = 220) }
+            compose.waitUntil(5000) { readingOffset() > before + 10f }
+        }
     }
 
     @Test fun resizingTheViewportDuringAPreviewCancelsItsOldGeometryAndCanTurnAgain() {
