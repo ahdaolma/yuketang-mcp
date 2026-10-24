@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -510,7 +511,10 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
                         val layer = rememberGraphicsLayer()
                         SideEffect { frame.layer = layer }
                         DisposableEffect(frame) { onDispose { frame.layer = null } }
-                        Column(Modifier.fillMaxSize().drawWithContent {
+                        // Isolate native display lists from canvas-only motion
+                        // invalidations. Capture requests and native content
+                        // changes still invalidate this layer independently.
+                        Column(Modifier.fillMaxSize().graphicsLayer().drawWithContent {
                             val captureRevision = frame.captureRequest
                             layer.record { this@drawWithContent.drawContent() }
                             frame.recordedCapture = captureRevision
