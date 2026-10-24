@@ -33,7 +33,7 @@ class ReaderExperienceTest {
         }, source = "三个合成来源页", model = "fixture"
     )
 
-    private fun withReader(note: Note, setup: (Application) -> Unit = {}, block: (Application, StudyViewModel) -> Unit) {
+    private fun withReader(note: Note, setup: (Application) -> Unit = {}, widthFraction: State<Float>? = null, block: (Application, StudyViewModel) -> Unit) {
         val app = noteTestApplication(compose.activity.applicationContext)
         setup(app)
         Vault(app).save(Saved(notes = listOf(note)))
@@ -44,7 +44,7 @@ class ReaderExperienceTest {
             val ui by vm.ui.collectAsState()
             StudyTheme(false) {
                 StudyFrame(ui, vm::tab, { vm.noteReader.closeRequested = true }, vm::stop, noteOpen = vm.noteReader.id != null) { padding ->
-                    Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) { NotesScreen(ui, vm) }
+                    Box(Modifier.fillMaxHeight().fillMaxWidth(widthFraction?.value ?: 1f).padding(padding).consumeWindowInsets(padding).imePadding()) { NotesScreen(ui, vm) }
                 }
             }
         }
@@ -261,6 +261,45 @@ class ReaderExperienceTest {
         compose.waitForIdle()
         assertEquals("Short drag must return to its exact origin", beforeX, pageX())
         assertEquals("Short drag must not commit another reading screen", beforeOffset, readingOffset(), 2f)
+    }
+
+    @Test fun aNewModeAndFontSupersedeAHeldPreviewWithoutLeavingTheReaderStuck() = withReader(fullNote()) { _, vm ->
+        setMode(vm, "swipe", "横向滑屏")
+        jump("整本开头")
+        compose.onNodeWithTag("笔记正文").performTouchInput {
+            down(Offset(width * .8f, height * .5f))
+            moveTo(Offset(width * .35f, height * .5f), 160)
+        }
+        try { compose.runOnIdle { vm.updateNotebookState { it.copy(noteReadMode = "buttons", noteFontSize = 22) } } }
+        finally { compose.onNodeWithTag("笔记正文").performTouchInput { up() } }
+        compose.waitUntil(8000) { markers.first() in visibleMarkers(listOf(markers.first())) }
+        compose.waitForIdle()
+        val before = readingOffset()
+        compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * .6f, height * .5f)) }
+        compose.waitUntil(5000) { readingOffset() > before + 10f }
+        assertEquals("buttons", vm.ui.value.data.noteReadMode)
+        assertReaderChrome()
+    }
+
+    @Test fun resizingTheViewportDuringAPreviewCancelsItsOldGeometryAndCanTurnAgain() {
+        val viewportWidthFraction = mutableStateOf(1f)
+        withReader(fullNote(), widthFraction = viewportWidthFraction) { _, vm ->
+            setMode(vm, "swipe", "横向滑屏")
+            jump("整本开头")
+            val originalWidth = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow.width
+            compose.onNodeWithTag("笔记正文").performTouchInput {
+                down(Offset(width * .8f, height * .5f))
+                moveTo(Offset(width * .35f, height * .5f), 160)
+            }
+            try { compose.runOnIdle { viewportWidthFraction.value = .72f } }
+            finally { compose.onNodeWithTag("笔记正文").performTouchInput { up() } }
+            compose.waitUntil(8000) { compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow.width < originalWidth * .8f }
+            compose.waitForIdle()
+            val before = readingOffset()
+            compose.onNodeWithTag("笔记正文").performTouchInput { swipeLeft(durationMillis = 220) }
+            compose.waitUntil(5000) { readingOffset() > before + 10f }
+            assertReaderChrome()
+        }
     }
 
     @Test fun aTwoPageContinuousDragDoesNotReverseItsOwnScrollOrOscillateWhileIdle() {
@@ -601,6 +640,19 @@ class ReaderExperienceTest {
             compose.waitUntil(5000) { "最终命中" in visibleMarkers(listOf("最终命中")) }
             compose.onNodeWithText("$query · 2/2").assertIsDisplayed()
             compose.onNodeWithContentDescription("下一处").assertIsNotEnabled()
+        }
+    }
+
+    @Test fun aReferenceDefinitionAfterTheTargetStillRevealsTheOnlyVisibleOccurrence() {
+        val note = Note(title = "后置引用命中", content = "## 第 1 页\n\n[外链][needle]\n\n" +
+            "正文填充，需要逐行定位。\n\n".repeat(60) + "最终命中 needle\n\n[needle]: https://example.test", source = "合成引用", model = "fixture")
+        withReader(note) { _, _ ->
+            compose.openNoteTool("笔记内查找")
+            compose.onNodeWithText("查找完整正文").performTextInput("needle")
+            compose.waitUntil(5000) { compose.onAllNodesWithText("找到 1 处").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("第 1 段").performClick()
+            compose.waitUntil(5000) { "最终命中" in visibleMarkers(listOf("最终命中")) }
+            compose.onNodeWithText("needle · 1/1").assertIsDisplayed()
         }
     }
 }

@@ -232,7 +232,7 @@ class MainActivity : ComponentActivity() {
         val found = withContext(Dispatchers.Default) { synchronized(renderer) {
             // Count visible prefix occurrences, not Markdown URLs or fence
             // language names which never became native body text.
-            val prefix = renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(text.take(target.offset - start))), density, dark)
+            val prefix = renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(noteSearchPrefixSource(text, target.offset - start))), density, dark)
             renderedNoteSearchOffset(parsed.toString(), prefix.toString(), target.query)
         } }
         withContext(Dispatchers.Main.immediate) { value = target to found }

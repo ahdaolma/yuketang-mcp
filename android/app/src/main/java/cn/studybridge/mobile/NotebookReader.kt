@@ -128,6 +128,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         withContext(Dispatchers.Main.immediate) { value = result }
     }
     val selected by remember(continuous, restored, segments) { derivedStateOf { if (continuous && restored) (list.firstVisibleItemIndex - 1).coerceIn(segments.indices) else index.coerceIn(segments.indices) } }
+    LaunchedEffect(selected, mode) { traceMotion("selected mode=$mode page=$selected index=$index list=${list.firstVisibleItemIndex}/${list.firstVisibleItemScrollOffset}") }
     val readyPages = remember(note.id, hash, mode) { mutableStateMapOf<Int, Int>() }
     val readyFrames = remember(note.id, hash, mode) { mutableStateMapOf<Int, Boolean>() }
     var renderEpoch by remember(note.id) { mutableIntStateOf(0) }
@@ -407,8 +408,12 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
                     enabled = { (canTurn() && selectionController?.selection == null).also {
                         traceMotion("gate allowed=$it mode=$mode gen=${commands.generation}/${commands.settled} busy=${commands.busy} restored=$restored ready=$renderReady selection=${selectionController?.selection != null}")
                     } }, trace = ::traceMotion,
-                    onBegin = ::beginDrag, onDrag = ::moveDrag,
-                    onRelease = ::releaseDrag, onCancel = ::cancelDrag, onTurn = { turn(it) })) {
+                    // Local function-reference equality ignores captured
+                    // composition values. Fresh lambdas keep the remembered
+                    // gesture callbacks on the current readiness/restore state.
+                    onBegin = { beginDrag(it) }, onDrag = { generation, dx -> moveDrag(generation, dx) },
+                    onRelease = { generation, dx, commit -> releaseDrag(generation, dx, commit) },
+                    onCancel = { cancelDrag(it) }, onTurn = { turn(it) })) {
                     // Stable keys preserve the incoming native view when it
                     // becomes active; neither viewport height nor text reflows.
                     listOfNotNull(activeFrame, incomingFrame).forEach { frame -> key(frame.token) {

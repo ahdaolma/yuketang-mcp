@@ -98,6 +98,23 @@ class NoteSelectableTextView(context: Context) : TextView(context) {
     private var selectionOwnedGesture = false
     private var tapCandidate = false
     private val tapSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+    private fun traceReadingFocus(event: String) {
+        if (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) {
+            android.util.Log.d("ReaderFocus", "$event source=${block?.sourceStart} focused=$isFocused attached=$isAttachedToWindow")
+        }
+    }
+    override fun requestRectangleOnScreen(rectangle: Rect, immediate: Boolean): Boolean {
+        traceReadingFocus("rectangle immediate=$immediate rect=$rectangle")
+        return super.requestRectangleOnScreen(rectangle, immediate)
+    }
+    override fun onFocusChanged(focused: Boolean, direction: Int, previouslyFocusedRect: Rect?) {
+        traceReadingFocus("focus=$focused direction=$direction")
+        super.onFocusChanged(focused, direction, previouslyFocusedRect)
+    }
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        if (isFocused) traceReadingFocus("windowFocus=$hasWindowFocus")
+        super.onWindowFocusChanged(hasWindowFocus)
+    }
     internal fun selectionGeometry(first: Int, last: Int): NoteSelectionGeometry? {
         val textLayout = layout ?: return null
         if (!isAttachedToWindow || !isShown || first < 0 || last <= first || last > text.length) return null
