@@ -22,3 +22,9 @@
 最终发布仍需同一源码的全量 Android/Python、固定签名 R8、升级、实际截图核验；不将独立原语、部分专项或旧版的通过结果拼成最终通过。
 
 `c080211` 正式 R8 / [40093257934](https://github.com/ahdaolma/yuketang-mcp/actions/runs/40093257934) 未通过烟测，未发布。失败画面、无障碍正文与页码确认已到第二页，但期望 `R8_SECOND` 实际显示 `R8_SECND`（缺少 O），第二页正文完整；报告 artifact `12559609685`，ZIP SHA-256 `4023620b26b8af218cc2fdfa8f8bff9bcfae3faf707ed75daf95c9f442aa8943`。暂不将此归因于缓存或调整断言；补充真实硬件按键流的笔记编辑器/普通 Compose 输入框对照，调查输入、保存与渲染链路。该源码最低 API 26 的 187 单元与 8 纸页专项成功不替代这项失败。
+
+`fe34e11` / [40095296624](https://github.com/ahdaolma/yuketang-mcp/actions/runs/40095296624) 新增保存前逐字断言，再次捕获少字：编辑框原文为 `relase_first_body`（期望 `release_first_body`），此时尚未保存或翻页。报告 artifact `12560787778`，ZIP SHA-256 `f58a5e220eb44a6d7f8a3cba14b4e375e577c4f5d5262471e8e3dbcb441eba38`。因此继续调查编辑器，未发布。该源码 debug 的 [40095300348](https://github.com/ahdaolma/yuketang-mcp/actions/runs/40095300348) 三项硬件输入对照成功（两种字段各 12 轮、真实笔记页 5 轮多行输入并手动保存），artifact `12561150894` / SHA-256 `47b14ceb3c19b82bbd856c460f4444096804da4eb9880458e4fb68881fdd0034`；这并不能替代正式包的原始失败或证明原因已解决。
+
+`7981480` / [40107407408](https://github.com/ahdaolma/yuketang-mcp/actions/runs/40107407408) 受控时序稳定复现：2 项中笔记编辑器失败、普通字段对照成功。真实字段已接受 C、O；下一次 apply 后插 N，笔记变为 `R8_SECN`，普通字段保持 `R8_SECON`，焦点和语义 node ID 未更换。队列中的旧 `LaunchedEffect(text)` 回写 history，并使 CoreTextField 重置真实编辑缓冲。使用当前 Compose 官方源码确认 action 访问同一可更新 node，而非测试闭包持有旧 TextFieldValue；测试不手写延时阻塞产品 effect。报告 artifact `12565123266` / SHA-256 `d16f00948984eb14f7ae3a55586e6de6fa8c7d907c091098fefa34464803ee3a`。
+
+对应修正给所有实际本地文本/选区/IME 组合、撤销和重做增加 revision；过期同步不回写，真正外部替换随最新 revision 重新协调。新增外部替换及撤销/重做保护，保留原完整字符断言。需重新完成编辑器专项、正式 R8 保存前原文核对及全量回归，不能将基线失败计作修复通过。

@@ -37,23 +37,35 @@ fun formatNoteSelection(text: String, start: Int, end: Int, kind: String): NoteT
 private class NoteEditHistory(initial: TextFieldValue) {
     private val values = mutableStateListOf(initial)
     private var index by mutableIntStateOf(0)
+    var revision = 0L
+        private set
     val value get() = values[index]
     val canUndo get() = index > 0
     val canRedo get() = index < values.lastIndex
     fun record(next: TextFieldValue) {
+        if (next == value) return
+        revision++
         if (next.text == value.text) { values[index] = next; return }
         while (values.lastIndex > index) values.removeAt(values.lastIndex)
         values += next; index++
         if (values.size > 100) { values.removeAt(0); index-- }
     }
-    fun undo(): TextFieldValue { if (canUndo) index--; return value }
-    fun redo(): TextFieldValue { if (canRedo) index++; return value }
+    fun undo(): TextFieldValue { if (canUndo) { revision++; index-- }; return value }
+    fun redo(): TextFieldValue { if (canRedo) { revision++; index++ }; return value }
 }
 
 @Composable fun NoteEditor(text: String, onChange: (String) -> Unit, enabled: Boolean) {
     val history = remember { NoteEditHistory(TextFieldValue(text, TextRange(text.length))) }
     val value = history.value
-    LaunchedEffect(text) { if (text != history.value.text) history.record(TextFieldValue(text, TextRange(text.length))) }
+    val revision = history.revision
+    // A parent echo can be queued before a newer key/selection/composition or
+    // undo operation. It must not reset the live input buffer to that old text.
+    // Re-key on revision so a genuine pending external replacement can still
+    // reconcile against the latest local state on the following composition.
+    LaunchedEffect(text, revision) {
+        if (revision == history.revision && text != history.value.text)
+            history.record(TextFieldValue(text, TextRange(text.length)))
+    }
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
             FeedbackTextButton(onClick = { onChange(history.undo().text) }, enabled = enabled && history.canUndo) { Text("撤销") }

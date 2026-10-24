@@ -123,4 +123,20 @@ class NoteEditorEchoRaceTest {
 
     @Test fun noteEditorKeepsNewerInputWhenAnOlderParentEchoWasAlreadyScheduled() = exercise(true)
     @Test fun plainComposeControlKeepsTheSameInterleavedInput() = exercise(false)
+
+    @Test fun genuineExternalReplacementStillSupportsUndoAndRedo() {
+        var source by mutableStateOf("base")
+        compose.setContent { StudyTheme(false) { NoteEditor(source, { source = it }, true) } }
+        val field = compose.onNodeWithText("Markdown 笔记")
+        field.performTextInput("_edit")
+        compose.runOnIdle { assertEquals("base_edit", source) }
+        compose.runOnIdle { source = "new external content" }
+        compose.waitForIdle()
+        assertEquals("new external content", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        compose.onNodeWithText("撤销").performClick()
+        compose.runOnIdle { assertEquals("base_edit", source) }
+        compose.onNodeWithText("重做").performClick()
+        compose.runOnIdle { assertEquals("new external content", source) }
+        assertEquals(source, field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+    }
 }

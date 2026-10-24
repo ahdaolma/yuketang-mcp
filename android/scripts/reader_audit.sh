@@ -8,7 +8,7 @@ if [ "${RAIN_READER_SUITE:-reader}" = paper ]; then
   classes=cn.studybridge.mobile.ReaderLayerCaptureTest,cn.studybridge.mobile.ReaderPaperVisualTest,cn.studybridge.mobile.ReaderMotionPreviewTest,cn.studybridge.mobile.ReaderMotionCompletionTest
 fi
 if [ "${RAIN_READER_SUITE:-reader}" = editor ]; then
-  classes=cn.studybridge.mobile.NoteEditorHardwareInputTest
+  classes=cn.studybridge.mobile.NoteEditorHardwareInputTest,cn.studybridge.mobile.NoteEditorEchoRaceTest
 fi
 if [ "${RAIN_READER_SUITE:-reader}" = echo ]; then
   classes=cn.studybridge.mobile.NoteEditorEchoRaceTest
