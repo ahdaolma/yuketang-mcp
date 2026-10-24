@@ -2,6 +2,21 @@ package cn.studybridge.mobile
 
 data class NoteReadingSegment(val start: Int, val end: Int, val prefix: String = "", val suffix: String = "") {
     fun display(markdown: String) = prefix + markdown.substring(start, end) + suffix
+    fun sourceForDisplay(markdown: String, removedPrefix: Int = 0): NoteReadingSource {
+        val removedSource = (removedPrefix - prefix.length).coerceIn(0, end - start)
+        return NoteReadingSource(markdown.substring(start + removedSource, end), start + removedSource, (prefix.length - removedPrefix).coerceAtLeast(0))
+    }
+}
+
+// Original bytes corresponding to the real part of a displayed segment. The
+// prefix can be a repeated table header or a reopened fence, never stored text.
+data class NoteReadingSource(val source: String, val sourceStart: Int, val prefixLength: Int = 0) {
+    fun block(start: Int, end: Int): NoteReadingSource? {
+        val first = maxOf(start, prefixLength)
+        val last = minOf(end, prefixLength + source.length)
+        if (last <= first) return null
+        return NoteReadingSource(source.substring(first - prefixLength, last - prefixLength), sourceStart + first - prefixLength, (prefixLength - start).coerceAtLeast(0))
+    }
 }
 
 // Suppress only the exact redundant document title in the rendered first segment.
@@ -47,6 +62,7 @@ fun noteReadingSegments(markdown: String, limit: Int = 12000): List<NoteReadingS
     val tables = mutableListOf<ReadingTable>()
     val fences = mutableListOf(ReadingFence(0, "", ""))
     val fence = Regex("^ {0,3}(`{3,}|~{3,})(.*)$")
+    val tableInterrupt = Regex("^ {0,3}(?:#{1,6}(?:\\s|$)|>|[-+*]\\s|1[.)]\\s|(?:[-*_]\\s*){3,}$)")
     var opened = ""
     var opener = ""
     var tableHeader = ""
@@ -73,7 +89,11 @@ fun noteReadingSegments(markdown: String, limit: Int = 12000): List<NoteReadingS
             // The source delimiter belongs to the atomic header range, not to
             // the body (it may itself have no outer pipe characters).
             if (range.start < tableBodyStart) continue
-            if (opened.isEmpty() && marker == null && line.isNotBlank() && '|' in line) {
+            // GFM permits omitted trailing cells, including a body row with
+            // only its first cell and no pipe. Blank lines and block starters
+            // end a table; ordinary nonblank text remains a complete row.
+            val interruptsTable = tableInterrupt.containsMatchIn(line)
+            if (opened.isEmpty() && marker == null && line.isNotBlank() && ('|' in line || !interruptsTable)) {
                 atomic.add(ReadingAtomicRange(range.start, range.end))
                 tableEnd = range.end
                 continue

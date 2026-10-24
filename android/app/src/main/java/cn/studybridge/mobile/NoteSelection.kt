@@ -45,10 +45,10 @@ import androidx.core.view.WindowInsetsCompat
 import kotlin.math.ceil
 import kotlin.math.floor
 
-data class NoteSelectionBlock(val source: String, val sourceStart: Int)
+data class NoteSelectionBlock(val source: String, val sourceStart: Int, val annotationStart: Int = 0)
 data class NoteSelectionGeometry(val boundsInWindow: IntRect, val safeWindowBounds: IntRect)
 data class NoteTextSelection(val view: NoteSelectableTextView, val block: NoteSelectionBlock, val start: Int, val end: Int, val quote: String, val geometry: NoteSelectionGeometry? = null) {
-    fun annotation(kind: String, comment: String = "") = NoteAnnotation(sourceStart = block.sourceStart, sourceLength = block.source.length, sourceHash = imageDigest(block.source.toByteArray()), start = start, end = end, quote = quote, kind = kind, comment = comment)
+    fun annotation(kind: String, comment: String = "") = NoteAnnotation(sourceStart = if (start >= block.annotationStart) block.sourceStart else -1, sourceLength = block.source.length, sourceHash = imageDigest(block.source.toByteArray()), start = start, end = end, quote = quote, kind = kind, comment = comment)
 }
 class NoteSelectionController {
     var selection by mutableStateOf<NoteTextSelection?>(null)

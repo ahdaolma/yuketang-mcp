@@ -120,4 +120,32 @@ class ReaderSourceAuditTest {
             assertTrue(hit.offset >= parts[hit.segment].start && hit.offset < parts[hit.segment].end)
         }
     }
+
+    @Test fun unpipedFirstCellRowsKeepTableContextThroughFollowingAndOversizedRows() {
+        val header = "|主题|解释|\n|---|---|\n"
+        val longRow = "无分隔符" + "正文".repeat(200) + "\n"
+        val text = header + "只有第一格\n" + longRow + (1..50).joinToString("") { "|条目$it|解释内容|\n" } + "\n后文"
+        val parts = noteReadingSegments(text, 256)
+        assertEquals(text, parts.joinToString("") { text.substring(it.start, it.end) })
+        val oversized = parts.single { text.substring(it.start, it.end) == longRow }
+        assertEquals(header, oversized.prefix)
+        assertTrue(parts.drop(1).any { text.substring(it.start, it.end).startsWith("|条目") && it.prefix == header })
+        for (part in parts) {
+            val source = part.sourceForDisplay(text)
+            assertEquals(text.substring(part.start, part.end), source.source)
+            assertEquals(part.start, source.sourceStart)
+            assertEquals(part.prefix.length, source.prefixLength)
+        }
+    }
+
+    @Test fun annotationBlocksExcludeSyntheticContextAndKeepOriginalOffsetsAfterImages() {
+        val source = "第一段\n" + sourceImageMarkdown("d".repeat(64), "原图") + "后续正文\n"
+        val mapping = NoteReadingSource(source, 500, 20)
+        val image = sourceImagePattern.find(source)!!
+        val block = mapping.block(20 + image.range.last + 1, 20 + source.length + 12)!!
+        assertEquals("\n\n后续正文\n", block.source)
+        assertEquals(500 + image.range.last + 1, block.sourceStart)
+        assertEquals(0, block.prefixLength)
+        assertNull(mapping.block(0, 20))
+    }
 }

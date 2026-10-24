@@ -177,7 +177,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@Composable fun Markdown(text: String, sourceOffset: Int? = null) {
+@Composable fun Markdown(text: String, sourceOffset: Int? = null, annotationSource: NoteSelectionBlock? = sourceOffset?.let { NoteSelectionBlock(text, it) }, syntheticPrefixLength: Int = 0) {
     val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
     val color = colors.onSurface.toArgb()
@@ -198,8 +198,14 @@ class MainActivity : ComponentActivity() {
             }).build()
     }
     val dark = colors.background.luminance() < 0.5f
-    val formatted by produceState<Pair<String, android.text.Spanned>?>(null, text, renderer, density, dark) {
-        val parsed = withContext(Dispatchers.Default) { text to renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(text)), density, dark) }
+    val formatted by produceState<Triple<String, android.text.Spanned, Int>?>(null, text, renderer, density, dark, syntheticPrefixLength) {
+        val parsed = withContext(Dispatchers.Default) { synchronized(renderer) {
+            val body = renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(text)), density, dark)
+            // TablePlugin owns mutable visitor state. Render prefix context in
+            // the same worker sequence, never concurrently on the UI thread.
+            val prefix = if (syntheticPrefixLength == 0) "" else renderer.toMarkdown(markdownForStudyMarks(text.take(syntheticPrefixLength))).toString().trimEnd('\r', '\n')
+            Triple(text, body, if (body.toString().startsWith(prefix)) prefix.length else Int.MAX_VALUE)
+        } }
         // AndroidView updates must stay on the UI thread even when a test's
         // unconfined frame clock resumes the producer on its worker thread.
         withContext(Dispatchers.Main.immediate) { value = parsed }
@@ -213,13 +219,30 @@ class MainActivity : ComponentActivity() {
     val registerText = LocalNoteTextRegistered.current
     val contentWidth = LocalNoteContentWidth.current
     val onPageTap = LocalNotePageTap.current
-    val decorated = remember(formatted, text, sourceOffset, personalMarks, searchQuery) { formatted?.takeIf { it.first == text }?.second?.let { searchHighlight(renderPersonalAnnotations(it, text, sourceOffset, personalMarks), searchQuery) as android.text.Spanned } }
+    val annotationBlock = remember(formatted, text, annotationSource) {
+        annotationSource?.copy(annotationStart = formatted?.takeIf { it.first == text }?.third ?: Int.MAX_VALUE)
+    }
+    val decorated = remember(formatted, text, annotationBlock, personalMarks, searchQuery) { formatted?.takeIf { it.first == text }?.second?.let { searchHighlight(renderPersonalAnnotations(it, annotationBlock?.source.orEmpty(), annotationBlock?.sourceStart, personalMarks), searchQuery) as android.text.Spanned } }
+    val locatedSearch by produceState<Pair<NoteSearchTarget, Int>?>(null, searchTarget, formatted, text, sourceOffset, renderer, density, dark) {
+        value = null
+        val target = searchTarget ?: return@produceState
+        val start = sourceOffset ?: return@produceState
+        val parsed = formatted?.takeIf { it.first == text }?.second ?: return@produceState
+        if (target.offset !in start until start + text.length) return@produceState
+        val found = withContext(Dispatchers.Default) { synchronized(renderer) {
+            // Count visible prefix occurrences, not Markdown URLs or fence
+            // language names which never became native body text.
+            val prefix = renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(text.take(target.offset - start))), density, dark)
+            renderedNoteSearchOffset(parsed.toString(), prefix.toString(), target.query)
+        } }
+        withContext(Dispatchers.Main.immediate) { value = target to found }
+    }
     AndroidView(factory = { NoteSelectableTextView(it).apply { layoutParams = android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT); textSize = 16f; setTextIsSelectable(true); setLineSpacing(0f, 1.3f) } }, modifier = Modifier.fillMaxWidth().then(if (contentWidth != null) Modifier.requiredWidth(contentWidth) else Modifier), update = {
         if (it.currentTextColor != color) it.setTextColor(color)
         if (kotlin.math.abs(it.textSize - bodySize) > 0.1f) it.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, bodySize)
         it.controller = if (decorated != null) selectionController else null
         it.onPageTap = if (decorated != null) onPageTap else null
-        it.block = if (sourceOffset != null && decorated != null) NoteSelectionBlock(text, sourceOffset) else null
+        it.block = if (decorated != null) annotationBlock else null
         if (selectionController != null) it.useApplicationMenu() else it.customSelectionActionModeCallback = null
         val parsed = decorated
         // Lazy lists must reserve text height while formatting runs. An empty
@@ -238,12 +261,10 @@ class MainActivity : ComponentActivity() {
         val target = searchTarget
         if (target != null && sourceOffset != null && target.offset in sourceOffset until sourceOffset + text.length && parsed != null) {
             val key = "${target.revision}:${target.offset}:${target.query}"
-            if (it.searchRevealKey != key) {
+            val found = locatedSearch?.takeIf { it.first == target }?.second ?: -1
+            if (it.searchRevealKey != key && found >= 0) {
                 it.searchRevealKey = key
-                val ordinal = searchNoteContent(text.take((target.offset - sourceOffset).coerceAtLeast(0)), target.query).size
-                var found = -target.query.length
-                repeat(ordinal + 1) { _ -> found = parsed.toString().indexOf(target.query, (found + target.query.length).coerceAtLeast(0), true) }
-                if (found >= 0) { val view = it; val offset = found; view.post { revealSearch?.invoke(view, offset, target.revision) } }
+                val view = it; val offset = found; view.post { revealSearch?.invoke(view, offset, target.revision) }
             }
         }
     })
@@ -640,7 +661,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
             key(note.id, selected) {
                 val raw = segments[selected].display(note.content)
                 val shown = if (titleAlreadyShown && selected == 0) noteTextForDisplay(raw, note.title) else raw
-                IllustratedMarkdown(shown, sourceImages, segments[selected].start - segments[selected].prefix.length + raw.length - shown.length)
+                IllustratedMarkdown(shown, sourceImages, segments[selected].start - segments[selected].prefix.length + raw.length - shown.length, segments[selected].sourceForDisplay(note.content, raw.length - shown.length))
             }
             Spacer(Modifier.height(if (compactFraction > 0.5f) 72.dp else 24.dp))
         }

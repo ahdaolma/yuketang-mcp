@@ -24,9 +24,10 @@ val LocalNoteSearchReveal = staticCompositionLocalOf<((android.widget.TextView, 
 fun searchHighlight(text: CharSequence, query: String): CharSequence {
     if (query.isBlank()) return text
     val result = SpannableStringBuilder(text)
+    val plain = text.toString()
     var start = 0
     while (start < text.length) {
-        val found = text.toString().indexOf(query, start, true); if (found < 0) break
+        val found = plain.indexOf(query, start, true); if (found < 0) break
         result.setSpan(BackgroundColorSpan(0xFFFFD45A.toInt()), found, found + query.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         start = found + query.length
     }
@@ -39,17 +40,46 @@ fun searchSnippet(text: String, query: String): AnnotatedString {
 }
 
 data class NoteSearchHit(val segment: Int, val offset: Int, val snippet: String)
+private class NoteSearchResults(private val content: String, private val wordLength: Int, private val segments: List<NoteReadingSegment>, private val offsets: IntArray) : AbstractList<NoteSearchHit>() {
+    override val size get() = offsets.size
+    override fun get(index: Int): NoteSearchHit {
+        val found = offsets[index]
+        var low = 0; var high = segments.size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (segments[middle].start <= found) low = middle + 1 else high = middle
+        }
+        return NoteSearchHit((low - 1).coerceAtLeast(0), found,
+            content.substring(maxOf(0, found - 32), minOf(content.length, found + wordLength + 70)).replace('\r', ' ').replace('\n', ' '))
+    }
+}
+
+internal fun noteSearchHitIndex(hits: List<NoteSearchHit>, offset: Int): Int {
+    var low = 0; var high = hits.size
+    while (low < high) {
+        val middle = (low + high) ushr 1
+        if (hits[middle].offset < offset) low = middle + 1 else high = middle
+    }
+    return low.takeIf { it < hits.size && hits[it].offset == offset } ?: -1
+}
+
 fun searchNoteContent(content: String, query: String, segments: List<NoteReadingSegment> = noteReadingSegments(content)): List<NoteSearchHit> {
     val word = query.trim(); if (word.isEmpty()) return emptyList()
-    val result = mutableListOf<NoteSearchHit>()
-    var offset = 0; var segment = 0
+    // Keep all destinations as compact offsets; only visible list rows and the
+    // chosen result allocate snippets. A common word must not create hundreds
+    // of thousands of duplicated preview strings or lose later destinations.
+    var offsets = IntArray(32)
+    var count = 0
+    val hidden = noteHiddenSearchCharacters(content)
+    var offset = 0
     while (offset < content.length) {
         val found = content.indexOf(word, offset, ignoreCase = true); if (found < 0) break
-        while (segment < segments.lastIndex && found >= segments[segment].end) segment++
-        result.add(NoteSearchHit(segment, found, content.substring(maxOf(0, found - 32), minOf(content.length, found + word.length + 70)).replace('\n', ' ')))
         offset = found + word.length
+        if ((found until offset).any { hidden[it] }) continue
+        if (count == offsets.size) offsets = offsets.copyOf(offsets.size * 2)
+        offsets[count++] = found
     }
-    return result
+    return NoteSearchResults(content, word.length, segments, offsets.copyOf(count))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

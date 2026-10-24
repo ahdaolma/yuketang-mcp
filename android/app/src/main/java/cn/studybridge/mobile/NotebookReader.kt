@@ -35,6 +35,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.*
@@ -97,6 +98,9 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
     var incomingFrame by remember(note.id, hash) { mutableStateOf<ReadingFrame?>(null) }
     val scroll = activeFrame.scroll
     val scope = rememberCoroutineScope()
+    val readerContext = LocalContext.current
+    val debugMotion = readerContext.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
+    fun traceMotion(message: String) { if (debugMotion) android.util.Log.d("ReaderMotion", message) }
     val density = LocalDensity.current
     val configuration = LocalViewConfiguration.current
     val chrome = LocalReadingChrome.current
@@ -151,17 +155,24 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         }
     }
     // Readiness, restoration and motion have one cancellable owner.
+    fun discardIncoming() {
+        incomingFrame = null
+        readyFrames.keys.retainAll(setOf(activeFrame.token))
+    }
     fun operate(block: suspend (Int) -> Unit) {
-        incomingFrame = null; dragOffset = 0f; transitionDirection = 0; dragSession = null
-        commands.replace(scope, onSettled = { incomingFrame = null; dragOffset = 0f; dragSession = null }, block = block)
+        traceMotion("replace gen=${commands.generation} mode=$mode page=${activeFrame.page}")
+        discardIncoming(); dragOffset = 0f; transitionDirection = 0; dragSession = null
+        commands.replace(scope, onSettled = { traceMotion("settle gen=${commands.generation} page=${activeFrame.page}"); discardIncoming(); dragOffset = 0f; dragSession = null }, block = block)
     }
     suspend fun preparePage(page: Int, offset: Int = 0, end: Boolean = false, anchor: NoteTextAnchor? = null, title: Boolean = false): ReadingFrame? {
         val destination = if (continuous) null else ReadingFrame(page, ++frameToken).also { incomingFrame = it }
+        traceMotion("prepare gen=${commands.generation} page=$page frame=${destination?.token} offset=$offset end=$end width=$bodyWidth")
         if (continuous && title && anchor == null && offset == 0 && !end) { list.scrollToItem(0); return null }
         if (continuous) list.scrollToItem(page + 1)
         // Both frames are measured at the real viewport width. Incoming text has
         // its own registry and cannot become the saved outgoing reading anchor.
         snapshotFlow { if (destination == null) readyPages[page] == renderEpoch else readyFrames[destination.token] == true }.first { it }
+        traceMotion("ready gen=${commands.generation} page=$page frame=${destination?.token}")
         withFrameNanos { }; withFrameNanos { }
         val registry = destination?.text ?: continuousText
         val destinationScroll = destination?.scroll
@@ -178,6 +189,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
             list.scrollToItem(if (title) 0 else page + 1, targetOffset)
         } else destinationScroll.scrollTo(if (end) destinationScroll.maxValue else offset.coerceIn(0, destinationScroll.maxValue))
         destination?.positioned = true
+        traceMotion("positioned gen=${commands.generation} page=$page frame=${destination?.token} scroll=${destinationScroll?.value}/${destinationScroll?.maxValue}")
         return destination
     }
     suspend fun commitPage(destination: ReadingFrame?, direction: Int = 0) {
@@ -187,6 +199,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
             }
             // Commit with no suspension after the final animation frame.
             activeFrame = destination; index = destination.page; incomingFrame = null; dragOffset = 0f
+            traceMotion("commit gen=${commands.generation} page=${destination.page} frame=${destination.token}")
             readyFrames.keys.retainAll(setOf(destination.token))
         }
     }
@@ -244,6 +257,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         }
     }
     fun beginDrag(displacement: Float): Int? {
+        traceMotion("begin dx=$displacement mode=$mode gen=${commands.generation}/${commands.settled} busy=${commands.busy} restored=$restored ready=$renderReady selection=${selectionController?.selection != null}")
         if (!canTurn() || selectionController?.selection != null) return null
         rememberPosition()
         val direction = if (displacement < 0) 1 else -1
@@ -254,6 +268,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         var generation: Int? = null
         operate { command ->
             generation = command
+            traceMotion("drag-owner gen=$command target=$nextPage offset=$nextOffset hasTarget=$hasDestination")
             val session = ReadingDrag(command, direction)
             dragSession = session; transitionDirection = direction
             dragOffset = displacement.coerceIn(-bodyWidth.toFloat(), bodyWidth.toFloat())
@@ -278,14 +293,16 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         dragOffset = if (session.direction > 0) displacement.coerceIn(-bodyWidth.toFloat(), 0f) else displacement.coerceIn(0f, bodyWidth.toFloat())
     }
     fun releaseDrag(generation: Int, displacement: Float, commit: Boolean) {
+        traceMotion("release gen=$generation current=${commands.generation} session=${dragSession?.generation} dx=$displacement commit=$commit")
         val session = dragSession?.takeIf { it.generation == generation && commands.generation == generation } ?: return
         moveDrag(generation, displacement)
         session.release.complete(commit && displacement * session.direction < 0)
     }
     fun cancelDrag(generation: Int) {
+        traceMotion("cancel gen=$generation current=${commands.generation} session=${dragSession?.generation}")
         if (dragSession?.generation != generation) return
         commands.cancel(generation) {
-            incomingFrame = null; dragOffset = 0f; dragSession = null
+            discardIncoming(); dragOffset = 0f; dragSession = null
         }
     }
     fun selectHit(hit: NoteSearchHit, word: String) { query = word; searchOffset = hit.offset; searchRevision++; searching = false; goTo(hit.segment) }
@@ -353,7 +370,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
     CompositionLocalProvider(LocalNoteFontSize provides fontSize, LocalNoteSearchQuery provides query, LocalNoteSearchTarget provides target, LocalNoteSearchReveal provides reveal, LocalNotePageTap provides pageTap) {
         Column(modifier.fillMaxSize()) {
             if (query.isNotBlank()) Row(Modifier.fillMaxWidth().testTag("查找命中导航"), verticalAlignment = Alignment.CenterVertically) {
-                val hitIndex = hits.indexOfFirst { it.offset == searchOffset }.coerceAtLeast(0)
+                val hitIndex = noteSearchHitIndex(hits, searchOffset).coerceAtLeast(0)
                 Text("$query · ${if (hits.isEmpty()) 0 else hitIndex + 1}/${hits.size}", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 FeedbackIconButton(onClick = { selectHit(hits[(hitIndex - 1).coerceAtLeast(0)], query) }, enabled = hits.isNotEmpty() && hitIndex > 0) { Icon(Icons.Default.ChevronLeft, "上一处") }
                 FeedbackIconButton(onClick = { selectHit(hits[(hitIndex + 1).coerceAtMost(hits.lastIndex)], query) }, enabled = hits.isNotEmpty() && hitIndex < hits.lastIndex) { Icon(Icons.Default.ChevronRight, "下一处") }
@@ -378,7 +395,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
                         LocalNoteTextRegistered provides { view, start -> (frame?.text ?: continuousText).register(page, start, view) }, LocalNoteContentWidth provides contentWidth,
                         LocalNoteSearchTarget provides (if (frame == null || frame === activeFrame) target else null),
                         LocalNotePageTap provides (if (frame == null || frame === activeFrame) pageTap else null)) {
-                        IllustratedMarkdown(shown, vm.sourceImages, part.start - part.prefix.length + raw.length - shown.length)
+                        IllustratedMarkdown(shown, vm.sourceImages, part.start - part.prefix.length + raw.length - shown.length, part.sourceForDisplay(note.content, raw.length - shown.length))
                     }
                 }
                 if (continuous) LazyColumn(bodyModifier, state = list, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 72.dp)) {
@@ -387,7 +404,9 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
                 } else Box(bodyModifier.clipToBounds().semantics {
                     verticalScrollAxisRange = ScrollAxisRange({ activeFrame.scroll.value.toFloat() }, { activeFrame.scroll.maxValue.toFloat() })
                 }.noteScreenSwipe(mode, configuration.touchSlop, configuration.longPressTimeoutMillis, with(density) { 56.dp.toPx() },
-                    enabled = { canTurn() && selectionController?.selection == null },
+                    enabled = { (canTurn() && selectionController?.selection == null).also {
+                        traceMotion("gate allowed=$it mode=$mode gen=${commands.generation}/${commands.settled} busy=${commands.busy} restored=$restored ready=$renderReady selection=${selectionController?.selection != null}")
+                    } }, trace = ::traceMotion,
                     onBegin = ::beginDrag, onDrag = ::moveDrag,
                     onRelease = ::releaseDrag, onCancel = ::cancelDrag, onTurn = { turn(it) })) {
                     // Stable keys preserve the incoming native view when it
@@ -416,9 +435,11 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
 }
 
 private fun Modifier.noteScreenSwipe(mode: String, slop: Float, longPress: Long, distance: Float,
+    trace: (String) -> Unit,
     enabled: () -> Boolean, onBegin: (Float) -> Int?, onDrag: (Int, Float) -> Unit,
     onRelease: (Int, Float, Boolean) -> Unit, onCancel: (Int) -> Unit, onTurn: (Int) -> Unit): Modifier = composed {
     val currentEnabled by rememberUpdatedState(enabled)
+    val currentTrace by rememberUpdatedState(trace)
     val currentOnBegin by rememberUpdatedState(onBegin)
     val currentOnDrag by rememberUpdatedState(onDrag)
     val currentOnRelease by rememberUpdatedState(onRelease)
@@ -429,17 +450,21 @@ private fun Modifier.noteScreenSwipe(mode: String, slop: Float, longPress: Long,
             val down = awaitFirstDown(false, PointerEventPass.Initial)
             var owner: Int? = null
             var canceled = !currentEnabled()
+            currentTrace("DOWN mode=$mode enabled=${!canceled} consumed=${down.isConsumed} pos=${down.position} slop=$slop")
             var dx = 0f
+            var moves = 0
             try {
                 do {
                     val event = awaitPointerEvent(PointerEventPass.Initial)
                     val change = event.changes.find { it.id == down.id } ?: break
                     val delta = change.position - down.position
                     dx = delta.x
+                    if (moves++ < 2 || !change.pressed) currentTrace("event mode=$mode pressed=${change.pressed} dx=$dx dy=${delta.y} consumed=${change.isConsumed} age=${change.uptimeMillis - down.uptimeMillis} owner=$owner canceled=$canceled")
                     if (event.changes.count { it.pressed } > 1 || owner == null && change.uptimeMillis - down.uptimeMillis >= longPress) canceled = true
                     if (owner == null && abs(delta.y) > slop && abs(delta.y) > abs(delta.x)) canceled = true
                     if (!canceled && owner == null && abs(dx) > slop && abs(dx) > abs(delta.y) * 1.4f) {
                         owner = currentOnBegin(dx)
+                        currentTrace("recognized mode=$mode owner=$owner dx=$dx")
                         if (owner == null) canceled = true
                     }
                     val movingOwner = owner
@@ -465,6 +490,7 @@ private fun Modifier.noteScreenSwipe(mode: String, slop: Float, longPress: Long,
                     }
                 } while (true)
             } finally {
+                currentTrace("pointer-finally mode=$mode owner=$owner dx=$dx canceled=$canceled")
                 // ACTION_CANCEL, a missing pointer and pointerInput replacement
                 // all reset the gesture's owner; a newer command ignores its ID.
                 owner?.let { currentOnCancel(it) }

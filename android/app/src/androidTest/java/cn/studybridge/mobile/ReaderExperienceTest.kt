@@ -587,4 +587,20 @@ class ReaderExperienceTest {
             assertSingleVerticalTools()
         }
     }
+
+    @Test fun hiddenLinkAddressesDoNotCountOrPreventRevealingTheLaterVisibleWord() {
+        val query = "定位词"
+        val note = Note(title = "Markdown命中映射", content = "## 第 1 页\n\n[定位词](https://example.test/定位词)\n\n" +
+            "正文填充，需要逐行定位。\n\n".repeat(60) + "最终命中：定位词。", source = "合成链接", model = "fixture")
+        withReader(note) { _, _ ->
+            compose.openNoteTool("笔记内查找")
+            compose.onNodeWithText("查找完整正文").performTextInput(query)
+            compose.waitUntil(5000) { compose.onAllNodesWithText("找到 2 处").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithTag("查找结果列表").performScrollToIndex(1)
+            compose.onAllNodesWithText("第 1 段").onLast().performClick()
+            compose.waitUntil(5000) { "最终命中" in visibleMarkers(listOf("最终命中")) }
+            compose.onNodeWithText("$query · 2/2").assertIsDisplayed()
+            compose.onNodeWithContentDescription("下一处").assertIsNotEnabled()
+        }
+    }
 }

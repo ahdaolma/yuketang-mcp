@@ -148,7 +148,7 @@ class MaterialPreviews(context: Context) {
         }
     }
 }
-@Composable fun IllustratedMarkdown(text: String, sourceImages: SourceImages? = null, sourceOffset: Int = 0) {
+@Composable fun IllustratedMarkdown(text: String, sourceImages: SourceImages? = null, sourceOffset: Int = 0, readingSource: NoteReadingSource? = null) {
     val context = LocalContext.current
     val images = sourceImages ?: remember(context) { SourceImages(context) }
     val repository = remember(context) { MaterialPreviews(context) }
@@ -170,7 +170,9 @@ class MaterialPreviews(context: Context) {
         if (match.range.first > start) {
             val slot = block++
             CompositionLocalProvider(LocalNoteRenderReady provides remember(text, slot) { { done: Boolean -> ready[slot] = done } }) {
-                Markdown(text.substring(start, match.range.first), sourceOffset + start)
+                val body = text.substring(start, match.range.first)
+                val source = if (readingSource == null) NoteReadingSource(body, sourceOffset + start) else readingSource.block(start, match.range.first)
+                Markdown(body, sourceOffset + start, source?.let { NoteSelectionBlock(it.source, it.sourceStart) }, source?.prefixLength ?: 0)
             }
         }
         val id = match.groupValues[2]; val label = match.groupValues[1].ifBlank { "课件原页" }
@@ -185,7 +187,9 @@ class MaterialPreviews(context: Context) {
     if (start < text.length || matches.isEmpty()) {
         val slot = block
         CompositionLocalProvider(LocalNoteRenderReady provides remember(text, slot) { { done: Boolean -> ready[slot] = done } }) {
-            Markdown(text.substring(start), sourceOffset + start)
+            val body = text.substring(start)
+            val source = if (readingSource == null) NoteReadingSource(body, sourceOffset + start) else readingSource.block(start, text.length)
+            Markdown(body, sourceOffset + start, source?.let { NoteSelectionBlock(it.source, it.sourceStart) }, source?.prefixLength ?: 0)
         }
     }
 }
