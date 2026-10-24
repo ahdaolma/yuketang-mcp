@@ -252,7 +252,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         if (destination != null && direction != 0) capturePaper(destination)
         commitPage(destination, direction)
     }
-    LaunchedEffect(note.id, mode, hash, fontSize, bodyWidth, viewport, motionStyle) {
+    LaunchedEffect(note.id, mode, hash, fontSize, bodyWidth, motionStyle) {
         if (bodyWidth <= 0 || viewport <= 1) return@LaunchedEffect
         val position = if (readyMode.isEmpty()) initial else vm.readingMemory.position(note.id)
         restored = false
@@ -264,6 +264,16 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
                 title = continuous && page == 0 && (position == null || position.scroll == 0))
             if (continuous) index = page
             readyMode = mode; restored = true
+        }
+    }
+    LaunchedEffect(viewport) {
+        // Height changes also come from the find bar / keyboard. Replaying a
+        // saved position here would supersede a pending exact search reveal.
+        // Only cancel paper geometry; retain the committed native page/offset.
+        if (!continuous && transitionDirection != 0 && commands.busy) {
+            commands.cancel(commands.generation) {
+                discardIncoming(); dragOffset = 0f; transitionDirection = 0; dragSession = null
+            }
         }
     }
     LaunchedEffect(selected, restored, hash, mode, settledJump, turning) {
