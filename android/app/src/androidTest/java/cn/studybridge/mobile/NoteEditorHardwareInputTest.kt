@@ -39,7 +39,8 @@ class NoteEditorHardwareInputTest {
             field.performTextClearance()
             field.performClick().assertIsFocused()
             compose.waitForIdle()
-            shell("input text '$expected'")
+            // UiAutomation starts a process directly; it does not strip shell quotes.
+            shell("input text $expected")
             compose.waitForIdle()
             try {
                 compose.runOnIdle { assertEquals("editor=$editor round=$round trace=${trace.takeLast(8)}", expected, source) }
