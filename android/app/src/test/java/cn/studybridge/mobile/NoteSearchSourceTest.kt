@@ -82,5 +82,6 @@ class NoteSearchSourceTest {
         assertEquals(1, searchNoteContent("[ref]:\n  https://example.test/needle\n\n正文needle", "needle").size)
         assertEquals(1, searchNoteContent("[ref]: /url\n  \"needle title\"\n\n正文needle", "needle").size)
         assertEquals(2, searchNoteContent("Heading\n--\n    [标签](https://定位词)\n\n正文定位词", "定位词").size)
+        assertEquals(1, searchNoteContent("Heading\n=-\n    [标签](https://needle)\n\nneedle", "needle").size)
     }
 }

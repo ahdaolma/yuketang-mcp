@@ -72,11 +72,29 @@ class ReaderBackwardStabilityTest {
             compose.onNodeWithTag("笔记列表").performScrollToNode(hasText(note.title))
             compose.onNodeWithText(note.title).performClick()
             compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记正文").fetchSemanticsNodes().isNotEmpty() }
-            for (trigger in listOf("focus-selection", "image-close", "resume")) {
+            for (trigger in listOf("plain-no-focus", "collapsed-cursor", "focus-selection", "image-close", "resume")) {
                 compose.openNoteTool("整本开头")
                 compose.openNoteTool("下一段")
                 compose.waitUntil(5000) { markerVisible("第二页起点标记") }
                 when (trigger) {
+                    "plain-no-focus" -> native { views ->
+                        views.forEach { it.finishSelection() }
+                        assertFalse("Control case has no focused native reader", views.any { it.isFocused })
+                    }
+                    "collapsed-cursor" -> native { views ->
+                        val view = views.first { it.text.contains("第二页起点标记") }
+                        assertTrue("The cursor regression requires native focus", view.requestFocus())
+                        val value = view.text as Spannable
+                        val offset = value.toString().indexOf("第二页起点标记")
+                        // Keep a real caret, matching a normal native text tap.
+                        // Removing selection sets -1 and skips TextView's
+                        // onPreDraw -> bringPointIntoView cursor path.
+                        Selection.setSelection(value, offset)
+                        view.reportSelection()
+                        assertEquals(offset, view.selectionStart)
+                        assertEquals(offset, view.selectionEnd)
+                        assertNull("A collapsed caret must not own the page gesture as a selected range", view.controller?.selection)
+                    }
                     "focus-selection" -> native { views ->
                         val view = views.first { it.text.contains("第二页起点标记") }
                         view.requestFocus()
@@ -91,7 +109,7 @@ class ReaderBackwardStabilityTest {
                         compose.onNodeWithContentDescription("回退原图 缩略图").performClick()
                         compose.onNodeWithText("关闭预览").performClick()
                     }
-                    else -> {
+                    "resume" -> {
                         compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
                         compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
                     }

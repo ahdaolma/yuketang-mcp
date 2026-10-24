@@ -330,7 +330,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
             revealedSearchRevision = revision
         }
     } }
-    if (searching) NoteSearchDialog(note, { searching = false }, onHit = ::selectHit) { goTo(it); searching = false }
+    if (searching) NoteSearchDialog(note, { searching = false }, onHit = { hit, word -> selectHit(hit, word) }) { goTo(it); searching = false }
     if (directory) JumpDialog("笔记目录 / 阅读分段", labels, { directory = false }) { goTo(it); directory = false }
     if (tools) ReadingActionSheet("阅读工具", { tools = false }) {
         ReadingActionGroup("阅读")

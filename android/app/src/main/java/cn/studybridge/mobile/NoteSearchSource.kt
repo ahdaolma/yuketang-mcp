@@ -50,7 +50,7 @@ private fun noteSearchSyntax(source: String): NoteSearchSyntax {
         else if ((indented || previousBlank) && (text.startsWith("    ") || text.startsWith('\t'))) {
             mark(code, line.start, line.end); indented = true
         } else if (text.isNotBlank()) indented = false
-        if (marker == null) previousBlank = text.isBlank() || Regex("^ {0,3}#{1,6}(?:\\s.*)?$").matches(text) || Regex("^ {0,3}(?:[-*_]\\s*){3,}$").matches(text) || Regex("^ {0,3}[=-]+\\s*$").matches(text)
+        if (marker == null) previousBlank = text.isBlank() || Regex("^ {0,3}#{1,6}(?:\\s.*)?$").matches(text) || Regex("^ {0,3}(?:[-*_]\\s*){3,}$").matches(text) || Regex("^ {0,3}(?:=+|-+)\\s*$").matches(text)
     }
     Regex("(`+)(.*?)\\1", RegexOption.DOT_MATCHES_ALL).findAll(source).forEach {
         if (!code[it.range.first] && !hidden[it.range.first] && (it.range.first == 0 || source[it.range.first - 1] != '\\')) mark(code, it.range.first, it.range.last + 1)
