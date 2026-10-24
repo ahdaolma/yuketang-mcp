@@ -39,7 +39,7 @@ jobs:
           target: google_apis
           profile: pixel_2
           disable-animations: true
-          script: cd android && gradle --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=cn.studybridge.mobile.ReaderExperienceTest
+          script: cd android && gradle --no-daemon connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=cn.studybridge.mobile.ReaderExperienceTest,cn.studybridge.mobile.ReaderNativeTapTest,cn.studybridge.mobile.ReaderMotionPreviewTest
       - name: Collect native evidence
         if: always()
         run: adb pull /sdcard/Pictures/StudyUiReview android/reader-audit-ui || true

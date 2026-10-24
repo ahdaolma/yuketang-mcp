@@ -43,7 +43,7 @@ fun searchNoteContent(content: String, query: String, segments: List<NoteReading
     val word = query.trim(); if (word.isEmpty()) return emptyList()
     val result = mutableListOf<NoteSearchHit>()
     var offset = 0; var segment = 0
-    while (result.size < 100) {
+    while (offset < content.length) {
         val found = content.indexOf(word, offset, ignoreCase = true); if (found < 0) break
         while (segment < segments.lastIndex && found >= segments[segment].end) segment++
         result.add(NoteSearchHit(segment, found, content.substring(maxOf(0, found - 32), minOf(content.length, found + word.length + 70)).replace('\n', ' ')))
@@ -66,7 +66,7 @@ fun searchNoteContent(content: String, query: String, segments: List<NoteReading
                 FeedbackTextButton(onClick = onDismiss) { Text("关闭") }
             }
             OutlinedTextField(query, { query = it.take(120) }, Modifier.fillMaxWidth(), label = { Text("查找完整正文") }, singleLine = true)
-            Text(when { query.isBlank() -> "输入关键词，点击结果定位到正文命中处。"; results == null -> "正在查找…"; results!!.isEmpty() -> "没有匹配的内容"; else -> "找到 ${results!!.size} 处${if (results!!.size == 100) "（最多显示 100 处）" else ""}" }, style = MaterialTheme.typography.bodySmall)
+            Text(when { query.isBlank() -> "输入关键词，点击结果定位到正文命中处。"; results == null -> "正在查找…"; results!!.isEmpty() -> "没有匹配的内容"; else -> "找到 ${results!!.size} 处" }, style = MaterialTheme.typography.bodySmall)
             LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).heightIn(max = expandedListHeight(360.dp)).testTag("查找结果列表"), contentPadding = PaddingValues(bottom = 12.dp)) {
                 items(results.orEmpty(), key = { it.offset }) { hit ->
                     StudyChoiceRow(onClick = { if (onHit == null) onSelect(hit.segment) else onHit(hit, query.trim()) }) {

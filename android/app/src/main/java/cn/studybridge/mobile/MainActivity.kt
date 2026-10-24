@@ -212,11 +212,13 @@ class MainActivity : ComponentActivity() {
     val renderReady = LocalNoteRenderReady.current
     val registerText = LocalNoteTextRegistered.current
     val contentWidth = LocalNoteContentWidth.current
+    val onPageTap = LocalNotePageTap.current
     val decorated = remember(formatted, text, sourceOffset, personalMarks, searchQuery) { formatted?.takeIf { it.first == text }?.second?.let { searchHighlight(renderPersonalAnnotations(it, text, sourceOffset, personalMarks), searchQuery) as android.text.Spanned } }
     AndroidView(factory = { NoteSelectableTextView(it).apply { layoutParams = android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT); textSize = 16f; setTextIsSelectable(true); setLineSpacing(0f, 1.3f) } }, modifier = Modifier.fillMaxWidth().then(if (contentWidth != null) Modifier.requiredWidth(contentWidth) else Modifier), update = {
         if (it.currentTextColor != color) it.setTextColor(color)
         if (kotlin.math.abs(it.textSize - bodySize) > 0.1f) it.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, bodySize)
         it.controller = if (decorated != null) selectionController else null
+        it.onPageTap = if (decorated != null) onPageTap else null
         it.block = if (sourceOffset != null && decorated != null) NoteSelectionBlock(text, sourceOffset) else null
         if (selectionController != null) it.useApplicationMenu() else it.customSelectionActionModeCallback = null
         val parsed = decorated

@@ -42,15 +42,17 @@ import androidx.compose.ui.unit.dp
 // Code blocks may contain lines resembling headings; they are not destinations.
 fun readingHeadings(markdown: String): List<Pair<Int, String>> {
     val result = mutableListOf<Pair<Int, String>>()
-    var offset = 0; var fence = ""
-    for (line in markdown.lineSequence()) {
+    var fence = ""
+    val fencePattern = Regex("^(`{3,}|~{3,})(.*)$")
+    val headingPattern = Regex("^#{1,3} +(.+)$")
+    for (range in noteSourceLines(markdown)) {
+        val line = markdown.substring(range.start, range.contentEnd)
         val trimmed = line.trimStart()
-        val marker = Regex("^(`{3,}|~{3,})(.*)$").matchEntire(trimmed)
+        val marker = fencePattern.matchEntire(trimmed)
         if (marker != null) {
             val m = marker.groupValues[1]
             if (fence.isEmpty()) fence = m else if (m.first() == fence.first() && m.length >= fence.length && marker.groupValues[2].isBlank()) fence = ""
-        } else if (fence.isEmpty()) Regex("^#{1,3} +(.+)$").matchEntire(line)?.let { result.add(offset to it.groupValues[1].take(160)) }
-        offset += line.length + 1
+        } else if (fence.isEmpty()) headingPattern.matchEntire(line)?.let { result.add(range.start to it.groupValues[1].take(160)) }
     }
     return result
 }

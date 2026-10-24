@@ -7,6 +7,9 @@ val LocalNoteFontSize = staticCompositionLocalOf { 16 }
 val LocalNoteRenderReady = staticCompositionLocalOf<((Boolean) -> Unit)?> { null }
 val LocalNoteTextRegistered = staticCompositionLocalOf<((android.widget.TextView, Int) -> Unit)?> { null }
 val LocalNoteContentWidth = staticCompositionLocalOf<androidx.compose.ui.unit.Dp?> { null }
+// AndroidView consumes ordinary text taps before Compose's Final pass. Native
+// text forwards only taps that do not belong to selection, a link or a remark.
+val LocalNotePageTap = staticCompositionLocalOf<((Float) -> Unit)?> { null }
 data class ReaderProgress(val text: String, val description: String, val title: String? = null, val titleVisible: Boolean = false)
 val LocalReaderProgress = staticCompositionLocalOf<(ReaderProgress?) -> Unit> { {} }
 fun validNoteReadingMode(value: String) = value.takeIf { it in NOTE_READING_MODES } ?: "continuous"

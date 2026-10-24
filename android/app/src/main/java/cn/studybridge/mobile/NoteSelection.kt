@@ -17,6 +17,7 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.MotionEvent
 import android.view.ViewTreeObserver
+import android.view.ViewConfiguration
 import android.widget.TextView
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -85,6 +86,7 @@ class NoteSelectableTextView(context: Context) : TextView(context) {
     var searchRevealKey: String? = null
     var block: NoteSelectionBlock? = null
     var controller: NoteSelectionController? = null
+    var onPageTap: ((Float) -> Unit)? = null
     private var applicationActionMode: ActionMode? = null
     private val selectionLayoutListener = ViewTreeObserver.OnPreDrawListener {
         // Parent scrolling and window/IME changes do not call onSelectionChanged.
@@ -93,6 +95,9 @@ class NoteSelectableTextView(context: Context) : TextView(context) {
         true
     }
     private var downX = 0f; private var downY = 0f; private var downAt = 0L
+    private var selectionOwnedGesture = false
+    private var tapCandidate = false
+    private val tapSlop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
     internal fun selectionGeometry(first: Int, last: Int): NoteSelectionGeometry? {
         val textLayout = layout ?: return null
         if (!isAttachedToWindow || !isShown || first < 0 || last <= first || last > text.length) return null
@@ -155,14 +160,45 @@ class NoteSelectableTextView(context: Context) : TextView(context) {
         }
     }
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.actionMasked == MotionEvent.ACTION_DOWN) { downX = event.x; downY = event.y; downAt = event.eventTime }
-        if (event.actionMasked == MotionEvent.ACTION_UP && event.eventTime - downAt < 240 && kotlin.math.abs(event.x - downX) < 12 * resources.displayMetrics.density && kotlin.math.abs(event.y - downY) < 12 * resources.displayMetrics.density) {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            downX = event.x; downY = event.y; downAt = event.eventTime
+            selectionOwnedGesture = controller?.selection != null || selectionStart >= 0 && selectionEnd > selectionStart
+            tapCandidate = true
+        }
+        if (event.pointerCount > 1 || event.actionMasked == MotionEvent.ACTION_CANCEL) tapCandidate = false
+        // Latch movement across the whole gesture, including coalesced samples.
+        // Returning to the down point after scrolling cannot become a page tap.
+        for (sample in 0..event.historySize) {
+            val x = if (sample < event.historySize) event.getHistoricalX(sample) else event.x
+            val y = if (sample < event.historySize) event.getHistoricalY(sample) else event.y
+            if ((x - downX) * (x - downX) + (y - downY) * (y - downY) >= tapSlop * tapSlop) tapCandidate = false
+        }
+        val tap = event.actionMasked == MotionEvent.ACTION_UP && tapCandidate && !selectionOwnedGesture &&
+            event.eventTime - downAt < ViewConfiguration.getLongPressTimeout()
+        if (event.actionMasked == MotionEvent.ACTION_UP) tapCandidate = false
+        if (tap) {
             val value = text as? Spanned
             val offset = getOffsetForPosition(event.x, event.y)
             val remark = value?.getSpans(offset, offset, NoteAnnotationSpan::class.java)?.firstOrNull { it.annotation.kind == "remark" }
-            if (remark != null && controller != null) { controller?.openedRemark = remark.annotation.id; performClick(); return true }
+            if (remark != null && controller != null) { cancelNativeTap(event); controller?.openedRemark = remark.annotation.id; performClick(); return true }
+            val link = value?.getSpans(offset, offset, android.text.style.ClickableSpan::class.java)?.isNotEmpty() == true
+            if (!link && onPageTap != null) {
+                // Use window coordinates: text can be inset or horizontally
+                // translated while the reader's halves stay viewport-relative.
+                val location = IntArray(2); getLocationInWindow(location)
+                cancelNativeTap(event)
+                onPageTap?.invoke(location[0] + event.x)
+                performClick(); return true
+            }
         }
         return super.onTouchEvent(event)
+    }
+    private fun cancelNativeTap(event: MotionEvent) {
+        // TextView received DOWN. Clear its pressed/long-press state when the
+        // reader consumes UP so a delayed native selection cannot reopen later.
+        val cancel = MotionEvent.obtain(event)
+        try { cancel.action = MotionEvent.ACTION_CANCEL; super.onTouchEvent(cancel) }
+        finally { cancel.recycle() }
     }
     override fun performClick(): Boolean { super.performClick(); return true }
 }
