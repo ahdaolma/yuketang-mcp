@@ -214,7 +214,9 @@ class ReaderExperienceTest {
     }
 
     @Test fun twoShortPagesSettleAtBothEndsWithoutChangingLayoutAfterTheGesture() {
-        val note = Note(title = "两页短笔记", content = "## 第 1 页\n\n短首页。\n\n## 第 2 页\n\n短末页。", source = "合成两页", model = "fixture")
+        val note = Note(title = "两页短笔记", content = (1..2).joinToString("\n\n") { page ->
+            "## 第 $page 页\n\n" + (1..7).joinToString("\n\n") { "第${page}页短段落${it}。" }
+        }, source = "合成两页", model = "fixture")
         withReader(note) { _, vm ->
             for ((mode, label) in NOTE_READING_MODES) {
                 setMode(vm, mode, label)
@@ -235,6 +237,62 @@ class ReaderExperienceTest {
                 assertEquals(before, compose.onNodeWithContentDescription("当前阅读页码").fetchSemanticsNode().config[SemanticsProperties.StateDescription])
                 advancedUiShot(compose.activity, "reader-audit-two-short-$mode")
             }
+        }
+    }
+
+    @Test fun horizontalDragMovesTheActualPageBeforeReleaseAndAShortDragReturnsInPlace() = withReader(fullNote()) { _, vm ->
+        setMode(vm, "swipe", "横向滑屏")
+        jump("整本开头")
+        fun pageX(): Int = nativeSnapshot { views ->
+            val view = views.first { it.text.contains(markers.first()) && it.isAttachedToWindow }
+            val location = IntArray(2); view.getLocationInWindow(location); location[0]
+        }
+        val beforeX = pageX()
+        val beforeOffset = readingOffset()
+        compose.onNodeWithTag("笔记正文").performTouchInput {
+            down(Offset(width * .5f, height * .5f))
+            moveTo(Offset(width * .42f, height * .5f), 160)
+        }
+        compose.waitForIdle()
+        try {
+            assertTrue("A held horizontal gesture must move the native reading page with the finger", pageX() < beforeX - 5)
+            advancedUiShot(compose.activity, "reader-audit-held-short-swipe")
+        } finally { compose.onNodeWithTag("笔记正文").performTouchInput { up() } }
+        compose.waitForIdle()
+        assertEquals("Short drag must return to its exact origin", beforeX, pageX())
+        assertEquals("Short drag must not commit another reading screen", beforeOffset, readingOffset(), 2f)
+    }
+
+    @Test fun aTwoPageContinuousDragDoesNotReverseItsOwnScrollOrOscillateWhileIdle() {
+        val note = Note(title = "两页临界高度", content = (1..2).joinToString("\n\n") { page ->
+            "## 第 $page 页\n\n" + (1..7).joinToString("\n\n") { "第${page}页临界段落${it}。" }
+        }, source = "两页近一屏高度", model = "fixture")
+        withReader(note) { _, vm ->
+            setMode(vm, "continuous", "连续滚动")
+            repeat(4) { round ->
+                jump("整本开头")
+                var previous = readingOffset()
+                compose.onNodeWithTag("笔记正文").performTouchInput { down(Offset(center.x, height * .85f)) }
+                try {
+                    repeat(12) { step ->
+                        compose.onNodeWithTag("笔记正文").performTouchInput { moveTo(Offset(center.x, height * (.81f - step * .04f)), 40) }
+                        compose.waitForIdle()
+                        val offset = readingOffset()
+                        val native = nativeSnapshot { views -> views.filter { it.isAttachedToWindow }.map { "${it.block?.sourceStart}:${it.width}x${it.height}/${it.layout?.height}" } }
+                        android.util.Log.i("ReaderAuditFrames", "round=$round step=$step offset=$offset views=$native")
+                        assertTrue("One-way finger movement must not reverse list position: $previous -> $offset", offset + .01f >= previous)
+                        previous = offset
+                    }
+                } finally { compose.onNodeWithTag("笔记正文").performTouchInput { advanceEventTime(250); up() } }
+                compose.waitForIdle()
+                val settled = readingOffset()
+                repeat(10) {
+                    compose.mainClock.advanceTimeBy(100)
+                    compose.waitForIdle()
+                    assertEquals("Two-page continuous position must converge after release", settled, readingOffset(), .01f)
+                }
+            }
+            advancedUiShot(compose.activity, "reader-audit-two-page-continuous-settled")
         }
     }
 
