@@ -2,6 +2,8 @@ package cn.studybridge.mobile
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.content.ContentValues
+import android.provider.MediaStore
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.BackgroundColorSpan
@@ -56,7 +58,7 @@ class ReaderLayerCaptureTest {
         compose.waitForIdle()
         compose.runOnIdle { requireNotNull(capture).invoke() }
         compose.waitUntil(10000) { captured != null }
-        val result = requireNotNull(captured).asAndroidBitmap()
+        val result = requireNotNull(requireNotNull(captured).asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false))
         val frame = compose.onNodeWithTag("完整阅读快照").fetchSemanticsNode().boundsInRoot
         val text = compose.onNodeWithTag("快照原生文字").fetchSemanticsNode().boundsInRoot
         assertEquals(frame.width.roundToInt(), result.width)
@@ -73,6 +75,16 @@ class ReaderLayerCaptureTest {
         assertTrue("Compose source image must appear in the captured paper", blue > 1000)
         assertTrue("Native annotation background must appear in the captured paper", yellow > 100)
         assertTrue("Actual native glyphs must appear rather than a blank placeholder", ink > 100)
+        val resolver = compose.activity.contentResolver
+        val uri = requireNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, "reader-layer-capture-bitmap.png")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/StudyUiReview")
+            put(MediaStore.Images.Media.IS_PENDING, 1)
+        }))
+        requireNotNull(resolver.openOutputStream(uri)).use { assertTrue(result.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+        resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+        result.recycle()
         advancedUiShot(compose.activity, "reader-layer-capture-source")
     }
 }
