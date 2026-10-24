@@ -72,6 +72,8 @@ private class ReadingFrame(val page: Int, val token: Int) {
     var positioned by mutableStateOf(false)
     var layer: GraphicsLayer? = null
     var draws = 0
+    var captureRequest by mutableIntStateOf(0)
+    var recordedCapture by mutableIntStateOf(0)
 }
 
 private class ReadingDrag(val generation: Int, val direction: Int) {
@@ -183,6 +185,13 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         discardIncoming(); dragOffset = 0f; transitionDirection = 0; dragSession = null
         commands.replace(scope, onSettled = { traceMotion("settle gen=${commands.generation} page=${activeFrame.page}"); discardIncoming(); dragOffset = 0f; dragSession = null }, block = block)
     }
+    fun cancelPaperMotion() {
+        if (!latestContinuous && transitionDirection != 0 && commands.busy) {
+            commands.cancel(commands.generation) {
+                discardIncoming(); dragOffset = 0f; transitionDirection = 0; dragSession = null
+            }
+        }
+    }
     suspend fun preparePage(page: Int, offset: Int = 0, end: Boolean = false, anchor: NoteTextAnchor? = null, title: Boolean = false): ReadingFrame? {
         val destination = if (continuous) null else ReadingFrame(page, ++frameToken).also { incomingFrame = it }
         traceMotion("prepare gen=${commands.generation} page=$page frame=${destination?.token} offset=$offset end=$end width=$bodyWidth")
@@ -226,8 +235,14 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
     suspend fun capturePaper(destination: ReadingFrame) {
         // Both full viewport layers are recorded after the target's final
         // scroll position. No capture/Markdown parsing runs on pointer moves.
-        withFrameNanos { }; withFrameNanos { }
-        val currentLayer = requireNotNull(activeFrame.layer)
+        val current = activeFrame
+        val currentRevision = ++current.captureRequest
+        val targetRevision = ++destination.captureRequest
+        // Formatting readiness / two clock ticks do not guarantee an actual
+        // Android draw. Invalidate both recordings and await their draw ACK.
+        snapshotFlow { current.recordedCapture >= currentRevision && destination.recordedCapture >= targetRevision }.first { it }
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+        val currentLayer = requireNotNull(current.layer)
         val targetLayer = requireNotNull(destination.layer)
         traceMotion("capture gen=${commands.generation} current=${activeFrame.token}/${activeFrame.draws} target=${destination.token}/${destination.draws} ready=${readyFrames[destination.token]}")
         try {
@@ -270,11 +285,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         // Height changes also come from the find bar / keyboard. Replaying a
         // saved position here would supersede a pending exact search reveal.
         // Only cancel paper geometry; retain the committed native page/offset.
-        if (!continuous && transitionDirection != 0 && commands.busy) {
-            commands.cancel(commands.generation) {
-                discardIncoming(); dragOffset = 0f; transitionDirection = 0; dragSession = null
-            }
-        }
+        cancelPaperMotion()
     }
     LaunchedEffect(selected, restored, hash, mode, settledJump, turning) {
         if (restored) snapshotFlow { if (continuous) list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset else selected to scroll.value }.debounce(180).collect { rememberPosition() }
@@ -282,7 +293,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
     DisposableEffect(note.id, hash, mode) { onDispose { rememberPosition() } }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle, note.id, hash) { withContext(Dispatchers.Main.immediate) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) rememberPosition() }
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) { cancelPaperMotion(); rememberPosition() } }
         lifecycle.addObserver(observer); try { awaitCancellation() } finally { lifecycle.removeObserver(observer) }
     } }
     LaunchedEffect(ui.data.noteFontSize) { fontSize = ui.data.noteFontSize }
@@ -486,10 +497,12 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
                         SideEffect { frame.layer = layer }
                         DisposableEffect(frame) { onDispose { frame.layer = null } }
                         Column(Modifier.fillMaxSize().drawWithContent {
+                            val captureRevision = frame.captureRequest
                             layer.record { this@drawWithContent.drawContent() }
+                            frame.recordedCapture = captureRevision
                             frame.draws++
-                            androidx.compose.runtime.snapshots.Snapshot.withoutReadObservation {
-                                traceMotion("draw frame=${frame.token} count=${frame.draws} ready=${readyFrames[frame.token]} scroll=${frame.scroll.value}")
+                            if (debugMotion) androidx.compose.runtime.snapshots.Snapshot.withoutReadObservation {
+                                traceMotion("draw frame=${frame.token} count=${frame.draws} capture=$captureRevision ready=${readyFrames[frame.token]} scroll=${frame.scroll.value}")
                             }
                             drawLayer(layer)
                         }.background(paperColor).verticalScroll(frame.scroll), verticalArrangement = Arrangement.spacedBy(14.dp)) {

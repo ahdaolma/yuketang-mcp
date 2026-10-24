@@ -18,6 +18,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.Lifecycle
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -339,6 +340,30 @@ class ReaderExperienceTest {
             compose.waitForIdle()
             compose.onNodeWithTag("笔记翻页画面").assertDoesNotExist()
             val before = readingOffset()
+            compose.onNodeWithTag("笔记正文").performTouchInput { swipeLeft(durationMillis = 220) }
+            compose.waitUntil(5000) { readingOffset() > before + 10f }
+        }
+    }
+
+    @Test fun backgroundingAHeldPaperAfterChangingModesCancelsItAndStillAllowsTheNextGesture() = withReader(fullNote()) { _, vm ->
+        // Start continuous, then change mode: lifecycle callbacks must observe
+        // the current mode rather than the one captured on initial composition.
+        setMode(vm, "swipe", "横向滑屏")
+        for (style in NOTE_PAGE_ANIMATIONS.keys) {
+            jump("整本开头")
+            compose.runOnIdle { vm.updateNotebookState { it.copy(notePageAnimation = style) } }
+            compose.waitForIdle()
+            val before = readingOffset()
+            compose.onNodeWithTag("笔记正文").performTouchInput {
+                down(Offset(width * .8f, height * .6f)); moveTo(Offset(width * .35f, height * .6f), 160)
+            }
+            compose.waitUntil(8000) { compose.onAllNodesWithTag("笔记翻页画面").fetchSemanticsNodes().isNotEmpty() }
+            compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+            compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+            compose.onNodeWithTag("笔记正文").performTouchInput { cancel() }
+            compose.waitForIdle()
+            compose.onNodeWithTag("笔记翻页画面").assertDoesNotExist()
+            repeat(6) { compose.mainClock.advanceTimeBy(100); compose.waitForIdle(); assertEquals("Stopped paper cannot later commit", before, readingOffset(), 2f) }
             compose.onNodeWithTag("笔记正文").performTouchInput { swipeLeft(durationMillis = 220) }
             compose.waitUntil(5000) { readingOffset() > before + 10f }
         }

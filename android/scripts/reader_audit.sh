@@ -4,6 +4,6 @@ set -euo pipefail
 # Pull evidence inside its live session, on success and on test failure.
 status=0
 gradle --no-daemon connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=cn.studybridge.mobile.ReaderExperienceTest#switchingAllReadingModesKeepsTheCurrentParagraphVisible,cn.studybridge.mobile.ReaderExperienceTest#hiddenLinkAddressesDoNotCountOrPreventRevealingTheLaterVisibleWord,cn.studybridge.mobile.ReaderExperienceTest#shrinkingOnlyViewportHeightDuringCoverPreviewCancelsTheOldScreenGeometry || status=$?
+  -Pandroid.testInstrumentationRunnerArguments.class=cn.studybridge.mobile.ReaderLayerCaptureTest,cn.studybridge.mobile.ReaderPaperVisualTest,cn.studybridge.mobile.ReaderMotionPreviewTest,cn.studybridge.mobile.ReaderExperienceTest#switchingAllReadingModesKeepsTheCurrentParagraphVisible,cn.studybridge.mobile.ReaderExperienceTest#hiddenLinkAddressesDoNotCountOrPreventRevealingTheLaterVisibleWord,cn.studybridge.mobile.ReaderExperienceTest#shrinkingOnlyViewportHeightDuringCoverPreviewCancelsTheOldScreenGeometry,cn.studybridge.mobile.ReaderExperienceTest#backgroundingAHeldPaperAfterChangingModesCancelsItAndStillAllowsTheNextGesture || status=$?
 adb pull /sdcard/Pictures/StudyUiReview reader-audit-ui || true
 exit "$status"
