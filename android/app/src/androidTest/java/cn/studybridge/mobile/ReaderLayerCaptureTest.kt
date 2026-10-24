@@ -2,8 +2,6 @@ package cn.studybridge.mobile
 
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.content.ContentValues
-import android.provider.MediaStore
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.BackgroundColorSpan
@@ -75,15 +73,7 @@ class ReaderLayerCaptureTest {
         assertTrue("Compose source image must appear in the captured paper", blue > 1000)
         assertTrue("Native annotation background must appear in the captured paper", yellow > 100)
         assertTrue("Actual native glyphs must appear rather than a blank placeholder", ink > 100)
-        val resolver = compose.activity.contentResolver
-        val uri = requireNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "reader-layer-capture-bitmap.png")
-            put(MediaStore.Images.Media.MIME_TYPE, "image/png")
-            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/StudyUiReview")
-            put(MediaStore.Images.Media.IS_PENDING, 1)
-        }))
-        requireNotNull(resolver.openOutputStream(uri)).use { assertTrue(result.compress(Bitmap.CompressFormat.PNG, 100, it)) }
-        resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
+        saveUiReviewBitmap(compose.activity, "reader-layer-capture-bitmap", result)
         result.recycle()
         advancedUiShot(compose.activity, "reader-layer-capture-source")
     }

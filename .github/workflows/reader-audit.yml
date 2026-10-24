@@ -1,6 +1,17 @@
 name: Reader navigation investigation
 on:
   workflow_dispatch:
+    inputs:
+      api_level:
+        description: Android API level
+        type: choice
+        default: '35'
+        options: ['26', '29', '35']
+      suite:
+        description: Reader or isolated paper compatibility checks
+        type: choice
+        default: reader
+        options: [reader, paper]
 permissions:
   contents: read
 concurrency:
@@ -9,7 +20,7 @@ concurrency:
 jobs:
   reader:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -33,12 +44,14 @@ jobs:
           sudo udevadm trigger --name-match=kvm
       - name: Reproduce actual reader navigation
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          RAIN_READER_SUITE: ${{ inputs.suite || 'reader' }}
         with:
-          api-level: 35
+          api-level: ${{ inputs.api_level || '35' }}
           arch: x86_64
           target: google_apis
           profile: pixel_2
-          disable-animations: true
+          disable-animations: false
           script: cd android && bash scripts/reader_audit.sh
       - uses: actions/upload-artifact@v4
         if: always()

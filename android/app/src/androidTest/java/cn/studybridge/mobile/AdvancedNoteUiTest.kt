@@ -33,11 +33,19 @@ fun noteTestViewModel(app: Application, store: ViewModelStore, rain: RainApi = R
 })[StudyViewModel::class.java]
 fun advancedUiShot(context: Context, name: String) {
     val bitmap = requireNotNull(InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+    try { saveUiReviewBitmap(context, name, bitmap) } finally { bitmap.recycle() }
+}
+fun saveUiReviewBitmap(context: Context, name: String, bitmap: Bitmap) {
+    if (android.os.Build.VERSION.SDK_INT < 29) {
+        val directory = File(context.getExternalFilesDir(null), "StudyUiReview").apply { check(isDirectory || mkdirs()) }
+        File(directory, "$name.png").outputStream().use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+        return
+    }
     val resolver = context.contentResolver
     val uri = requireNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
         put(MediaStore.Images.Media.DISPLAY_NAME, "$name.png"); put(MediaStore.Images.Media.MIME_TYPE, "image/png"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/StudyUiReview"); put(MediaStore.Images.Media.IS_PENDING, 1)
     }))
-    requireNotNull(resolver.openOutputStream(uri)).use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }; bitmap.recycle()
+    requireNotNull(resolver.openOutputStream(uri)).use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
     resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
 }
 

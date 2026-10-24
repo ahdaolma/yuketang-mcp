@@ -28,7 +28,10 @@ import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.sin
 
-data class ReaderPaperImages(val current: ImageBitmap, val target: ImageBitmap)
+data class ReaderPaperImages(val current: ImageBitmap, val target: ImageBitmap) {
+    // Draw acknowledgement, deliberately not observable composition state.
+    var drawn = false
+}
 
 internal fun Modifier.readerMotionTouchShield() = pointerInput(Unit) {
     // A new pointer must never reach an invisible native frame, including
@@ -131,5 +134,6 @@ private fun paperPath(points: List<PaperPoint>, fold: PaperFold? = null, bow: Fl
             }
             canvas.restoreToCount(saved)
         }
+        images.drawn = true
     }
 }

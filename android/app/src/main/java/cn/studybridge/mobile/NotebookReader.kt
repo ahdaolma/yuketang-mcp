@@ -223,8 +223,13 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
     suspend fun commitPage(destination: ReadingFrame?, direction: Int = 0) {
         if (destination != null) {
             if (direction != 0 && paperImages != null) {
+                // A quick full swipe can finish before its target is ready.
+                // Show a real completion then, rather than jumping straight
+                // from the untouched native page to a 100% snapshot.
+                if (paperImages?.drawn == false) dragOffset = 0f
                 val remaining = (1f - abs(dragOffset) / bodyWidth.coerceAtLeast(1)).coerceIn(0f, 1f)
-                animate(dragOffset, -direction * bodyWidth.toFloat(), animationSpec = tween((160 + 180 * remaining).toInt(), easing = FastOutSlowInEasing)) { value, _ -> dragOffset = value }
+                if (remaining > .001f) animate(dragOffset, -direction * bodyWidth.toFloat(),
+                    animationSpec = tween((320 * remaining).toInt().coerceIn(90, 320), easing = FastOutSlowInEasing)) { value, _ -> dragOffset = value }
             }
             // Commit with no suspension after the final animation frame.
             activeFrame = destination; index = destination.page; incomingFrame = null; paperImages = null; dragOffset = 0f
@@ -349,7 +354,8 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
                 if (session.release.await() && prepared != null) commitPage(prepared.await(), direction)
                 else {
                     prepared?.cancelAndJoin()
-                    animate(dragOffset, 0f, animationSpec = tween(180)) { value, _ -> dragOffset = value }
+                    if (paperImages?.drawn == true) animate(dragOffset, 0f, animationSpec = tween(180)) { value, _ -> dragOffset = value }
+                    else dragOffset = 0f
                 }
             }
         }
