@@ -128,15 +128,30 @@ class NoteEditorEchoRaceTest {
         var source by mutableStateOf("base")
         compose.setContent { StudyTheme(false) { NoteEditor(source, { source = it }, true) } }
         val field = compose.onNodeWithText("Markdown 笔记")
-        field.performTextInput("_edit")
-        compose.runOnIdle { assertEquals("base_edit", source) }
-        compose.runOnIdle { source = "new external content" }
+        field.performClick()
         compose.waitForIdle()
-        assertEquals("new external content", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
-        compose.onNodeWithText("撤销").performClick()
-        compose.runOnIdle { assertEquals("base_edit", source) }
-        compose.onNodeWithText("重做").performClick()
-        compose.runOnIdle { assertEquals("new external content", source) }
-        assertEquals(source, field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        compose.mainClock.autoAdvance = false
+        // This rule deliberately queues composition effects. Drive each apply
+        // phase explicitly, just as the interleaving test above; idle alone
+        // does not acknowledge those queued external-text effects.
+        fun applyAndCheck(expected: String) {
+            repeat(4) { frame ->
+                compose.mainClock.advanceTimeByFrame()
+                Log.i("EditorEchoRace", "external frame=$frame source=$source editable=${field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text}")
+            }
+            compose.runOnIdle { assertEquals(expected, source) }
+            assertEquals(expected, field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
+        }
+        try {
+            field.performTextInput("_edit")
+            compose.runOnIdle { assertEquals("base_edit", source) }
+            applyAndCheck("base_edit")
+            compose.runOnIdle { source = "new external content" }
+            applyAndCheck("new external content")
+            compose.onNodeWithText("撤销").performClick()
+            applyAndCheck("base_edit")
+            compose.onNodeWithText("重做").performClick()
+            applyAndCheck("new external content")
+        } finally { compose.mainClock.autoAdvance = true }
     }
 }
