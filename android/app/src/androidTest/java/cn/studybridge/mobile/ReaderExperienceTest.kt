@@ -263,7 +263,7 @@ class ReaderExperienceTest {
         compose.waitForIdle()
         try {
             compose.waitUntil(8000) { compose.onAllNodesWithTag("笔记翻页画面").fetchSemanticsNodes().isNotEmpty() }
-            val held = compose.onNodeWithTag("笔记翻页画面").captureToImage().asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false)!!
+            val held = compose.onNodeWithTag("笔记正文").captureToImage().asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false)!!
             try {
                 assertEquals(beforePaper.width, held.width); assertEquals(beforePaper.height, held.height)
                 var changed = 0

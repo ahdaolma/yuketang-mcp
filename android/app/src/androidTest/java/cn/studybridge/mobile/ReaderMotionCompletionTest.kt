@@ -52,10 +52,12 @@ class ReaderMotionCompletionTest {
                             ?.let { Regex("(\\d+)%").find(it)?.groupValues?.get(1)?.toIntOrNull() }
                         if (percent != null && percent in 1..99) sawIntermediate = true
                         if (!inspectedPixels && percent != null && percent in 25..65) {
-                            val middle = compose.onNodeWithTag("笔记翻页画面").captureToImage().asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false)!!
+                            val middle = compose.onNodeWithTag("笔记正文").captureToImage().asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false)!!
                             try {
                                 assertEquals(before.width, middle.width); assertEquals(before.height, middle.height)
                                 var changed = 0
+                                // Both captures include identical floating
+                                // tools, so only actual paper motion differs.
                                 for (y in 0 until middle.height step 4) for (x in 0 until middle.width step 4)
                                     if (before.getPixel(x, y) != middle.getPixel(x, y)) changed++
                                 assertTrue("Completion must animate actual paper pixels rather than just its counter", changed > 50)

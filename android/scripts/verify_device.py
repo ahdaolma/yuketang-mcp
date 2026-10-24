@@ -40,4 +40,11 @@ finally:
         required.update({'chat-learning-auto-title.png', 'chat-learning-whole-deck.png', 'chat-learning-large-font.png', 'chat-learning-note-card.png', 'chat-learning-note-edited.png', 'sample-selection-menu-near-text.png', 'sample-selection-menu-top-large-font.png', 'sample-create-move-destination.png'})
         required.update({'sample-model-draft-restored.png', 'sample-image-draft-rotated.png'})
         required.add('sample-model-save-feedback.png')
+        required.update({f'reader-motion-{style}-{direction}-{theme}.png'
+                         for style in ('curl', 'cover')
+                         for direction in ('forward', 'backward')
+                         for theme in ('light', 'dark')})
+        required.update({f'reader-completion-{style}-{direction}.png'
+                         for style in ('curl', 'cover') for direction in (1, -1)})
+        required.add('reader-layer-capture-bitmap.png')
         verify_screenshots(target, required)
