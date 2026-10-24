@@ -36,7 +36,8 @@ class NoteEditorHardwareInputTest {
         val field = if (editor) compose.onNodeWithText("Markdown 笔记") else compose.onNodeWithTag("control")
         val expected = "R8_SECOND_FIRST_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789_SECOND_END"
         repeat(12) { round ->
-            field.performTextClearance().performClick().assertIsFocused()
+            field.performTextClearance()
+            field.performClick().assertIsFocused()
             compose.waitForIdle()
             shell("input text '$expected'")
             compose.waitForIdle()
