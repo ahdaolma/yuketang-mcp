@@ -233,4 +233,41 @@ class ReaderBoundaryRegressionTest {
             compose.waitUntil(8000) { page(1) && ready("FIRST_START") && !ready("SECOND_START") }
         }
     }
+
+    private fun resizeDuringMotion(mode: String, released: Boolean) {
+        val note = fixture().copy(content = "## 第 1 页\n\nFIRST_START。\n\n## 第 2 页\n\nSECOND_START。")
+        val heightFraction = mutableStateOf(1f)
+        withReader(note, mode, false, heightFraction) { _, _ ->
+            for (direction in if (released) listOf(1, -1) else listOf(1)) {
+                compose.mainClock.autoAdvance = false
+                try {
+                    compose.onNodeWithTag("笔记正文").performTouchInput {
+                        if (mode == "buttons") click(Offset(width * (if (direction > 0) .9f else .1f), height * .5f))
+                        else {
+                            down(Offset(width * (if (direction > 0) .8f else .2f), height * .5f))
+                            moveTo(Offset(width * (if (direction > 0) .2f else .8f), height * .5f), 160)
+                            if (released) up()
+                        }
+                    }
+                    compose.waitUntil(12000) {
+                        compose.mainClock.advanceTimeByFrame()
+                        compose.onAllNodesWithTag("笔记翻页画面").fetchSemanticsNodes().isNotEmpty()
+                    }
+                    compose.runOnIdle { heightFraction.value = if (direction > 0) .85f else 1f }
+                    if (!released) compose.onNodeWithTag("笔记正文").performTouchInput { cancel() }
+                    compose.waitUntil(12000) {
+                        compose.mainClock.advanceTimeByFrame()
+                        val expected = if (released && direction > 0) 2 else 1
+                        page(expected) && ready(if (expected == 2) "SECOND_START" else "FIRST_START") &&
+                            !ready(if (expected == 2) "FIRST_START" else "SECOND_START") &&
+                            compose.onAllNodesWithTag("笔记翻页画面").fetchSemanticsNodes().isEmpty()
+                    }
+                } finally { compose.mainClock.autoAdvance = true }
+                advancedUiShot(compose.activity, "reader-resize-$mode-$released-$direction")
+            }
+        }
+    }
+    @Test fun acceptedTapKeepsItsDestinationWhenViewportHeightChanges() = resizeDuringMotion("buttons", true)
+    @Test fun releasedSwipeKeepsItsDestinationWhenViewportHeightChanges() = resizeDuringMotion("swipe", true)
+    @Test fun anUnreleasedSwipeStillCancelsWhenViewportHeightChanges() = resizeDuringMotion("swipe", false)
 }
