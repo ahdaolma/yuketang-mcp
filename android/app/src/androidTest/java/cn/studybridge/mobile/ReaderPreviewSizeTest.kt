@@ -44,7 +44,9 @@ class ReaderPreviewSizeTest {
                 }
             }
         }
-        fun after() = compose.onNodeWithText("AFTER_PREVIEW").fetchSemanticsNode().boundsInWindow.top
+        // StudyTheme hides the system bar asynchronously. Compare positions
+        // inside the same content root, not the transient window origin.
+        fun after() = compose.onNodeWithText("AFTER_PREVIEW").fetchSemanticsNode().boundsInWindow.top - compose.onRoot().fetchSemanticsNode().boundsInWindow.top
         compose.onNodeWithText("AFTER_PREVIEW").assertExists()
         val initial = after()
         gate.complete(Unit)

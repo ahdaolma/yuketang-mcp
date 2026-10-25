@@ -84,11 +84,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
-import io.noties.markwon.Markwon
-import io.noties.markwon.AbstractMarkwonPlugin
-import io.noties.markwon.core.MarkwonTheme
 import androidx.compose.ui.platform.LocalDensity
-import io.noties.markwon.ext.tables.TablePlugin
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -180,23 +176,11 @@ class MainActivity : ComponentActivity() {
 @Composable fun Markdown(text: String, sourceOffset: Int? = null, annotationSource: NoteSelectionBlock? = sourceOffset?.let { NoteSelectionBlock(text, it) }, syntheticPrefixLength: Int = 0) {
     val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
-    val color = colors.onSurface.toArgb()
-    val link = colors.primary.toArgb()
-    val code = colors.surfaceContainerHigh.toArgb()
-    val line = colors.outlineVariant.toArgb()
-    val row = colors.surfaceContainer.toArgb()
-    val background = colors.background.toArgb()
-    val density = LocalDensity.current.density
+    val palette = studyMarkdownPalette()
+    val color = palette.color
+    val density = palette.density
     val bodySize = with(LocalDensity.current) { LocalNoteFontSize.current.sp.toPx() }
-    val renderer = remember(context, color, link, code, line, row, background, density) {
-        Markwon.builder(context)
-            .usePlugin(TablePlugin.create { builder -> builder.tableBorderColor(line).tableBorderWidth(maxOf(1, (density * 0.5f).toInt())).tableCellPadding((8 * density).toInt()).tableHeaderRowBackgroundColor(code).tableOddRowBackgroundColor(row).tableEvenRowBackgroundColor(background) })
-            .usePlugin(object : AbstractMarkwonPlugin() {
-                override fun configureTheme(builder: MarkwonTheme.Builder) {
-                    builder.linkColor(link).codeTextColor(color).codeBlockTextColor(color).codeBackgroundColor(code).codeBlockBackgroundColor(code).blockQuoteColor(link).blockQuoteWidth((2 * density).toInt()).headingBreakHeight(0).thematicBreakColor(line).listItemColor(link).headingTextSizeMultipliers(floatArrayOf(1.28f, 1.16f, 1.06f, 1f, 1f, 1f))
-                }
-            }).build()
-    }
+    val renderer = remember(context, palette) { createStudyMarkdownRenderer(context, palette) }
     val dark = colors.background.luminance() < 0.5f
     val personalMarks = LocalNoteAnnotations.current
     val annotationContent = LocalNoteAnnotationContent.current
@@ -204,18 +188,14 @@ class MainActivity : ComponentActivity() {
     val syntax = LocalReaderMarkdownParser.current
     val contentWidth = LocalNoteContentWidth.current
     val readerWidth = contentWidth?.let { with(LocalDensity.current) { it.roundToPx() } }
-    val toMarkdown = { raw: String ->
-        val source = markdownForStudyMarks(raw)
-        if (syntax == null) renderer.toMarkdown(source) else renderer.render(syntax.parse(source)).let {
-            if (it.isEmpty() && source.isNotEmpty()) android.text.SpannableStringBuilder(source) else it
-        }
-    }
+    val toMarkdown = { raw: String -> renderStudyMarkdown(renderer, syntax, raw) }
     val format = {
         synchronized(renderer) {
             val began = System.nanoTime()
-            val rendered = toMarkdown(text)
+            val staged = syntax?.takePrepared(markdownForStudyMarks(text), palette)
+            val rendered = staged ?: toMarkdown(text)
             val renderedAt = System.nanoTime()
-            val body = renderStudyMarks(rendered, density, dark)
+            val body = staged ?: renderStudyMarks(rendered, density, dark)
             val markedAt = System.nanoTime()
             // TablePlugin owns mutable visitor state. Render prefix context in
             // the same worker sequence, never concurrently on the UI thread.
@@ -225,7 +205,7 @@ class MainActivity : ComponentActivity() {
                 renderStudyMarks(toMarkdown(raw), density, dark).toString()
             }
             if (stableMarkdown && context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
-                android.util.Log.d("ReaderStage", "chars=${text.length} renderNs=${renderedAt - began} marksNs=${markedAt - renderedAt} annotationsNs=${System.nanoTime() - markedAt}")
+                android.util.Log.d("ReaderStage", "chars=${text.length} prepared=${staged != null} renderNs=${renderedAt - began} marksNs=${markedAt - renderedAt} annotationsNs=${System.nanoTime() - markedAt}")
             Triple(text, decorated, annotationStart)
         }
     }
@@ -241,12 +221,15 @@ class MainActivity : ComponentActivity() {
             }
         }
     } else {
-        val result by produceState<Triple<String, android.text.Spanned, Int>?>(null, text, renderer, density, dark, syntheticPrefixLength, personalMarks, annotationContent, annotationSource) {
+        val result by produceState<Triple<String, android.text.Spanned, Int>?>(null, text, renderer, density, dark, bodySize, contentWidth, syntheticPrefixLength, personalMarks, annotationContent, annotationSource) {
             val parsed = withContext(Dispatchers.Default) { format() }
             // AndroidView updates stay on Main even under a test frame clock.
             withContext(Dispatchers.Main.immediate) { value = parsed }
         }
         result
+    }
+    LaunchedEffect(formatted, syntax, palette) {
+        if (stableMarkdown && syntax != null) withContext(Dispatchers.Default) { syntax.warm(text) }
     }
     val selectionController = LocalNoteSelection.current
     val searchQuery = LocalNoteSearchQuery.current
@@ -265,12 +248,13 @@ class MainActivity : ComponentActivity() {
         val start = sourceOffset ?: return@produceState
         val parsed = formatted?.takeIf { it.first == text }?.second ?: return@produceState
         if (target.offset !in start until start + text.length) return@produceState
-        val found = withContext(Dispatchers.Default) { synchronized(renderer) {
+        val found = withContext(Dispatchers.Default) {
             // Count visible prefix occurrences, not Markdown URLs or fence
             // language names which never became native body text.
-            val prefix = renderStudyMarks(toMarkdown(noteSearchPrefixSource(text, target.offset - start)), density, dark)
+            val searchRenderer = createStudyMarkdownRenderer(context, palette)
+            val prefix = renderStudyMarks(renderStudyMarkdown(searchRenderer, syntax, noteSearchPrefixSource(text, target.offset - start)), density, dark)
             renderedNoteSearchOffset(parsed.toString(), prefix.toString(), target.query)
-        } }
+        }
         withContext(Dispatchers.Main.immediate) { value = target to found }
     }
     AndroidView(factory = { NoteSelectableTextView(it).apply { layoutParams = android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT); textSize = 16f; setTextIsSelectable(true); setLineSpacing(0f, 1.3f) } }, modifier = Modifier.fillMaxWidth().then(if (contentWidth != null) Modifier.requiredWidth(contentWidth) else Modifier), update = {

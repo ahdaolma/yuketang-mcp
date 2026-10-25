@@ -88,12 +88,15 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
 @Composable fun NotebookReader(note: Note, ui: UiState, vm: StudyViewModel, modifier: Modifier = Modifier, extraHeader: @Composable () -> Unit = {}, primaryTools: @Composable (() -> Unit) -> Unit = {}, extraTools: @Composable (() -> Unit) -> Unit = {}, backLabel: String = "返回笔记列表", onBack: () -> Unit) {
     val initial = remember(note.id) { vm.readingMemory.position(note.id) }
     val hash = remember(note.content) { noteContentHash(note.content) }
+    val readerContext = LocalContext.current
+    val markdownPalette = studyMarkdownPalette()
     val prepared by produceState<PreparedReading?>(null, note.id, note.content, note.title) {
         val result = withContext(Dispatchers.Default) {
             val parts = noteReadingSegments(note.content)
             val headings = parts.mapIndexed { i, part -> readingHeadings(note.content.substring(part.start, minOf(part.end, part.start + 300))).firstOrNull()?.second ?: "第 ${i + 1} 段" }
             val page = restoredNoteIndex(initial, hash, headings)
             val parser = ReaderMarkdownParser()
+            configureReaderMarkdown(parser, readerContext, markdownPalette)
             for (p in listOf(page, page - 1, page + 1).filter { it in parts.indices }.distinct()) {
                 val raw = parts[p].display(note.content)
                 parser.warm(if (p == 0) noteTextForDisplay(raw, note.title) else raw)
@@ -128,7 +131,6 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
     var incomingFrame by remember(note.id, hash) { mutableStateOf<ReadingFrame?>(null) }
     val scroll = activeFrame.scroll
     val scope = rememberCoroutineScope()
-    val readerContext = LocalContext.current
     val debugMotion = readerContext.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
     fun traceMotion(message: String) { if (debugMotion) android.util.Log.d("ReaderMotion", message) }
     val density = LocalDensity.current
@@ -163,9 +165,10 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
         withContext(Dispatchers.Main.immediate) { value = result }
     }
     val selected by remember(continuous, restored, segments) { derivedStateOf { if (continuous && restored) (list.firstVisibleItemIndex - 1).coerceIn(segments.indices) else index.coerceIn(segments.indices) } }
-    LaunchedEffect(reading, selected) {
+    LaunchedEffect(reading, selected, markdownPalette) {
         withContext(Dispatchers.Default) {
-            for (p in listOf(selected - 1, selected + 1).filter { it in segments.indices }) {
+            configureReaderMarkdown(reading.parser, readerContext, markdownPalette)
+            for (p in listOf(selected, selected - 1, selected + 1).filter { it in segments.indices }) {
                 val raw = segments[p].display(note.content)
                 reading.parser.warm(if (p == 0) noteTextForDisplay(raw, note.title) else raw)
                 sourceImagePattern.findAll(raw).forEach { vm.sourceImages.aspectRatio(it.groupValues[2]) }
