@@ -50,8 +50,8 @@ jobs:
           gradle --no-daemon assembleRelease
           python3 scripts/verify_signing.py
           mkdir -p app/build/outputs/apk/baseline
-          curl --fail --location --retry 3 --output app/build/outputs/apk/baseline/rain-study-1.0.2.apk https://github.com/ahdaolma/yuketang-mcp/releases/download/v1.0.2/rain-study-1.0.2.apk
-          echo 'a672453a37ddedd62bafd6af7ff63c7450c0ab77a31700741ee84b5494b5791d  app/build/outputs/apk/baseline/rain-study-1.0.2.apk' | sha256sum --check
+          curl --fail --location --retry 3 --output app/build/outputs/apk/baseline/rain-study-1.0.3.apk https://github.com/ahdaolma/yuketang-mcp/releases/download/v1.0.3/rain-study-1.0.3.apk
+          echo 'ee6e20c3c7a6ce59de450e1235ae56116ec671ee52db9be508809fbc36ec4d32  app/build/outputs/apk/baseline/rain-study-1.0.3.apk' | sha256sum --check
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -65,7 +65,7 @@ jobs:
           target: google_apis
           profile: pixel_2
           disable-animations: false
-          script: cd android && RAIN_SMOKE_APK=app/build/outputs/apk/debug/app-debug.apk RAIN_VERIFY_RELEASE_UPDATE=1 RAIN_UPDATE_BASELINE_APK=app/build/outputs/apk/baseline/rain-study-1.0.2.apk RAIN_UPDATE_BASELINE_VERSION=1.0.2 RAIN_UPDATE_EXPECTED_VERSION=1.0.3 python3 scripts/verify_device.py
+          script: cd android && RAIN_SMOKE_APK=app/build/outputs/apk/debug/app-debug.apk RAIN_VERIFY_RELEASE_UPDATE=1 RAIN_UPDATE_BASELINE_APK=app/build/outputs/apk/baseline/rain-study-1.0.3.apk RAIN_UPDATE_BASELINE_VERSION=1.0.3 RAIN_UPDATE_EXPECTED_VERSION=1.0.4 python3 scripts/verify_device.py
       - name: Publish verified fixed-signature APK
         if: env.RAIN_SIGNING_CONFIGURED == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4

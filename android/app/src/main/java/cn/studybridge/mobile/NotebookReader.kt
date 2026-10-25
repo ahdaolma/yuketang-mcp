@@ -125,7 +125,12 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
         override fun LazyListPrefetchScope.onVisibleItemsUpdated(layoutInfo: LazyListLayoutInfo) = Unit
         override fun NestedPrefetchScope.onNestedPrefetch(firstVisibleItemIndex: Int) = Unit
     } }
-    val list = rememberLazyListState(prefetchStrategy = prefetch)
+    // Start at the remembered source page rather than creating page 0 just to
+    // discard it during restoration. Exact line/offset restoration still owns
+    // the subsequent placement after native layout is ready.
+    val list = key(note.id) { rememberLazyListState(
+        initialFirstVisibleItemIndex = if (continuous && index > 0) index + 1 else 0,
+        prefetchStrategy = prefetch) }
     var frameToken by remember(note.id) { mutableIntStateOf(0) }
     var activeFrame by remember(note.id, hash) { mutableStateOf(ReadingFrame(index, ++frameToken)) }
     var incomingFrame by remember(note.id, hash) { mutableStateOf<ReadingFrame?>(null) }
@@ -343,7 +348,9 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
         rememberPosition()
         val page = segment.coerceIn(segments.indices)
         val current = activeFrame
-        val destinationOffset = if (end) current.scroll.maxValue else offset.coerceIn(0, current.scroll.maxValue)
+        val destinationOffset = if (end) {
+            if (current.scroll.value == 0 && endIsVisible(current)) 0 else current.scroll.maxValue
+        } else offset.coerceIn(0, current.scroll.maxValue)
         // Reopening an already-positioned native page creates a needless busy
         // window and drops the reader's next tap. Search/anchor repositioning
         // still owns a new command and its exact reveal as before.
