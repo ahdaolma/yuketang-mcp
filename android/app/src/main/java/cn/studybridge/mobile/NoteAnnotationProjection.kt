@@ -10,7 +10,9 @@ internal fun noteAnnotationContentKey(content: String?, source: String, start: I
     if (content == null || start == null || marks.isEmpty()) return emptyList()
     val matches = start >= 0 && start.toLong() + source.length <= content.length &&
         content.regionMatches(start, source, 0, source.length)
-    return listOf(matches) + marks.map { it.isAttached(content) }
+    val end = start.toLong() + source.length
+    return listOf(matches) + marks.filter { it.sourceStart >= 0 && it.sourceLength > 0 &&
+        it.sourceStart < end && it.sourceStart.toLong() + it.sourceLength > start }.map { it.isAttached(content) }
 }
 
 private data class AnnotationTextRun(val from: Int, val to: Int, val length: Int)

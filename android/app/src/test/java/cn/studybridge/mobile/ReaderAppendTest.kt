@@ -32,8 +32,9 @@ class ReaderAppendTest {
     @Test fun anUnrelatedOldMarkBecomingAttachedMustNotReplaceCurrentText() {
         val source = "当前正在阅读的正文。\n\n---\n\n"
         val later = "## 第 2 页\n\n后来重新补齐的旧页。"
+        val quoteStart = later.indexOf("旧页") - 3 // Rendered heading drops only the leading Markdown marker.
         val mark = NoteAnnotation(sourceStart = source.length, sourceLength = later.length,
-            sourceHash = imageDigest(later.toByteArray()), start = 0, end = 2, quote = "第2", kind = "remark")
+            sourceHash = imageDigest(later.toByteArray()), start = quoteStart, end = quoteStart + 2, quote = "旧页", kind = "remark")
         assertFalse(mark.isAttached(source))
         assertTrue(mark.isAttached(source + later))
         assertEquals("Marks outside this source cannot change its rendering dependency",
