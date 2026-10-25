@@ -207,4 +207,30 @@ class ReaderBoundaryRegressionTest {
     @Test fun swipeDoesNotSpendAScreenOnPaddingAfterAllFirstPageLinesAreVisible() = paddingBoundary("swipe", false)
     @Test fun clickClearsCoveredLastLineBeforeChangingSourcePage() = paddingBoundary("buttons", true)
     @Test fun swipeClearsCoveredLastLineBeforeChangingSourcePage() = paddingBoundary("swipe", true)
+
+    @Test fun reopeningAnAlreadyVisibleEndKeepsTheNativePageAndNextTap() {
+        val first = fixture(firstParagraphs = 4).content.substringBefore("## 第 2 页").trimEnd()
+        val second = first.replace("第 1 页", "第 2 页").replace("FIRST_START", "SECOND_START").replace("FIRST_END", "SECOND_END")
+        val note = fixture().copy(content = "$first\n\n$second")
+        val heightFraction = mutableStateOf(1f)
+        withReader(note, "buttons", true, heightFraction) { _, _ ->
+            val body = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow
+            val lastBottom = native { views ->
+                val view = views.first { it.text.contains("SECOND_END") }
+                val position = IntArray(2); view.getLocationInWindow(position)
+                position[1] + view.totalPaddingTop + requireNotNull(view.layout).height
+            }
+            val root = compose.onRoot().fetchSemanticsNode().boundsInWindow
+            compose.runOnIdle { heightFraction.value = 1f - (body.height - (lastBottom - body.top + 20f)) / root.height }
+            compose.waitForIdle()
+            compose.waitUntil(8000) { native { views -> views.count { it.isAttachedToWindow && it.text.contains("SECOND_START") } } == 1 }
+            val before = native { views -> views.single { it.isAttachedToWindow && it.text.contains("SECOND_START") } }
+            compose.openNoteTool("整本末尾")
+            compose.waitForIdle()
+            val after = native { views -> views.single { it.isAttachedToWindow && it.text.contains("SECOND_START") } }
+            assertSame("Reopening an already visible end must not replace its native view or acquire a new navigation command", before, after)
+            compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * .1f, height * .5f)) }
+            compose.waitUntil(8000) { page(1) && ready("FIRST_START") && !ready("SECOND_START") }
+        }
+    }
 }
