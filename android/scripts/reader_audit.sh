@@ -16,6 +16,9 @@ fi
 if [ "${RAIN_READER_SUITE:-reader}" = boundary ]; then
   classes=cn.studybridge.mobile.ReaderBoundaryRegressionTest,cn.studybridge.mobile.ReaderPreviewSizeTest,cn.studybridge.mobile.ReaderMarkdownLeaseTest
 fi
+if [ "${RAIN_READER_SUITE:-reader}" = storage ]; then
+  classes=cn.studybridge.mobile.ImageMarkupConcurrencyTest,cn.studybridge.mobile.AppDraftRecreationTest,cn.studybridge.mobile.ImageMarkupWorkflowTest,cn.studybridge.mobile.NotebookBackupDeviceTest
+fi
 gradle --no-daemon connectedDebugAndroidTest \
   -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true \
   "-Pandroid.testInstrumentationRunnerArguments.class=$classes" || status=$?
