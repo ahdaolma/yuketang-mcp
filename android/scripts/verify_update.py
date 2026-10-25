@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import time
+import json
 import xml.etree.ElementTree as ET
 
 
@@ -20,6 +21,7 @@ baseline_version = os.environ.get('RAIN_UPDATE_BASELINE_VERSION', '')
 legacy_marker = 'rain_upgrade_fixture_v' + baseline_version.replace('.', '')
 out = pathlib.Path('signing-artifacts')
 out.mkdir(exist_ok=True)
+tap_number = 0
 
 
 def nodes():
@@ -55,6 +57,7 @@ def nodes():
 
 
 def tap(label):
+    global tap_number
     for attempt in range(8):
         items = nodes()
         # A setting label and its switch share a name. Prefer the actual
@@ -65,7 +68,17 @@ def tap(label):
         for node in candidates:
             x1, y1, x2, y2 = map(int, re.findall(r'\d+', node.get('bounds')))
             if x2 > x1 and y2 > y1:
-                adb('shell', 'input', 'tap', str((x1+x2)//2), str((y1+y2)//2))
+                tap_number += 1
+                stem = 'upgrade-tap-' + str(tap_number).zfill(2)
+                # Keep the actual lookup tree and coordinates. A successful
+                # input command alone does not prove the app received a tap.
+                (out / (stem + '.xml')).write_bytes(adb('shell', 'cat', '/sdcard/update-ui.xml'))
+                action = {'label': label, 'bounds': node.get('bounds'), 'clickable': node.get('clickable'),
+                          'enabled': node.get('enabled'), 'x': (x1+x2)//2, 'y': (y1+y2)//2, 'time': time.time()}
+                with (out / 'upgrade-actions.jsonl').open('a') as trace:
+                    trace.write(json.dumps(action, ensure_ascii=False) + '\n')
+                result = adb('shell', 'input', 'tap', str(action['x']), str(action['y']))
+                (out / (stem + '-input.txt')).write_bytes(result)
                 time.sleep(0.5)
                 return
         time.sleep(0.5)
@@ -169,6 +182,7 @@ except Exception:
         'upgrade-activity.txt': ('shell', 'dumpsys', 'activity', 'activities'),
         'upgrade-window.txt': ('shell', 'dumpsys', 'window', 'windows'),
         'upgrade-ui.xml': ('shell', 'cat', '/sdcard/update-ui.xml'),
+        'upgrade-input.txt': ('shell', 'dumpsys', 'input'),
     }
     for name, command in commands.items():
         try:
