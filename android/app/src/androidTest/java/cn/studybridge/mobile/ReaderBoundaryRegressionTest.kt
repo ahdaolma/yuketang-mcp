@@ -162,7 +162,7 @@ class ReaderBoundaryRegressionTest {
         reverse(false, false, .05f, fixture().copy(content = source))
     }
 
-    private fun appendCompletedClassPage(mode: String, caret: Boolean) {
+    private fun appendCompletedClassPage(mode: String, caret: Boolean, marked: Boolean = false) {
         // Match ClassNotebooks' completed-page checkpoint, including its final
         // blank separator. Appending must not rebuild the page being read.
         val note = fixture().let { it.copy(content = it.content + "\n\n---\n\n") }
@@ -178,6 +178,16 @@ class ReaderBoundaryRegressionTest {
             }
             compose.waitUntil(8000) { vm.readingMemory.position(note.id)?.let { it.index == 1 && (it.textAnchor?.offset ?: 0) > 0 } == true }
             val before = native { views -> views.single { it.isAttachedToWindow && it.text.contains("SECOND_START") } }
+            if (marked) {
+                val annotation = native { _ ->
+                    val quote = "第二页长段落4"
+                    val start = before.text.indexOf(quote)
+                    assertTrue(start >= 0)
+                    NoteTextSelection(before, requireNotNull(before.block), start, start + quote.length, quote).annotation("remark", "完成页不重置这条备注")
+                }
+                compose.runOnIdle { assertTrue(vm.saveNoteAnnotation(note.id, annotation)) }
+                compose.waitUntil(8000) { native { _ -> (before.text as android.text.Spanned).getSpans(0, before.text.length, NoteAnnotationSpan::class.java).any { it.annotation.id == annotation.id } } }
+            }
             val body = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow
             if (caret) native { _ ->
                 val location = IntArray(2); before.getLocationInWindow(location)
@@ -199,12 +209,57 @@ class ReaderBoundaryRegressionTest {
             assertSame("Unchanged rendered text must not be replaced on append", oldText, native { after.text })
             assertEquals("Append must retain the current paragraph", oldTop, top("SECOND_START"), 2f)
             if (caret) assertEquals("Append must retain the focused caret", oldCaret, native { after.selectionStart })
-            advancedUiShot(compose.activity, "reader-class-append-$mode-$caret")
+            advancedUiShot(compose.activity, "reader-class-append-$mode-$caret-$marked")
         }
     }
     @Test fun completedClassPageAppendKeepsContinuousParagraph() = appendCompletedClassPage("continuous", false)
     @Test fun completedClassPageAppendKeepsFocusedContinuousParagraph() = appendCompletedClassPage("continuous", true)
     @Test fun completedClassPageAppendKeepsPagedParagraph() = appendCompletedClassPage("buttons", false)
+    @Test fun completedClassPageAppendKeepsPersonalMarkAndCaret() = appendCompletedClassPage("continuous", true, marked = true)
+
+    @Test fun classPageAppendWaitsForAnAcceptedPaperTurnWithoutLosingItsTarget() {
+        val note = fixture().copy(content = "## 第 1 页\n\nFIRST_START。\n\n---\n\n## 第 2 页\n\nSECOND_START。\n\n---\n\n")
+        withReader(note, "buttons", false) { _, vm ->
+            compose.mainClock.autoAdvance = false
+            try {
+                compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * .9f, height * .5f)) }
+                compose.waitUntil(10000) {
+                    compose.mainClock.advanceTimeByFrame()
+                    compose.onAllNodesWithTag("笔记翻页画面").fetchSemanticsNodes().isNotEmpty()
+                }
+                val destination = native { views -> views.single { it.isAttachedToWindow && it.text.contains("SECOND_START") } }
+                compose.runOnIdle { vm.updateNotebookState { it.copy(notes = it.notes.map { n -> if (n.id == note.id) n.copy(content = n.content + "## 第 3 页\n\nTHIRD_START。") else n }) } }
+                compose.waitUntil(12000) {
+                    compose.mainClock.advanceTimeByFrame()
+                    page(2, 3) && ready("SECOND_START") && !ready("FIRST_START") && compose.onAllNodesWithTag("笔记翻页画面").fetchSemanticsNodes().isEmpty()
+                }
+                assertSame("Publication must keep the accepted target's native view", destination, native { views -> views.single { it.isAttachedToWindow && it.text.contains("SECOND_START") } })
+            } finally { compose.mainClock.autoAdvance = true }
+        }
+    }
+
+    @Test fun completedClassPageAppendDoesNotCancelAnOngoingVerticalDrag() {
+        val note = fixture().let { it.copy(content = it.content + "\n\n---\n\n") }
+        withReader(note, "continuous", true) { _, vm ->
+            compose.onNodeWithTag("笔记正文").performTouchInput {
+                down(Offset(center.x, height * .65f))
+                moveTo(Offset(center.x, height * .55f), 300)
+            }
+            compose.waitForIdle()
+            val before = top("SECOND_START")
+            compose.runOnIdle { vm.updateNotebookState { it.copy(notes = it.notes.map { n -> if (n.id == note.id) n.copy(content = n.content + "## 第 3 页\n\nTHIRD_START。") else n }) } }
+            compose.waitUntil(10000) { page(2, 3) && ready("SECOND_START") }
+            assertEquals("Append must not move the page under a held finger", before, top("SECOND_START"), 2f)
+            var requested = 0f
+            compose.onNodeWithTag("笔记正文").performTouchInput {
+                requested = height * .05f
+                moveTo(Offset(center.x, height * .5f), 300)
+                advanceEventTime(240); up()
+            }
+            compose.waitForIdle()
+            assertTrue("The same drag must still advance after append", top("SECOND_START") <= before - requested * .5f)
+        }
+    }
 
     @Test fun repeatedClicksAdvanceActualShortPageContentInBothDirections() {
         val note = Note(title = "短页点击", source = "两页", model = "fixture", content = "## 第 1 页\n\nFIRST_START。\n\n## 第 2 页\n\nSECOND_START。")

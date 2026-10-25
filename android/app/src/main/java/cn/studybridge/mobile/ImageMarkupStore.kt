@@ -10,23 +10,30 @@ import android.util.AtomicFile
 import java.io.File
 
 class ImageMarkupStore(context: Context) {
-    private val root = File(context.noBackupFilesDir, "note-image-marks").apply { mkdirs() }
+    private val root = File(context.noBackupFilesDir, "note-image-marks").canonicalFile.apply { mkdirs() }
     private fun file(id: String): AtomicFile { require(Regex("[a-f0-9]{64}").matches(id)); return AtomicFile(File(root, "$id.json")) }
-    @Synchronized fun load(id: String): List<ImageStroke> {
+    // AtomicFile.openRead may remove a pending .new file. All instances must
+    // share the same lock, including backup export and preview reads. Bounded
+    // stripes avoid retaining one lock/path for every image ever opened.
+    private fun <T> access(id: String, block: (AtomicFile) -> T): T {
         val file = file(id)
-        if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) return emptyList()
-        return file.openRead().use { input -> require(input.channel.size() <= 16 * 1024 * 1024); input.bufferedReader().use { imageMarkupFromJson(it.readText()) } }
+        return synchronized(locks[(file.baseFile.path.hashCode() and Int.MAX_VALUE) % locks.size]) { block(file) }
     }
-    @Synchronized fun save(id: String, strokes: List<ImageStroke>) {
+    fun load(id: String): List<ImageStroke> = access(id) { file ->
+        if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) emptyList()
+        else file.openRead().use { input -> require(input.channel.size() <= 16 * 1024 * 1024); input.bufferedReader().use { imageMarkupFromJson(it.readText()) } }
+    }
+    fun save(id: String, strokes: List<ImageStroke>) {
         val bytes = imageMarkupJson(strokes).toByteArray(Charsets.UTF_8)
         require(bytes.size <= 16 * 1024 * 1024) { "批注过多，请减少笔画后保存。" }
-        val file = file(id); val out = file.startWrite()
-        try { out.write(bytes); file.finishWrite(out) } catch (e: Exception) { file.failWrite(out); throw e }
+        access(id) { file ->
+            val out = file.startWrite()
+            try { out.write(bytes); file.finishWrite(out) } catch (e: Exception) { file.failWrite(out); throw e }
+        }
     }
-    @Synchronized fun exportRaw(id: String): ByteArray? {
-        val file = file(id)
-        if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) return null
-        return file.openRead().use { require(it.channel.size() <= 16 * 1024 * 1024); it.readBytes() }.also { imageMarkupFromJson(it.toString(Charsets.UTF_8)) }
+    fun exportRaw(id: String): ByteArray? = access(id) { file ->
+        if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) null
+        else file.openRead().use { require(it.channel.size() <= 16 * 1024 * 1024); it.readBytes() }.also { imageMarkupFromJson(it.toString(Charsets.UTF_8)) }
     }
     fun importRaw(id: String, bytes: ByteArray) {
         require(bytes.size <= 16 * 1024 * 1024)
@@ -37,6 +44,7 @@ class ImageMarkupStore(context: Context) {
         if (strokes.isEmpty()) return original
         return original.copy(Bitmap.Config.ARGB_8888, true).also { drawImageStrokes(Canvas(it), strokes, it.width.toFloat(), it.height.toFloat()) }
     }
+    private companion object { val locks = Array(64) { Any() } }
 }
 
 fun drawImageStrokes(canvas: Canvas, strokes: List<ImageStroke>, width: Float, height: Float) {

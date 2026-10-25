@@ -89,7 +89,7 @@ private data class PreparedReading(val noteId: String, val title: String, val co
 // Publication happens on Main after the existing reader has saved its latest
 // settled position. Preparing another completed class page must not unmount it.
 private class ReadingPublication {
-    var ready: (Boolean) -> Boolean = { true }
+    var ready by mutableStateOf<(Boolean) -> Boolean>({ true })
     var capture: () -> Unit = {}
 }
 
