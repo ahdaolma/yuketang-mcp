@@ -78,6 +78,7 @@ class AppDraftRecreationTest {
             compose.waitUntil(10000) { compose.onAllNodesWithContentDescription("旋转课件 缩略图").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithContentDescription("旋转课件 缩略图").performClick()
             canvasReady()
+            assertViewerStatusBarHidden()
             compose.onNodeWithText("画笔").performClick()
             repeat(2) { index ->
                 compose.onNodeWithTag("image-markup-canvas").performTouchInput { swipe(center + Offset(-30f, index * 18f), center + Offset(30f, index * 18f), 300) }
@@ -87,6 +88,7 @@ class AppDraftRecreationTest {
             try {
                 compose.waitUntil(5000) { compose.activity.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE }
                 canvasReady()
+                assertViewerStatusBarHidden()
                 compose.onNodeWithTag("image-markup-canvas").assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription, "3 笔批注，缩放 1.0"))
                 assertEquals(listOf(original), images.markupStore.load(id))
                 compose.onNodeWithText("撤销").performScrollTo().performClick()
@@ -107,5 +109,16 @@ class AppDraftRecreationTest {
     private fun canvasReady() {
         compose.waitUntil(10000) { compose.onAllNodesWithText("画笔").fetchSemanticsNodes().any { !it.config.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled) } }
         compose.onNodeWithTag("image-markup-canvas").assertIsDisplayed()
+    }
+
+    private fun assertViewerStatusBarHidden() {
+        var visible: Boolean? = null
+        androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.isRoot())
+            .inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog())
+            .check { view, error ->
+                if (error != null) throw error
+                visible = androidx.core.view.ViewCompat.getRootWindowInsets(view)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars())
+            }
+        assertEquals("The actual image-editor window must keep the system status bar hidden, including after rotation", false, visible)
     }
 }
