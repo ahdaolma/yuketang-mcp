@@ -29,4 +29,15 @@ class ReaderAppendTest {
         assertNotEquals(key(source), key(source, listOf(mark.copy(sourceStart = -1))))
         assertEquals(emptyList<Boolean>(), key(source, emptyList()))
     }
+    @Test fun anUnrelatedOldMarkBecomingAttachedMustNotReplaceCurrentText() {
+        val source = "当前正在阅读的正文。\n\n---\n\n"
+        val later = "## 第 2 页\n\n后来重新补齐的旧页。"
+        val mark = NoteAnnotation(sourceStart = source.length, sourceLength = later.length,
+            sourceHash = imageDigest(later.toByteArray()), start = 0, end = 2, quote = "第2", kind = "remark")
+        assertFalse(mark.isAttached(source))
+        assertTrue(mark.isAttached(source + later))
+        assertEquals("Marks outside this source cannot change its rendering dependency",
+            noteAnnotationContentKey(source, source, 0, listOf(mark)),
+            noteAnnotationContentKey(source + later, source, 0, listOf(mark)))
+    }
 }
