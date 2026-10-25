@@ -24,6 +24,11 @@ class AppDraftRecreationTest {
         compose.waitUntil(5000) { vm.ui.value.ready }
         compose.activityRule.scenario.recreate()
         try { block(vm, app) }
+        catch (error: Throwable) {
+            runCatching { advancedUiShot(compose.activity, "draft-fixture-failure-${newId().take(8)}") }
+            runCatching { android.util.Log.e("DraftFailure", compose.onRoot(useUnmergedTree = true).printToString()) }
+            throw error
+        }
         finally {
             compose.runOnUiThread { owner.installClassFixture(previous); store.clear() }
         }
@@ -42,6 +47,7 @@ class AppDraftRecreationTest {
             compose.onNodeWithText("API Base URL").performScrollTo().performTextReplacement("https://draft.example/v1")
             compose.onNodeWithText("API Key").performScrollTo().performTextReplacement("draft-only-key")
             compose.onNodeWithText("手动填写模型 ID").performScrollTo().performClick()
+            compose.waitUntil(5000) { compose.onAllNodesWithText("模型 ID").fetchSemanticsNodes().size == 1 }
             compose.onNodeWithText("模型 ID").performScrollTo().performTextReplacement("draft-model")
             compose.onNodeWithContentDescription("返回设置").performClick()
             compose.onNodeWithContentDescription("返回学习").performClick()
@@ -111,13 +117,21 @@ class AppDraftRecreationTest {
         compose.onNodeWithTag("image-markup-canvas").assertIsDisplayed()
     }
 
+    @Suppress("DEPRECATION")
     private fun assertViewerStatusBarHidden() {
         var visible: Boolean? = null
         androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.isRoot())
             .inRoot(androidx.test.espresso.matcher.RootMatchers.isDialog())
             .check { view, error ->
                 if (error != null) throw error
-                visible = androidx.core.view.ViewCompat.getRootWindowInsets(view)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars())
+                val insets = androidx.core.view.ViewCompat.getRootWindowInsets(view)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars())
+                val flags = (view.layoutParams as? android.view.WindowManager.LayoutParams)?.flags ?: 0
+                val legacyHidden = (view.systemUiVisibility and android.view.View.SYSTEM_UI_FLAG_FULLSCREEN) != 0 ||
+                    (flags and android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN) != 0
+                // On API26 a floating Dialog's frame excludes the status-bar
+                // area; compat insets can report zero even while the bar shows.
+                visible = if (android.os.Build.VERSION.SDK_INT < 30) !legacyHidden else insets
+                android.util.Log.i("ViewerChrome", "sdk=${android.os.Build.VERSION.SDK_INT} insets=$insets flags=$flags ui=${view.systemUiVisibility} policyHidden=$legacyHidden")
             }
         assertEquals("The actual image-editor window must keep the system status bar hidden, including after rotation", false, visible)
     }
