@@ -184,6 +184,9 @@ class MainActivity : ComponentActivity() {
     val dark = colors.background.luminance() < 0.5f
     val personalMarks = LocalNoteAnnotations.current
     val annotationContent = LocalNoteAnnotationContent.current
+    val annotationContentKey = remember(annotationContent, annotationSource, personalMarks) {
+        noteAnnotationContentKey(annotationContent, annotationSource?.source.orEmpty(), annotationSource?.sourceStart, personalMarks)
+    }
     val stableMarkdown = LocalNoteStableMarkdown.current
     val syntax = LocalReaderMarkdownParser.current
     val contentWidth = LocalNoteContentWidth.current
@@ -213,7 +216,7 @@ class MainActivity : ComponentActivity() {
         // Create final spans before the native view's first measurement. This
         // remains virtualized: only the visible bounded reader segments render.
         // Do not cache mutable TableRowSpan / TextViewSpan across native views.
-        remember(text, renderer, density, dark, bodySize, contentWidth, syntheticPrefixLength, personalMarks, annotationContent, annotationSource) {
+        remember(text, renderer, density, dark, bodySize, contentWidth, syntheticPrefixLength, personalMarks, annotationContentKey, annotationSource) {
             val began = System.nanoTime()
             format().also {
                 if (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
@@ -221,7 +224,7 @@ class MainActivity : ComponentActivity() {
             }
         }
     } else {
-        val result by produceState<Triple<String, android.text.Spanned, Int>?>(null, text, renderer, density, dark, bodySize, contentWidth, syntheticPrefixLength, personalMarks, annotationContent, annotationSource) {
+        val result by produceState<Triple<String, android.text.Spanned, Int>?>(null, text, renderer, density, dark, bodySize, contentWidth, syntheticPrefixLength, personalMarks, annotationContentKey, annotationSource) {
             val parsed = withContext(Dispatchers.Default) { format() }
             // AndroidView updates stay on Main even under a test frame clock.
             withContext(Dispatchers.Main.immediate) { value = parsed }

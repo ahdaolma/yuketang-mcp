@@ -83,31 +83,53 @@ private class ReadingDrag(val generation: Int, val direction: Int, val target: R
     val release = CompletableDeferred<Boolean>()
 }
 
-private data class PreparedReading(val content: String, val segments: List<NoteReadingSegment>, val parser: ReaderMarkdownParser)
+private data class PreparedReading(val noteId: String, val title: String, val content: String, val hash: String,
+    val segments: List<NoteReadingSegment>, val parser: ReaderMarkdownParser, val revision: Int)
+
+// Publication happens on Main after the existing reader has saved its latest
+// settled position. Preparing another completed class page must not unmount it.
+private class ReadingPublication {
+    var ready: (Boolean) -> Boolean = { true }
+    var capture: () -> Unit = {}
+}
 
 @OptIn(kotlinx.coroutines.FlowPreview::class, ExperimentalFoundationApi::class)
-@Composable fun NotebookReader(note: Note, ui: UiState, vm: StudyViewModel, modifier: Modifier = Modifier, extraHeader: @Composable () -> Unit = {}, primaryTools: @Composable (() -> Unit) -> Unit = {}, extraTools: @Composable (() -> Unit) -> Unit = {}, backLabel: String = "返回笔记列表", onBack: () -> Unit) {
-    val initial = remember(note.id) { vm.readingMemory.position(note.id) }
-    val hash = remember(note.content) { noteContentHash(note.content) }
+@Composable fun NotebookReader(sourceNote: Note, ui: UiState, vm: StudyViewModel, modifier: Modifier = Modifier, extraHeader: @Composable () -> Unit = {}, primaryTools: @Composable (() -> Unit) -> Unit = {}, extraTools: @Composable (() -> Unit) -> Unit = {}, backLabel: String = "返回笔记列表", onBack: () -> Unit) {
     val readerContext = LocalContext.current
     val markdownPalette = studyMarkdownPalette()
-    val prepared by produceState<PreparedReading?>(null, note.id, note.content, note.title) {
+    val publication = remember(sourceNote.id) { ReadingPublication() }
+    val prepared by produceState<PreparedReading?>(null, sourceNote.id, sourceNote.content, sourceNote.title) {
+        val previous = value?.takeIf { it.noteId == sourceNote.id }
+        val position = vm.readingMemory.position(sourceNote.id)
         val result = withContext(Dispatchers.Default) {
-            val parts = noteReadingSegments(note.content)
-            val headings = parts.mapIndexed { i, part -> readingHeadings(note.content.substring(part.start, minOf(part.end, part.start + 300))).firstOrNull()?.second ?: "第 ${i + 1} 段" }
-            val page = restoredNoteIndex(initial, hash, headings)
-            val parser = ReaderMarkdownParser()
+            val parts = noteReadingSegments(sourceNote.content)
+            val hash = noteContentHash(sourceNote.content)
+            val headings = parts.mapIndexed { i, part -> readingHeadings(sourceNote.content.substring(part.start, minOf(part.end, part.start + 300))).firstOrNull()?.second ?: "第 ${i + 1} 段" }
+            val page = restoredNoteIndex(position, hash, headings)
+            val parser = previous?.parser ?: ReaderMarkdownParser()
             configureReaderMarkdown(parser, readerContext, markdownPalette)
             for (p in listOf(page, page - 1, page + 1).filter { it in parts.indices }.distinct()) {
-                val raw = parts[p].display(note.content)
-                parser.warm(if (p == 0) noteTextForDisplay(raw, note.title) else raw)
+                val raw = parts[p].display(sourceNote.content)
+                parser.warm(if (p == 0) noteTextForDisplay(raw, sourceNote.title) else raw)
                 sourceImagePattern.findAll(raw).forEach { vm.sourceImages.aspectRatio(it.groupValues[2]) }
             }
-            PreparedReading(note.content, parts, parser)
+            val append = previous != null && previous.title == sourceNote.title &&
+                readerAppendKeepsSegments(previous.content, previous.segments, sourceNote.content, parts)
+            PreparedReading(sourceNote.id, sourceNote.title, sourceNote.content, hash, parts, parser,
+                if (append) previous!!.revision else (previous?.revision ?: -1) + 1)
         }
-        withContext(Dispatchers.Main.immediate) { value = result }
+        withContext(Dispatchers.Main.immediate) {
+            val append = previous != null && result.revision == previous.revision
+            snapshotFlow { publication.ready(append) }.first { it }
+            publication.capture()
+            value = result
+        }
     }
-    val reading = prepared?.takeIf { it.content == note.content } ?: run { CircularProgressIndicator(Modifier.size(24.dp)); return }
+    val reading = prepared?.takeIf { it.noteId == sourceNote.id } ?: run { CircularProgressIndicator(Modifier.size(24.dp)); return }
+    val note = sourceNote.copy(content = reading.content, title = reading.title)
+    val hash = reading.hash
+    val revision = reading.revision
+    val initial = remember(note.id) { vm.readingMemory.position(note.id) }
     val segments = reading.segments
     val labels = remember(note.content, segments) { segments.mapIndexed { i, part -> readingHeadings(note.content.substring(part.start, minOf(part.end, part.start + 300))).firstOrNull()?.second ?: "第 ${i + 1} 段" } }
     val pageLabels = remember(note.content, segments) { readerPageLabels(note.content, segments) }
@@ -133,8 +155,8 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
         initialFirstVisibleItemIndex = if (continuous && index > 0) index + 1 else 0,
         prefetchStrategy = prefetch) }
     var frameToken by remember(note.id) { mutableIntStateOf(0) }
-    var activeFrame by remember(note.id, hash) { mutableStateOf(ReadingFrame(index, ++frameToken)) }
-    var incomingFrame by remember(note.id, hash) { mutableStateOf<ReadingFrame?>(null) }
+    var activeFrame by remember(note.id, revision) { mutableStateOf(ReadingFrame(index.coerceIn(segments.indices), ++frameToken)) }
+    var incomingFrame by remember(note.id, revision) { mutableStateOf<ReadingFrame?>(null) }
     val scroll = activeFrame.scroll
     val scope = rememberCoroutineScope()
     val debugMotion = readerContext.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0
@@ -144,7 +166,7 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
     val chrome = LocalReadingChrome.current
     var fontSize by remember { mutableIntStateOf(ui.data.noteFontSize) }
     var bodyWidth by remember { mutableIntStateOf(0) }
-    var restored by remember(note.id, mode, hash, fontSize, bodyWidth, motionStyle) { mutableStateOf(false) }
+    var restored by remember(note.id, mode, revision, fontSize, bodyWidth, motionStyle) { mutableStateOf(false) }
     var readyMode by remember(note.id) { mutableStateOf("") }
     var viewport by remember { mutableIntStateOf(1) }
     var bodyTop by remember { mutableFloatStateOf(0f) }
@@ -152,7 +174,7 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
     var dragOffset by remember { mutableFloatStateOf(0f) }
     var transitionDirection by remember { mutableIntStateOf(0) }
     var dragSession by remember { mutableStateOf<ReadingDrag?>(null) }
-    var committedTurn by remember(note.id, hash) { mutableStateOf<ReadingTurn?>(null) }
+    var committedTurn by remember(note.id, revision) { mutableStateOf<ReadingTurn?>(null) }
     var paperImages by remember { mutableStateOf<ReaderPaperImages?>(null) }
     var motionAnimation by remember { mutableStateOf(pageAnimation) }
     var foldBottom by remember { mutableStateOf(true) }
@@ -183,11 +205,11 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
         }
     }
     LaunchedEffect(selected, mode) { traceMotion("selected mode=$mode page=$selected index=$index list=${list.firstVisibleItemIndex}/${list.firstVisibleItemScrollOffset}") }
-    val readyPages = remember(note.id, hash, mode) { mutableStateMapOf<Int, Int>() }
-    val readyFrames = remember(note.id, hash, mode) { mutableStateMapOf<Int, Boolean>() }
+    val readyPages = remember(note.id, revision, mode) { mutableStateMapOf<Int, Int>() }
+    val readyFrames = remember(note.id, revision, mode) { mutableStateMapOf<Int, Boolean>() }
     var renderEpoch by remember(note.id) { mutableIntStateOf(0) }
     val renderReady = if (continuous) readyPages[selected] == renderEpoch else readyFrames[activeFrame.token] == true
-    val continuousText = remember(note.id, hash) { ReaderTextRegistry() }
+    val continuousText = remember(note.id, revision) { ReaderTextRegistry() }
     val textViews = if (continuous) continuousText else activeFrame.text
     val commands = remember(note.id) { ReaderCommandOwner() }
     val turning = commands.busy
@@ -209,6 +231,15 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
                 latestLabels[page], hash, anchor?.second))
         }
     }
+    val currentRememberPosition by rememberUpdatedState({ rememberPosition() })
+    val publicationFrame = activeFrame
+    SideEffect {
+        publication.ready = { append -> latestRestored && latestSettled && !commands.busy &&
+            (continuous || publicationFrame === activeFrame) &&
+            (append || if (continuous) !list.isScrollInProgress else !scroll.isScrollInProgress) }
+        publication.capture = { currentRememberPosition() }
+    }
+    DisposableEffect(publication) { onDispose { publication.ready = { true }; publication.capture = {} } }
     // Readiness, restoration and motion have one cancellable owner.
     fun discardIncoming() {
         paperImages = null
@@ -322,7 +353,7 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
             if (target != null) operate { placePage(target.page, target.offset, target.end) }
         }
     }
-    LaunchedEffect(note.id, mode, hash, fontSize, bodyWidth, motionStyle) {
+    LaunchedEffect(note.id, mode, revision, fontSize, bodyWidth, motionStyle) {
         if (bodyWidth <= 0 || viewport <= 1) return@LaunchedEffect
         val position = if (readyMode.isEmpty()) initial else vm.readingMemory.position(note.id)
         restored = false
@@ -345,7 +376,7 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
     LaunchedEffect(selected, restored, hash, mode, settledJump, turning) {
         if (restored) snapshotFlow { if (continuous) list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset else selected to scroll.value }.debounce(180).collect { rememberPosition() }
     }
-    DisposableEffect(note.id, hash, mode) { onDispose { rememberPosition() } }
+    DisposableEffect(note.id, mode) { onDispose { currentRememberPosition() } }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(lifecycle, note.id, hash) { withContext(Dispatchers.Main.immediate) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) { cancelPaperMotion(); rememberPosition() } }
@@ -517,7 +548,7 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
         FeedbackTextButton(onClick = { rememberPosition(); fontSize = 16; vm.updateNotebookState { it.copy(noteFontSize = 16) } }) { Text("恢复默认字号") }
     }
     val pageTap: ((Float) -> Unit)? = if (mode == "buttons") { x -> if (selectionController?.selection == null) turn(if (x - bodyLeft >= bodyWidth / 2f) 1 else -1) } else null
-    CompositionLocalProvider(LocalNoteFontSize provides fontSize, LocalNoteStableMarkdown provides true, LocalReaderMarkdownParser provides reading.parser, LocalNoteSearchQuery provides query, LocalNoteSearchTarget provides target, LocalNoteSearchReveal provides reveal, LocalNotePageTap provides pageTap) {
+    CompositionLocalProvider(LocalNoteFontSize provides fontSize, LocalNoteStableMarkdown provides true, LocalReaderMarkdownParser provides reading.parser, LocalNoteAnnotationContent provides note.content, LocalNoteSearchQuery provides query, LocalNoteSearchTarget provides target, LocalNoteSearchReveal provides reveal, LocalNotePageTap provides pageTap) {
         Column(modifier.fillMaxSize()) {
             if (query.isNotBlank()) Row(Modifier.fillMaxWidth().testTag("查找命中导航"), verticalAlignment = Alignment.CenterVertically) {
                 val hitIndex = noteSearchHitIndex(hits, searchOffset).coerceAtLeast(0)

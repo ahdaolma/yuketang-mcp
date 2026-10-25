@@ -258,6 +258,7 @@ class ReaderBoundaryRegressionTest {
         val note = fixture().copy(content = "$first\n\n$second")
         val heightFraction = mutableStateOf(1f)
         withReader(note, "buttons", true, heightFraction) { _, _ ->
+            compose.waitUntil(8000) { kotlin.math.abs(top("SECOND_START") - compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow.top) < 2 }
             val body = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow
             val lastBottom = native { views ->
                 val view = views.first { it.text.contains("SECOND_END") }
@@ -268,6 +269,8 @@ class ReaderBoundaryRegressionTest {
             compose.runOnIdle { heightFraction.value = 1f - (body.height - (lastBottom - body.top + 20f)) / root.height }
             compose.waitForIdle()
             compose.waitUntil(8000) { native { views -> views.count { it.isAttachedToWindow && it.text.contains("SECOND_START") } } == 1 }
+            val settledBody = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow
+            assertTrue("The no-op fixture must have its actual last line inside the viewport", top("SECOND_START") + native { views -> views.single { it.isAttachedToWindow && it.text.contains("SECOND_START") }.layout.height } < settledBody.bottom)
             val before = native { views -> views.single { it.isAttachedToWindow && it.text.contains("SECOND_START") } }
             Log.i("ReaderBoundary", "noop before body=${compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow} tool=${compose.onNodeWithTag("笔记悬浮工具").fetchSemanticsNode().boundsInWindow} views=${snapshot()}")
             compose.openNoteTool("整本末尾")

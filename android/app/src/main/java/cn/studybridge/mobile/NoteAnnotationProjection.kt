@@ -3,6 +3,16 @@ package cn.studybridge.mobile
 /** A display range only: the saved anchor, identifier and remark stay intact. */
 data class ProjectedNoteAnnotation(val annotation: NoteAnnotation, val start: Int, val end: Int)
 
+// Projection reads only the verified current source and each mark's hashed raw
+// range. A change outside those ranges cannot change its output. In particular,
+// appending a later class page must not replace focused, unchanged native text.
+internal fun noteAnnotationContentKey(content: String?, source: String, start: Int?, marks: List<NoteAnnotation>): List<Boolean> {
+    if (content == null || start == null || marks.isEmpty()) return emptyList()
+    val matches = start >= 0 && start.toLong() + source.length <= content.length &&
+        content.regionMatches(start, source, 0, source.length)
+    return listOf(matches) + marks.map { it.isAttached(content) }
+}
+
 private data class AnnotationTextRun(val from: Int, val to: Int, val length: Int)
 
 private fun commonAnnotationPrefix(first: String, second: String): Int {

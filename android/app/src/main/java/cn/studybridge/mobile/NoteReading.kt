@@ -8,6 +8,12 @@ data class NoteReadingSegment(val start: Int, val end: Int, val prefix: String =
     }
 }
 
+// A new completed page can retain existing native views only when every old
+// source boundary and synthetic Markdown context remains exactly unchanged.
+internal fun readerAppendKeepsSegments(old: String, oldParts: List<NoteReadingSegment>, next: String, nextParts: List<NoteReadingSegment>): Boolean =
+    next.length > old.length && next.startsWith(old) && nextParts.size > oldParts.size &&
+        oldParts.indices.all { oldParts[it] == nextParts[it] }
+
 // Original bytes corresponding to the real part of a displayed segment. The
 // prefix can be a repeated table header or a reopened fence, never stored text.
 data class NoteReadingSource(val source: String, val sourceStart: Int, val prefixLength: Int = 0) {
