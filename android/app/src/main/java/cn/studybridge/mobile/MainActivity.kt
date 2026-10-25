@@ -201,15 +201,24 @@ class MainActivity : ComponentActivity() {
     val personalMarks = LocalNoteAnnotations.current
     val annotationContent = LocalNoteAnnotationContent.current
     val stableMarkdown = LocalNoteStableMarkdown.current
+    val syntax = LocalReaderMarkdownParser.current
+    val contentWidth = LocalNoteContentWidth.current
+    val readerWidth = contentWidth?.let { with(LocalDensity.current) { it.roundToPx() } }
+    val toMarkdown = { raw: String ->
+        val source = markdownForStudyMarks(raw)
+        if (syntax == null) renderer.toMarkdown(source) else renderer.render(syntax.parse(source)).let {
+            if (it.isEmpty() && source.isNotEmpty()) android.text.SpannableStringBuilder(source) else it
+        }
+    }
     val format = {
         synchronized(renderer) {
-            val body = renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(text)), density, dark)
+            val body = renderStudyMarks(toMarkdown(text), density, dark)
             // TablePlugin owns mutable visitor state. Render prefix context in
             // the same worker sequence, never concurrently on the UI thread.
-            val prefix = if (syntheticPrefixLength == 0) "" else renderer.toMarkdown(markdownForStudyMarks(text.take(syntheticPrefixLength))).toString().trimEnd('\r', '\n')
+            val prefix = if (syntheticPrefixLength == 0) "" else toMarkdown(text.take(syntheticPrefixLength)).toString().trimEnd('\r', '\n')
             val annotationStart = if (body.toString().startsWith(prefix)) prefix.length else Int.MAX_VALUE
             val decorated = renderPersonalAnnotations(body, annotationSource?.source.orEmpty(), annotationSource?.sourceStart, personalMarks, annotationContent, annotationStart, text.take(syntheticPrefixLength)) { raw ->
-                renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(raw)), density, dark).toString()
+                renderStudyMarks(toMarkdown(raw), density, dark).toString()
             }
             Triple(text, decorated, annotationStart)
         }
@@ -218,7 +227,7 @@ class MainActivity : ComponentActivity() {
         // Create final spans before the native view's first measurement. This
         // remains virtualized: only the visible bounded reader segments render.
         // Do not cache mutable TableRowSpan / TextViewSpan across native views.
-        remember(text, renderer, density, dark, syntheticPrefixLength, personalMarks, annotationContent, annotationSource) {
+        remember(text, renderer, density, dark, bodySize, contentWidth, syntheticPrefixLength, personalMarks, annotationContent, annotationSource) {
             val began = System.nanoTime()
             format().also {
                 if (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
@@ -239,7 +248,6 @@ class MainActivity : ComponentActivity() {
     val revealSearch = LocalNoteSearchReveal.current
     val renderReady = LocalNoteRenderReady.current
     val registerText = LocalNoteTextRegistered.current
-    val contentWidth = LocalNoteContentWidth.current
     val onPageTap = LocalNotePageTap.current
     val annotationBlock = remember(formatted, text, annotationSource, syntheticPrefixLength) {
         annotationSource?.copy(annotationStart = formatted?.takeIf { it.first == text }?.third ?: Int.MAX_VALUE, renderPrefix = text.take(syntheticPrefixLength))
@@ -254,7 +262,7 @@ class MainActivity : ComponentActivity() {
         val found = withContext(Dispatchers.Default) { synchronized(renderer) {
             // Count visible prefix occurrences, not Markdown URLs or fence
             // language names which never became native body text.
-            val prefix = renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(noteSearchPrefixSource(text, target.offset - start))), density, dark)
+            val prefix = renderStudyMarks(toMarkdown(noteSearchPrefixSource(text, target.offset - start)), density, dark)
             renderedNoteSearchOffset(parsed.toString(), prefix.toString(), target.query)
         } }
         withContext(Dispatchers.Main.immediate) { value = target to found }
@@ -274,7 +282,12 @@ class MainActivity : ComponentActivity() {
             it.alpha = 0f
         }
         if (parsed != null) it.alpha = 1f
-        if (parsed != null && it.tag !== parsed) { renderer.setParsedMarkdown(it, parsed); it.tag = parsed }
+        if (parsed != null && it.tag !== parsed) {
+            if (stableMarkdown && readerWidth != null) prepareReaderTables(parsed, it.paint,
+                readerWidth - it.totalPaddingLeft - it.totalPaddingRight,
+                context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
+            renderer.setParsedMarkdown(it, parsed); it.tag = parsed
+        }
         val renderedView = it
         it.post {
             if (parsed != null && sourceOffset != null) registerText?.invoke(renderedView, sourceOffset)

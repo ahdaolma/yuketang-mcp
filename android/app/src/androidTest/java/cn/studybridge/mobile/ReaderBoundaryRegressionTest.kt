@@ -57,7 +57,7 @@ class ReaderBoundaryRegressionTest {
             (if (rich) "\n\n[短链接](https://example.com/${"long-source-path-".repeat(22)})" else "") + "\n\nFIRST_END。\n\n" +
             "## 第 2 页\n\nSECOND_START。\n\n" + (1..8).joinToString("\n\n") { "第二页长段落$it。" + "连续阅读应保持手指移动的方向。".repeat(4) })
 
-    private fun withReader(note: Note, mode: String, second: Boolean, height: MutableState<Float> = mutableStateOf(1f), setup: (Application) -> Unit = {}, block: (Application, StudyViewModel) -> Unit) {
+    private fun withReader(note: Note, mode: String, second: Boolean, height: MutableState<Float> = mutableStateOf(1f), width: MutableState<Float> = mutableStateOf(1f), setup: (Application) -> Unit = {}, block: (Application, StudyViewModel) -> Unit) {
         assertEquals("Fixture must have exactly two source segments", 2, noteReadingSegments(note.content).size)
         val app = noteTestApplication(compose.activity.applicationContext)
         setup(app)
@@ -71,7 +71,7 @@ class ReaderBoundaryRegressionTest {
         compose.setContent {
             val ui by vm.ui.collectAsState()
             StudyTheme(false) { StudyFrame(ui, vm::tab, { vm.noteReader.closeRequested = true }, vm::stop, noteOpen = vm.noteReader.id != null) { padding ->
-                Box(Modifier.fillMaxHeight(height.value).fillMaxWidth().padding(padding).consumeWindowInsets(padding)) { NotesScreen(ui, vm) }
+                Box(Modifier.fillMaxHeight(height.value).fillMaxWidth(width.value).padding(padding).consumeWindowInsets(padding)) { NotesScreen(ui, vm) }
             } }
         }
         try {
@@ -126,6 +126,25 @@ class ReaderBoundaryRegressionTest {
         val note = fixture().let { it.copy(content = it.content.replace("FIRST_END。", "| 概念 | 对应解释 |\n| --- | --- |\n" +
             (1..5).joinToString("\n") { row -> "| 概念$row | 表格换行后仍应保持手指移动方向，不能把读者推回下一页。 |" } + "\n\nFIRST_END。")) }
         reverse(false, false, .05f, note)
+    }
+
+    @Test fun tableCellsFollowActualFontAndWindowWidth() {
+        val widthFraction = mutableStateOf(1f)
+        val note = fixture().let { it.copy(content = it.content.replace("FIRST_END。", "| 概念 | 对应解释 |\n| --- | --- |\n| 重点 | 表格字号与窗口应同步变化 |\n\nFIRST_END。")) }
+        withReader(note, "continuous", false, width = widthFraction) { _, vm ->
+            fun tableMatches(): Boolean = native { views ->
+                val view = views.firstOrNull { it.isAttachedToWindow && it.text.contains("FIRST_START") } ?: return@native false
+                val rows = (view.text as? android.text.Spanned)?.getSpans(0, view.text.length, io.noties.markwon.ext.tables.TableRowSpan::class.java).orEmpty()
+                rows.size == 2 && rows.all { row ->
+                    val cell = row.findLayoutForHorizontalOffset(0)
+                    cell != null && kotlin.math.abs(cell.paint.textSize - view.textSize) < .5f && kotlin.math.abs(row.cellWidth() * 2 - view.width) <= 2
+                }
+            }
+            compose.waitUntil(8000) { tableMatches() }
+            val baseline = native { views -> views.first { it.text.contains("FIRST_START") }.textSize }
+            compose.runOnIdle { vm.updateNotebookState { it.copy(noteFontSize = 24) }; widthFraction.value = .7f }
+            compose.waitUntil(8000) { tableMatches() && native { views -> views.any { it.text.contains("FIRST_START") && it.textSize > baseline * 1.4f } } }
+        }
     }
 
     @Test fun shortReverseAcrossSourceImageDoesNotJumpAsPreviewLoads() {

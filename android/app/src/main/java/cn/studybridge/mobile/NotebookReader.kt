@@ -82,17 +82,30 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
     val release = CompletableDeferred<Boolean>()
 }
 
+private data class PreparedReading(val content: String, val segments: List<NoteReadingSegment>, val parser: ReaderMarkdownParser)
+
 @OptIn(kotlinx.coroutines.FlowPreview::class, ExperimentalFoundationApi::class)
 @Composable fun NotebookReader(note: Note, ui: UiState, vm: StudyViewModel, modifier: Modifier = Modifier, extraHeader: @Composable () -> Unit = {}, primaryTools: @Composable (() -> Unit) -> Unit = {}, extraTools: @Composable (() -> Unit) -> Unit = {}, backLabel: String = "返回笔记列表", onBack: () -> Unit) {
-    val prepared by produceState<Pair<String, List<NoteReadingSegment>>?>(null, note.content) {
-        val result = withContext(Dispatchers.Default) { note.content to noteReadingSegments(note.content) }
+    val initial = remember(note.id) { vm.readingMemory.position(note.id) }
+    val hash = remember(note.content) { noteContentHash(note.content) }
+    val prepared by produceState<PreparedReading?>(null, note.id, note.content, note.title) {
+        val result = withContext(Dispatchers.Default) {
+            val parts = noteReadingSegments(note.content)
+            val headings = parts.mapIndexed { i, part -> readingHeadings(note.content.substring(part.start, minOf(part.end, part.start + 300))).firstOrNull()?.second ?: "第 ${i + 1} 段" }
+            val page = restoredNoteIndex(initial, hash, headings)
+            val parser = ReaderMarkdownParser()
+            for (p in listOf(page, page - 1, page + 1).filter { it in parts.indices }.distinct()) {
+                val raw = parts[p].display(note.content)
+                parser.warm(if (p == 0) noteTextForDisplay(raw, note.title) else raw)
+            }
+            PreparedReading(note.content, parts, parser)
+        }
         withContext(Dispatchers.Main.immediate) { value = result }
     }
-    val segments = prepared?.takeIf { it.first == note.content }?.second ?: run { CircularProgressIndicator(Modifier.size(24.dp)); return }
+    val reading = prepared?.takeIf { it.content == note.content } ?: run { CircularProgressIndicator(Modifier.size(24.dp)); return }
+    val segments = reading.segments
     val labels = remember(note.content, segments) { segments.mapIndexed { i, part -> readingHeadings(note.content.substring(part.start, minOf(part.end, part.start + 300))).firstOrNull()?.second ?: "第 ${i + 1} 段" } }
     val pageLabels = remember(note.content, segments) { readerPageLabels(note.content, segments) }
-    val hash = remember(note.content) { noteContentHash(note.content) }
-    val initial = remember(note.id) { vm.readingMemory.position(note.id) }
     val mode = validNoteReadingMode(ui.data.noteReadMode)
     val continuous = mode == "continuous"
     val pageAnimation = validNotePageAnimation(ui.data.notePageAnimation)
@@ -149,6 +162,14 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         withContext(Dispatchers.Main.immediate) { value = result }
     }
     val selected by remember(continuous, restored, segments) { derivedStateOf { if (continuous && restored) (list.firstVisibleItemIndex - 1).coerceIn(segments.indices) else index.coerceIn(segments.indices) } }
+    LaunchedEffect(reading, selected) {
+        withContext(Dispatchers.Default) {
+            for (p in listOf(selected - 1, selected + 1).filter { it in segments.indices }) {
+                val raw = segments[p].display(note.content)
+                reading.parser.warm(if (p == 0) noteTextForDisplay(raw, note.title) else raw)
+            }
+        }
+    }
     LaunchedEffect(selected, mode) { traceMotion("selected mode=$mode page=$selected index=$index list=${list.firstVisibleItemIndex}/${list.firstVisibleItemScrollOffset}") }
     val readyPages = remember(note.id, hash, mode) { mutableStateMapOf<Int, Int>() }
     val readyFrames = remember(note.id, hash, mode) { mutableStateMapOf<Int, Boolean>() }
@@ -471,7 +492,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         FeedbackTextButton(onClick = { rememberPosition(); fontSize = 16; vm.updateNotebookState { it.copy(noteFontSize = 16) } }) { Text("恢复默认字号") }
     }
     val pageTap: ((Float) -> Unit)? = if (mode == "buttons") { x -> if (selectionController?.selection == null) turn(if (x - bodyLeft >= bodyWidth / 2f) 1 else -1) } else null
-    CompositionLocalProvider(LocalNoteFontSize provides fontSize, LocalNoteStableMarkdown provides true, LocalNoteSearchQuery provides query, LocalNoteSearchTarget provides target, LocalNoteSearchReveal provides reveal, LocalNotePageTap provides pageTap) {
+    CompositionLocalProvider(LocalNoteFontSize provides fontSize, LocalNoteStableMarkdown provides true, LocalReaderMarkdownParser provides reading.parser, LocalNoteSearchQuery provides query, LocalNoteSearchTarget provides target, LocalNoteSearchReveal provides reveal, LocalNotePageTap provides pageTap) {
         Column(modifier.fillMaxSize()) {
             if (query.isNotBlank()) Row(Modifier.fillMaxWidth().testTag("查找命中导航"), verticalAlignment = Alignment.CenterVertically) {
                 val hitIndex = noteSearchHitIndex(hits, searchOffset).coerceAtLeast(0)
