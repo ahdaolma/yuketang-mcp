@@ -492,7 +492,11 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
                 }
                 if (continuous) LazyColumn(bodyModifier, state = list, verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(bottom = 72.dp)) {
                     item(key = "title") { Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { heading() } }
-                    itemsIndexed(segments, key = { _, part -> part.start }) { page, _ -> Column(Modifier.fillMaxWidth().testTag("笔记段 $page"), verticalArrangement = Arrangement.spacedBy(14.dp)) { segment(page, null) } }
+                    itemsIndexed(segments, key = { _, part -> part.start }) { page, _ -> Column(Modifier.fillMaxWidth().testTag("笔记段 $page").onSizeChanged { size ->
+                        if (debugMotion) androidx.compose.runtime.snapshots.Snapshot.withoutReadObservation {
+                            traceMotion("continuous-size page=$page height=${size.height} list=${list.firstVisibleItemIndex}/${list.firstVisibleItemScrollOffset}")
+                        }
+                    }, verticalArrangement = Arrangement.spacedBy(14.dp)) { segment(page, null) } }
                 } else Box(bodyModifier.clipToBounds().semantics {
                     verticalScrollAxisRange = ScrollAxisRange({ activeFrame.scroll.value.toFloat() }, { activeFrame.scroll.maxValue.toFloat() })
                 }.noteScreenSwipe(mode, configuration.touchSlop, configuration.longPressTimeoutMillis, with(density) { 56.dp.toPx() },

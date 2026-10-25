@@ -13,12 +13,15 @@ fi
 if [ "${RAIN_READER_SUITE:-reader}" = echo ]; then
   classes=cn.studybridge.mobile.NoteEditorEchoRaceTest
 fi
+if [ "${RAIN_READER_SUITE:-reader}" = boundary ]; then
+  classes=cn.studybridge.mobile.ReaderBoundaryRegressionTest
+fi
 gradle --no-daemon connectedDebugAndroidTest \
   -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true \
   "-Pandroid.testInstrumentationRunnerArguments.class=$classes" || status=$?
 adb pull /sdcard/Pictures/StudyUiReview reader-audit-ui || true
 adb pull /sdcard/Android/data/cn.studybridge.mobile/files/StudyUiReview reader-audit-ui || true
-if [ "${RAIN_READER_SUITE:-reader}" != editor ] && [ "${RAIN_READER_SUITE:-reader}" != echo ]; then
+if [ "${RAIN_READER_SUITE:-reader}" = reader ] || [ "${RAIN_READER_SUITE:-reader}" = paper ]; then
 for expected in reader-layer-capture-bitmap.png reader-completion-curl-1.png reader-completion-cover-1.png; do
   if [ ! -d reader-audit-ui ] || [ -z "$(find reader-audit-ui -type f -name "$expected" -size +0c -print -quit)" ]; then
     echo "Missing actual paper evidence: $expected"
