@@ -18,9 +18,9 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 
-// A modal sheet owns a different Android Window. Hiding the Activity's status
-// bar does not hide that window's bars; apply the same policy at attachment/focus.
-@Composable private fun SheetWindowChrome() {
+// Sheets and full-screen viewers own a different Android Window. Hiding the
+// Activity's status bar does not hide that window's bars.
+@Composable internal fun StudyDialogWindowChrome() {
     val view = LocalView.current
     DisposableEffect(view) {
         val hide = Runnable {
@@ -35,6 +35,7 @@ import androidx.core.view.WindowInsetsControllerCompat
                 hide(WindowInsetsCompat.Type.statusBars())
             } }
         }
+        hide.run()
         view.post(hide)
         val focus = ViewTreeObserver.OnWindowFocusChangeListener { focused -> if (focused) view.post(hide) }
         view.viewTreeObserver.addOnWindowFocusChangeListener(focus)
@@ -50,7 +51,7 @@ import androidx.core.view.WindowInsetsControllerCompat
     NativeModalBottomSheet(onDismissRequest = onDismissRequest, sheetState = sheetState, sheetMaxWidth = sheetMaxWidth, dragHandle = null,
         contentWindowInsets = { WindowInsets(0, 0, 0, 0) }) {
         Column(Modifier.fillMaxWidth().heightIn(max = expandedPanelHeight()).testTag("展开面板容器").windowInsetsPadding(WindowInsets.navigationBars.only(WindowInsetsSides.Bottom))) {
-            SheetWindowChrome()
+            StudyDialogWindowChrome()
             content()
         }
     }

@@ -126,6 +126,7 @@ class MaterialPreviews(context: Context) {
     val store = markup ?: remember(context) { ImageMarkupStore(context) }
     val closeRequest = remember { arrayOfNulls<() -> Unit>(1) }
     Dialog(onDismissRequest = { closeRequest[0]?.invoke() ?: onClose() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        StudyDialogWindowChrome()
         ImageViewerContent(label, onClose, store, { closeRequest[0] = it }, source)
     }
 }
