@@ -78,7 +78,8 @@ private class ReadingFrame(val page: Int, val token: Int) {
     var recordedCapture by mutableIntStateOf(0)
 }
 
-private class ReadingDrag(val generation: Int, val direction: Int) {
+private data class ReadingTurn(val page: Int, val offset: Int, val end: Boolean)
+private class ReadingDrag(val generation: Int, val direction: Int, val target: ReadingTurn?) {
     val release = CompletableDeferred<Boolean>()
 }
 
@@ -151,6 +152,7 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
     var dragOffset by remember { mutableFloatStateOf(0f) }
     var transitionDirection by remember { mutableIntStateOf(0) }
     var dragSession by remember { mutableStateOf<ReadingDrag?>(null) }
+    var committedTurn by remember(note.id, hash) { mutableStateOf<ReadingTurn?>(null) }
     var paperImages by remember { mutableStateOf<ReaderPaperImages?>(null) }
     var motionAnimation by remember { mutableStateOf(pageAnimation) }
     var foldBottom by remember { mutableStateOf(true) }
@@ -215,15 +217,8 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
     }
     fun operate(block: suspend (Int) -> Unit) {
         traceMotion("replace gen=${commands.generation} mode=$mode page=${activeFrame.page}")
-        discardIncoming(); dragOffset = 0f; transitionDirection = 0; dragSession = null
-        commands.replace(scope, onSettled = { traceMotion("settle gen=${commands.generation} page=${activeFrame.page}"); discardIncoming(); dragOffset = 0f; dragSession = null }, block = block)
-    }
-    fun cancelPaperMotion() {
-        if (!latestContinuous && transitionDirection != 0 && commands.busy) {
-            commands.cancel(commands.generation) {
-                discardIncoming(); dragOffset = 0f; transitionDirection = 0; dragSession = null
-            }
-        }
+        discardIncoming(); dragOffset = 0f; transitionDirection = 0; dragSession = null; committedTurn = null
+        commands.replace(scope, onSettled = { traceMotion("settle gen=${commands.generation} page=${activeFrame.page}"); discardIncoming(); dragOffset = 0f; dragSession = null; committedTurn = null }, block = block)
     }
     fun endIsVisible(frame: ReadingFrame): Boolean {
         if (frame.contentHeight.toLong() - frame.scroll.value > viewport) return false
@@ -314,6 +309,19 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
         if (destination != null && direction != 0) capturePaper(destination)
         commitPage(destination, direction)
     }
+    fun cancelPaperMotion(retainCommitted: Boolean = false) {
+        if (!latestContinuous && transitionDirection != 0 && commands.busy) {
+            val target = committedTurn.takeIf { retainCommitted }
+            traceMotion("cancel-paper gen=${commands.generation} viewport=$viewport retain=$target")
+            commands.cancel(commands.generation) {
+                discardIncoming(); dragOffset = 0f; transitionDirection = 0; dragSession = null; committedTurn = null
+            }
+            // The old bitmaps no longer match the viewport. A submitted tap /
+            // released swipe still owns a destination; place it natively at
+            // current geometry instead of silently throwing away that input.
+            if (target != null) operate { placePage(target.page, target.offset, target.end) }
+        }
+    }
     LaunchedEffect(note.id, mode, hash, fontSize, bodyWidth, motionStyle) {
         if (bodyWidth <= 0 || viewport <= 1) return@LaunchedEffect
         val position = if (readyMode.isEmpty()) initial else vm.readingMemory.position(note.id)
@@ -332,7 +340,7 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
         // Height changes also come from the find bar / keyboard. Replaying a
         // saved position here would supersede a pending exact search reveal.
         // Only cancel paper geometry; retain the committed native page/offset.
-        cancelPaperMotion()
+        cancelPaperMotion(retainCommitted = true)
     }
     LaunchedEffect(selected, restored, hash, mode, settledJump, turning) {
         if (restored) snapshotFlow { if (continuous) list.firstVisibleItemIndex to list.firstVisibleItemScrollOffset else selected to scroll.value }.debounce(180).collect { rememberPosition() }
@@ -375,6 +383,7 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
             if (nextPage == selected && nextOffset == current.scroll.value) {
                 // A tap at the document boundary has no destination.
             } else {
+                committedTurn = ReadingTurn(nextPage, if (nextPage == selected) nextOffset else 0, nextPage != selected && direction < 0)
                 placePage(nextPage, offset = if (nextPage == selected) nextOffset else 0,
                     end = nextPage != selected && direction < 0, direction = direction)
             }
@@ -395,7 +404,8 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
         operate { command ->
             generation = command
             traceMotion("drag-owner gen=$command target=$nextPage offset=$nextOffset hasTarget=$hasDestination")
-            val session = ReadingDrag(command, direction)
+            val session = ReadingDrag(command, direction,
+                if (hasDestination) ReadingTurn(nextPage, if (nextPage == current.page) nextOffset else 0, nextPage != current.page && direction < 0) else null)
             dragSession = session; transitionDirection = direction
             dragOffset = displacement.coerceIn(-bodyWidth.toFloat(), bodyWidth.toFloat())
             coroutineScope {
@@ -424,7 +434,9 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
         traceMotion("release gen=$generation current=${commands.generation} session=${dragSession?.generation} dx=$displacement commit=$commit")
         val session = dragSession?.takeIf { it.generation == generation && commands.generation == generation } ?: return
         moveDrag(generation, displacement)
-        session.release.complete(commit && displacement * session.direction < 0)
+        val accepted = commit && displacement * session.direction < 0
+        if (accepted) committedTurn = session.target
+        session.release.complete(accepted)
     }
     fun cancelDrag(generation: Int) {
         traceMotion("cancel gen=$generation current=${commands.generation} session=${dragSession?.generation}")

@@ -7,6 +7,7 @@ import time
 import xml.etree.ElementTree as ET
 import sys
 import shlex
+import json
 
 out = pathlib.Path('smoke-artifacts')
 out.mkdir(exist_ok=True)
@@ -147,10 +148,50 @@ for style, label in (('cover', '覆盖翻页'), ('curl', '仿真翻页')):
     reader_page(f'release-reader-{style}-forward', 'R8_SECOND', 'R8_FIRST')
     adb('shell', 'input', 'tap', str(round(reader_width * .1)), str(round(reader_height * .55)))
     reader_page(f'release-reader-{style}-backward', 'R8_FIRST', 'R8_SECOND')
+tap('悬浮阅读工具'); tap('返回笔记列表'); tap('新建笔记'); tap('Markdown 笔记')
+continuous_lines = ['## R8_CONT_FIRST', '', 'release_cont_first_start', '']
+for row in range(7):
+    continuous_lines.extend([f'first_row_{row}_' + 'origin_body_' * 6, ''])
+continuous_lines.extend(['[short_link](https://example.com/' + 'long_source_path_' * 24 + ')', '',
+                         'release_cont_first_end', '', '## R8_CONT_SECOND', '', 'release_cont_second_start', ''])
+for row in range(8):
+    continuous_lines.extend([f'second_row_{row}_' + 'reader_second_body_' * 10, ''])
+for index, line in enumerate(continuous_lines):
+    if index:
+        adb('shell', 'input', 'keyevent', 'KEYCODE_ENTER')
+    if line:
+        adb('shell', 'input text ' + shlex.quote(line.replace(' ', '%s')))
+adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
+continuous_editors = [n.get('text', '') for n in nodes() if n.get('class') == 'android.widget.EditText']
+assert '\n'.join(continuous_lines) in continuous_editors, 'Continuous reader source changed before saving'
+tap('保存修改')
+reader_settings(); tap('连续滚动'); tap('关闭阅读方式与字号')
+tap('悬浮阅读工具'); tap('下一段')
+
+def continuous_second_bounds():
+    matches = [n for n in nodes() if 'release_cont_second_start' in n.get('text', '')]
+    assert len(matches) == 1, 'Expected one actual second-page native body'
+    return tuple(map(int, re.findall(r'-?\d+', matches[0].get('bounds', ''))))
+
+continuous_motion = []
+for attempt in range(4):
+    left, top, right, bottom = continuous_second_bounds()
+    bottom = min(bottom, round(reader_height * .94))
+    delta = max(60, round((bottom - top) * .05))
+    x = (left + right) // 2
+    y = top + round((bottom - top) * .4)
+    adb('shell', 'input', 'swipe', str(x), str(y), str(x), str(y + delta), '800')
+    after = continuous_second_bounds()[1]
+    assert top + delta * .25 <= after <= top + delta * 2, f'Small reverse jumped: before={top} after={after} requested={delta}'
+    continuous_motion.append({'before': top, 'after': after, 'requested': delta})
+(out / 'release-continuous-motion.json').write_text(json.dumps(continuous_motion, indent=2))
+shot('release-reader-continuous-small-reverse', ['release_cont_second_start'])
+
 tap('悬浮阅读工具'); tap('返回笔记列表'); tap('学习')
 shot('study-after-reader', ['从一页课件开始', '选择学习资料'])
 print('APK native study, grouped settings and authorization controls passed.')
 print('Actual APK reader: curl/cover forward and backward native source pages passed.')
+print('Actual APK reader: four small continuous reverse gestures retained visible progress.')
 # Review actual release UI in dark mode and a narrow viewport with larger text.
 tap('设置')
 try:
