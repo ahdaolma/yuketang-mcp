@@ -200,8 +200,9 @@ class MainActivity : ComponentActivity() {
     val dark = colors.background.luminance() < 0.5f
     val personalMarks = LocalNoteAnnotations.current
     val annotationContent = LocalNoteAnnotationContent.current
-    val formatted by produceState<Triple<String, android.text.Spanned, Int>?>(null, text, renderer, density, dark, syntheticPrefixLength, personalMarks, annotationContent, annotationSource) {
-        val parsed = withContext(Dispatchers.Default) { synchronized(renderer) {
+    val stableMarkdown = LocalNoteStableMarkdown.current
+    val format = {
+        synchronized(renderer) {
             val body = renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(text)), density, dark)
             // TablePlugin owns mutable visitor state. Render prefix context in
             // the same worker sequence, never concurrently on the UI thread.
@@ -211,10 +212,26 @@ class MainActivity : ComponentActivity() {
                 renderStudyMarks(renderer.toMarkdown(markdownForStudyMarks(raw)), density, dark).toString()
             }
             Triple(text, decorated, annotationStart)
-        } }
-        // AndroidView updates must stay on the UI thread even when a test's
-        // unconfined frame clock resumes the producer on its worker thread.
-        withContext(Dispatchers.Main.immediate) { value = parsed }
+        }
+    }
+    val formatted = if (stableMarkdown) {
+        // Create final spans before the native view's first measurement. This
+        // remains virtualized: only the visible bounded reader segments render.
+        // Do not cache mutable TableRowSpan / TextViewSpan across native views.
+        remember(text, renderer, density, dark, syntheticPrefixLength, personalMarks, annotationContent, annotationSource) {
+            val began = System.nanoTime()
+            format().also {
+                if (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
+                    android.util.Log.d("ReaderFormat", "chars=${text.length} ns=${System.nanoTime() - began}")
+            }
+        }
+    } else {
+        val result by produceState<Triple<String, android.text.Spanned, Int>?>(null, text, renderer, density, dark, syntheticPrefixLength, personalMarks, annotationContent, annotationSource) {
+            val parsed = withContext(Dispatchers.Default) { format() }
+            // AndroidView updates stay on Main even under a test frame clock.
+            withContext(Dispatchers.Main.immediate) { value = parsed }
+        }
+        result
     }
     val selectionController = LocalNoteSelection.current
     val searchQuery = LocalNoteSearchQuery.current

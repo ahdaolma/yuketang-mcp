@@ -27,3 +27,20 @@
 | 限制非用户意图的焦点回滚 | 回弹伴随旧光标 rectangle 请求，页高不变 | 真实选区、光标导航、精确查找和无障碍仍须工作 |
 | 修正有效正文末尾与尾部留白的推进边界 | 所有实际首页面已可见，但点击仅滚过留白 | 不能跳过长页末行、图片或被悬浮工具遮挡的内容 |
 | 改成非惰性整本文档或全面换阅读容器 | 仅在现有架构无法保证稳定性且有实测证据时考虑 | 整本预排版/原图内存与长笔记首开成本；不能因只有两页就把长笔记性能风险留给用户 |
+
+补充取舍：[LazyListState 官方接口](https://developer.android.com/reference/kotlin/androidx/compose/foundation/lazy/LazyListState) 明确 `requestScrollToItem` 会取消当前滚动，`dispatchRawDelta` 绕过互斥和嵌套滚动、手动调用容易损害体验。因此不应以排版后强制回写位置来补偿每次手势，除非证明不会打断当前拖动；优先消除尺寸/内容不一致的来源。
+
+## 调查运行记录
+
+- `40163906906` / `7734b1b`：新增测试的局部 `height` 遮蔽手势尺寸，编译失败，未执行产品复现。
+- `40164188746` / `bc572a4`：5 项中短页 8 轮往返点击通过；3 项回滚测试未进入手势（初始位置错误写入主 Vault，而非独立阅读位置文件）；留白样本超过整屏，未满足准备断言。这 4 项不作为已复现产品缺陷的证据。
+- `005705b`：仅修正上述测试准备，产品阅读行为仍与 1.0.3 一致，继续云端基线。
+- `40164597787` / `005705b`：5 项中 4 项实际断言失败。纯文字前页由 2034 缩到 1913px，约 82px 反向手势后第二页从 y=200 反向退到 y=140；长链接前页由 2689 缩到 2056px，第二页退到 y=-372。无焦点也能复现，且手势期间无新恢复代次，因此根因是原始 Markdown 占位高度变化。点击留白用例中全部正文末行 y=1522、视口底 y=1542，却只生成同一源页 scroll=206 的帧；真正短页 8 轮双向点击通过。报告 ZIP SHA-256 `a543bf75839bb18dab2103e276b4a568b1237cf92b21b440590d47383f4e32ce`。
+
+## 修正分步与取舍
+
+1. 先仅修复文字测量来源：阅读容器作用域内的可见段落在首次原生测量前生成最终 Markdown spans；仍按原有分段惰性创建，聊天的流式异步格式化保持。相对整本文档预渲染，该方案不引入整本 native 视图；相对每帧位置补偿，不中断滚动或竞逐手势。代价是冷显示段落的格式化在主线程进行，须以 debug `ReaderFormat` 时长及长文本/表格回归评估，未评估前不能认定方案收尾。
+2. 不把格式化后的 `Spanned` 跨视图缓存：Markwon 4.6.2 的 `TableRowSpan` 含可变宽高、布局及 invalidator，CorePlugin 还会附带 TextViewSpan；复用有串视图风险。仅组合内 remember 复用格式，先测实际耗时再决定是否需要缓存不可变解析树。
+3. 此步不改点击边界、不抑制焦点、不改手势阈值。原 3 项回退及短页往返应转绿，留白用例应仍红，以确认单一变量；随后单独处理有效正文末尾与工具避让。
+
+Markwon 对照：[4.6.2 TableRowSpan](https://github.com/noties/Markwon/blob/v4.6.2/markwon-ext-tables/src/main/java/io/noties/markwon/ext/tables/TableRowSpan.java)、[CorePlugin](https://github.com/noties/Markwon/blob/v4.6.2/markwon-core/src/main/java/io/noties/markwon/core/CorePlugin.java)。

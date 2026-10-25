@@ -459,7 +459,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         FeedbackTextButton(onClick = { rememberPosition(); fontSize = 16; vm.updateNotebookState { it.copy(noteFontSize = 16) } }) { Text("恢复默认字号") }
     }
     val pageTap: ((Float) -> Unit)? = if (mode == "buttons") { x -> if (selectionController?.selection == null) turn(if (x - bodyLeft >= bodyWidth / 2f) 1 else -1) } else null
-    CompositionLocalProvider(LocalNoteFontSize provides fontSize, LocalNoteSearchQuery provides query, LocalNoteSearchTarget provides target, LocalNoteSearchReveal provides reveal, LocalNotePageTap provides pageTap) {
+    CompositionLocalProvider(LocalNoteFontSize provides fontSize, LocalNoteStableMarkdown provides true, LocalNoteSearchQuery provides query, LocalNoteSearchTarget provides target, LocalNoteSearchReveal provides reveal, LocalNotePageTap provides pageTap) {
         Column(modifier.fillMaxSize()) {
             if (query.isNotBlank()) Row(Modifier.fillMaxWidth().testTag("查找命中导航"), verticalAlignment = Alignment.CenterVertically) {
                 val hitIndex = noteSearchHitIndex(hits, searchOffset).coerceAtLeast(0)
