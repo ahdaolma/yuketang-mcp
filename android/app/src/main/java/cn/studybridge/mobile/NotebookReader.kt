@@ -356,6 +356,7 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
         rememberPosition()
         val page = segment.coerceIn(segments.indices)
         val current = activeFrame
+        traceMotion("goto page=$page end=$end scroll=${current.scroll.value}/${current.scroll.maxValue} content=${current.contentHeight} viewport=$viewport visibleEnd=${endIsVisible(current)} bodyTop=$bodyTop toolLeft=${bodyLeft + bodyWidth}")
         val destinationOffset = if (end) {
             if (current.scroll.value == 0 && endIsVisible(current)) 0 else current.scroll.maxValue
         } else offset.coerceIn(0, current.scroll.maxValue)

@@ -44,8 +44,8 @@ class ReaderBoundaryRegressionTest {
             position[0] + view.totalPaddingLeft + layout.getLineRight(line),
             (position[1] + view.totalPaddingTop + layout.getLineBottom(line)).toFloat())
     }
-    private fun page(number: Int): Boolean = compose.onAllNodesWithContentDescription("当前阅读页码").fetchSemanticsNodes().any {
-        it.config[SemanticsProperties.StateDescription].contains("分段 $number / 2")
+    private fun page(number: Int, total: Int = 2): Boolean = compose.onAllNodesWithContentDescription("当前阅读页码").fetchSemanticsNodes().any {
+        it.config[SemanticsProperties.StateDescription].contains("分段 $number / $total")
     }
     private fun snapshot() = native { views -> views.filter { it.isAttachedToWindow }.map { view ->
         val location = IntArray(2); view.getLocationInWindow(location)
@@ -162,6 +162,50 @@ class ReaderBoundaryRegressionTest {
         reverse(false, false, .05f, fixture().copy(content = source))
     }
 
+    private fun appendCompletedClassPage(mode: String, caret: Boolean) {
+        // Match ClassNotebooks' completed-page checkpoint, including its final
+        // blank separator. Appending must not rebuild the page being read.
+        val note = fixture().let { it.copy(content = it.content + "\n\n---\n\n") }
+        withReader(note, mode, false) { _, vm ->
+            compose.openNoteTool("下一段")
+            compose.waitUntil(8000) { page(2) && ready("SECOND_START") }
+            compose.onNodeWithTag("笔记正文").performTouchInput {
+                if (mode == "continuous") {
+                    down(Offset(center.x, height * .7f))
+                    moveTo(Offset(center.x, height * .35f), 500)
+                    advanceEventTime(240); up()
+                } else click(Offset(width * .9f, height * .5f))
+            }
+            compose.waitUntil(8000) { vm.readingMemory.position(note.id)?.let { it.index == 1 && (it.textAnchor?.offset ?: 0) > 0 } == true }
+            val before = native { views -> views.single { it.isAttachedToWindow && it.text.contains("SECOND_START") } }
+            val body = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow
+            if (caret) native { _ ->
+                val location = IntArray(2); before.getLocationInWindow(location)
+                val layout = requireNotNull(before.layout)
+                val line = (0 until layout.lineCount).first { location[1] + layout.getLineTop(it) >= body.top + 40 }
+                before.requestFocus()
+                Selection.setSelection(before.text as Spannable, layout.getLineStart(line))
+                before.reportSelection()
+            }
+            compose.waitForIdle()
+            val oldTop = top("SECOND_START")
+            val oldText = native { before.text }
+            val oldCaret = native { before.selectionStart }
+            compose.runOnIdle { vm.updateNotebookState { saved -> saved.copy(notes = saved.notes.map { if (it.id == note.id) it.copy(content = it.content + "## 第 3 页\n\nTHIRD_START，刚完成的课堂笔记。\n\n---\n\n") else it }) } }
+            compose.waitUntil(10000) { page(2, 3) && ready("SECOND_START") }
+            compose.waitForIdle()
+            val after = native { views -> views.single { it.isAttachedToWindow && it.text.contains("SECOND_START") } }
+            assertSame("Completed class-page append must retain the current native page", before, after)
+            assertSame("Unchanged rendered text must not be replaced on append", oldText, native { after.text })
+            assertEquals("Append must retain the current paragraph", oldTop, top("SECOND_START"), 2f)
+            if (caret) assertEquals("Append must retain the focused caret", oldCaret, native { after.selectionStart })
+            advancedUiShot(compose.activity, "reader-class-append-$mode-$caret")
+        }
+    }
+    @Test fun completedClassPageAppendKeepsContinuousParagraph() = appendCompletedClassPage("continuous", false)
+    @Test fun completedClassPageAppendKeepsFocusedContinuousParagraph() = appendCompletedClassPage("continuous", true)
+    @Test fun completedClassPageAppendKeepsPagedParagraph() = appendCompletedClassPage("buttons", false)
+
     @Test fun repeatedClicksAdvanceActualShortPageContentInBothDirections() {
         val note = Note(title = "短页点击", source = "两页", model = "fixture", content = "## 第 1 页\n\nFIRST_START。\n\n## 第 2 页\n\nSECOND_START。")
         withReader(note, "buttons", false) { _, _ ->
@@ -225,6 +269,7 @@ class ReaderBoundaryRegressionTest {
             compose.waitForIdle()
             compose.waitUntil(8000) { native { views -> views.count { it.isAttachedToWindow && it.text.contains("SECOND_START") } } == 1 }
             val before = native { views -> views.single { it.isAttachedToWindow && it.text.contains("SECOND_START") } }
+            Log.i("ReaderBoundary", "noop before body=${compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow} tool=${compose.onNodeWithTag("笔记悬浮工具").fetchSemanticsNode().boundsInWindow} views=${snapshot()}")
             compose.openNoteTool("整本末尾")
             compose.waitForIdle()
             val after = native { views -> views.single { it.isAttachedToWindow && it.text.contains("SECOND_START") } }

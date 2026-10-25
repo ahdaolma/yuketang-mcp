@@ -87,3 +87,9 @@ Markwon 对照：[4.6.2 TableRowSpan](https://github.com/noties/Markwon/blob/v4.
 - `40170499917` / `5ba3b7a` / API26：22 项全部通过，保留点击/已松手横滑的双向目标，未松手拖动取消；隐式菜单关闭后 viewport=1112 时日志保留 page0/end 目标并以新代次 commit。1.1 万字符测试 Main 格式化约0.36ms，且未先创建无关第一页。报告 ZIP SHA-256 `d65d585aa0b0967ecdb7ba8828d2b2cb549694970113dcf9dea01cb8cf05765e`。
 - `40170499293` / 同源码完整正式包验收停在新增硬件输入 fixture，尚未进入全量设备测试：442 字符的单次 `input text` 长链接只收到283字符，Android InputDispatcher 日志记录377次过期注入丢弃。缺失159字符与29个 Shift 字符对应376个按键事件，再加最后已入字符的 KeyUp，符合377次系统拒收；不能据此修改编辑器或略过完整原文校验。官方 [InputShellCommand](https://android.googlesource.com/platform/frameworks/base/+/8417c7bb1cbb/services/core/java/com/android/server/input/InputShellCommand.java) 一次生成整批键事件；[InputDispatcher](https://android.googlesource.com/platform/frameworks/native/+/e4623041f91c3fac633fc0f1803bc3a7c08c6eb9/services/inputflinger/dispatcher/InputDispatcher.cpp) 丢弃超时事件。
 - 仅调整测试驱动：每批64字符刷新事件时间戳，不加入业务等待、不重试或补写已丢字，不放宽整段原文断言；另存期望/实际原文。重新执行最终完整验收，旧失败仍不计入通过。
+
+### 实时课堂追加与末尾偶发失败补查
+
+- `40172058512` / `6efcbcf` / API26 为21/22，末尾幂等性仍有一次失败（原生 view 被替换），不能只引用此前22/22；增加操作时实际 viewport/content/end geometry 日志及测试前正文坐标，以区分错误 no-op 判定与样本尚未完成布局。
+- 静态检查发现预热把 initial position 放到 prepared gate 之前，追加已完成课堂页时可能保留打开时的旧位置；prepared 暂不匹配又会卸载当前 reader。先增加连续、带焦点连续、点击翻页三项完整课堂页追加反例，要求保留当前段落、原生 view 和未变正文的 text，云端观察失败后再修改。
+- 方案比较：仅重新读保存位置改动小但仍有加载卸载/拖动中断；每次追加强制恢复也会打断手势。优先在旧分段及原文完全不变的完成页追加时保留当前呈现与滚动，其他编辑仍走现有重新定位。必须验证旧标记、焦点、搜索及分页快照所有权，禁止以整本文档原生预创建换稳定性。
