@@ -42,16 +42,18 @@ class ReaderBoundaryRegressionTest {
         "${view.block?.sourceStart}:${view.width}x${view.height}@${location[1]} focus=${view.isFocused} caret=${view.selectionStart}/${view.selectionEnd} text=${view.text.take(28)}"
     }.joinToString(";") }
 
-    private fun fixture(rich: Boolean = false) = Note(title = "短划页边界", source = "两页合成资料", model = "fixture", content =
-        "## 第 1 页\n\nFIRST_START。\n\n" + (1..7).joinToString("\n\n") { "首页段落$it。" + "先确认模板方向再解释配对关系。".repeat(2) } +
+    private fun fixture(rich: Boolean = false, firstParagraphs: Int = 7) = Note(title = "短划页边界", source = "两页合成资料", model = "fixture", content =
+        "## 第 1 页\n\nFIRST_START。\n\n" + (1..firstParagraphs).joinToString("\n\n") { "首页段落$it。" + "先确认模板方向再解释配对关系。".repeat(2) } +
             (if (rich) "\n\n[短链接](https://example.com/${"long-source-path-".repeat(22)})" else "") + "\n\nFIRST_END。\n\n" +
             "## 第 2 页\n\nSECOND_START。\n\n" + (1..8).joinToString("\n\n") { "第二页长段落$it。" + "连续阅读应保持手指移动的方向。".repeat(4) })
 
     private fun withReader(note: Note, mode: String, second: Boolean, height: MutableState<Float> = mutableStateOf(1f), block: (Application, StudyViewModel) -> Unit) {
         assertEquals("Fixture must have exactly two source segments", 2, noteReadingSegments(note.content).size)
         val app = noteTestApplication(compose.activity.applicationContext)
-        Vault(app).save(Saved(notes = listOf(note), noteReadMode = mode, noteReadingPositions = if (second)
-            listOf(NoteReadingPosition(note.id, 1, 0, "第 2 页", noteContentHash(note.content))) else emptyList()))
+        Vault(app).save(Saved(notes = listOf(note), noteReadMode = mode))
+        // Reading positions use their own encrypted store, not Saved's backup field.
+        if (second) Vault(app, "note-reading-v1.enc").save(Saved(noteReadingPositions =
+            listOf(NoteReadingPosition(note.id, 1, 0, "第 2 页", noteContentHash(note.content)))))
         val store = ViewModelStore()
         lateinit var vm: StudyViewModel
         compose.runOnUiThread { vm = noteTestViewModel(app, store) }
@@ -122,7 +124,7 @@ class ReaderBoundaryRegressionTest {
 
     @Test fun clickDoesNotSpendAScreenOnPaddingAfterAllFirstPageLinesAreVisible() {
         val heightFraction = mutableStateOf(1f)
-        withReader(fixture(), "buttons", false, heightFraction) { _, _ ->
+        withReader(fixture(firstParagraphs = 4), "buttons", false, heightFraction) { _, _ ->
             val body = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow
             val lastBottom = native { views ->
                 val view = views.first { it.text.contains("FIRST_END") }
