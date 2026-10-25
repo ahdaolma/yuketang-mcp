@@ -121,8 +121,8 @@ class ReaderBoundaryRegressionTest {
     }
 
     @Test fun clickDoesNotSpendAScreenOnPaddingAfterAllFirstPageLinesAreVisible() {
-        val height = mutableStateOf(1f)
-        withReader(fixture(), "buttons", false, height) { _, _ ->
+        val heightFraction = mutableStateOf(1f)
+        withReader(fixture(), "buttons", false, heightFraction) { _, _ ->
             val body = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow
             val lastBottom = native { views ->
                 val view = views.first { it.text.contains("FIRST_END") }
@@ -132,7 +132,7 @@ class ReaderBoundaryRegressionTest {
             }
             val root = compose.onRoot().fetchSemanticsNode().boundsInWindow
             val desiredBody = lastBottom - body.top + 20f
-            compose.runOnIdle { height.value = (1f - (body.height - desiredBody) / root.height).coerceIn(.3f, 1f) }
+            compose.runOnIdle { heightFraction.value = (1f - (body.height - desiredBody) / root.height).coerceIn(.3f, 1f) }
             compose.waitForIdle()
             val current = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow
             assertTrue("All first source lines are already inside the real viewport", lastBottom < current.bottom)
