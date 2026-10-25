@@ -57,9 +57,10 @@ class ReaderBoundaryRegressionTest {
             (if (rich) "\n\n[短链接](https://example.com/${"long-source-path-".repeat(22)})" else "") + "\n\nFIRST_END。\n\n" +
             "## 第 2 页\n\nSECOND_START。\n\n" + (1..8).joinToString("\n\n") { "第二页长段落$it。" + "连续阅读应保持手指移动的方向。".repeat(4) })
 
-    private fun withReader(note: Note, mode: String, second: Boolean, height: MutableState<Float> = mutableStateOf(1f), block: (Application, StudyViewModel) -> Unit) {
+    private fun withReader(note: Note, mode: String, second: Boolean, height: MutableState<Float> = mutableStateOf(1f), setup: (Application) -> Unit = {}, block: (Application, StudyViewModel) -> Unit) {
         assertEquals("Fixture must have exactly two source segments", 2, noteReadingSegments(note.content).size)
         val app = noteTestApplication(compose.activity.applicationContext)
+        setup(app)
         Vault(app).save(Saved(notes = listOf(note), noteReadMode = mode))
         // Reading positions use their own encrypted store, not Saved's backup field.
         if (second) Vault(app, "note-reading-v1.enc").save(Saved(noteReadingPositions =
@@ -85,7 +86,7 @@ class ReaderBoundaryRegressionTest {
         } finally { compose.runOnUiThread { store.clear() } }
     }
 
-    private fun reverse(rich: Boolean, caret: Boolean, fraction: Float, note: Note = fixture(rich)) = withReader(note, "continuous", true) { _, _ ->
+    private fun reverse(rich: Boolean, caret: Boolean, fraction: Float, note: Note = fixture(rich), setup: (Application) -> Unit = {}) = withReader(note, "continuous", true, setup = setup) { _, _ ->
         val bounds = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow
         if (caret) native { views ->
             val view = views.first { it.text.contains("SECOND_START") }
@@ -125,6 +126,13 @@ class ReaderBoundaryRegressionTest {
         val note = fixture().let { it.copy(content = it.content.replace("FIRST_END。", "| 概念 | 对应解释 |\n| --- | --- |\n" +
             (1..5).joinToString("\n") { row -> "| 概念$row | 表格换行后仍应保持手指移动方向，不能把读者推回下一页。 |" } + "\n\nFIRST_END。")) }
         reverse(false, false, .05f, note)
+    }
+
+    @Test fun shortReverseAcrossSourceImageDoesNotJumpAsPreviewLoads() {
+        val image = syntheticSlideImage()
+        val id = imageDigest(android.util.Base64.decode(image.substringAfter(','), android.util.Base64.DEFAULT))
+        val note = fixture().let { it.copy(content = it.content.replace("FIRST_END。", sourceImageMarkdown(id, "小幅回退原图") + "FIRST_END。")) }
+        reverse(false, false, .05f, note) { app -> SourceImages(app).save(image) }
     }
 
     @Test fun longFormattedSourceRemainsVirtualizedAndKeepsReverseProgress() {
