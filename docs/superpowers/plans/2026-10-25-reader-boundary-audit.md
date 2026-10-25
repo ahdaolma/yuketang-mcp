@@ -83,3 +83,7 @@ Markwon 对照：[4.6.2 TableRowSpan](https://github.com/noties/Markwon/blob/v4.
 - `40169544201` / `fff0bf3` / API35：22 项中 20 项通过，显式缩放视口的“已点击”和“已松手横滑”两个用例失败；尚未松手的拖动取消用例通过，确认不是简单等待或所有操作都强制提交的问题。ZIP SHA-256 `23ad8bb35177f90f1f0f044d147ad4e2ee61909b60aee984c275c6a2a195eacc`。
 - 修正策略：尺寸改变时丢弃不再适配的纸页快照；未确认的拖动照旧取消，已提交的目标以同一导航所有权重新按当前尺寸进行原生定位并完成。新目录/查找/模式命令仍可取消旧目标，不增加固定等待，不使用逐帧 scroll 补偿。显式停止/后台的既有取消策略保留。
 - 正式包黑盒检查新增通过公开 UI 输入含长链接的双页笔记，执行四次小幅上下回退；检查实际原生文本 bounds、记录位移 JSON 和截图。它使用真正固定签名 R8 APK，不调用 debug fixture，也不注入私有笔记文件；图片和表格的精确组合另由设备用例检查，不能混称正式包全部组合都已实测。
+
+- `40170499917` / `5ba3b7a` / API26：22 项全部通过，保留点击/已松手横滑的双向目标，未松手拖动取消；隐式菜单关闭后 viewport=1112 时日志保留 page0/end 目标并以新代次 commit。1.1 万字符测试 Main 格式化约0.36ms，且未先创建无关第一页。报告 ZIP SHA-256 `d65d585aa0b0967ecdb7ba8828d2b2cb549694970113dcf9dea01cb8cf05765e`。
+- `40170499293` / 同源码完整正式包验收停在新增硬件输入 fixture，尚未进入全量设备测试：442 字符的单次 `input text` 长链接只收到283字符，Android InputDispatcher 日志记录377次过期注入丢弃。缺失159字符与29个 Shift 字符对应376个按键事件，再加最后已入字符的 KeyUp，符合377次系统拒收；不能据此修改编辑器或略过完整原文校验。官方 [InputShellCommand](https://android.googlesource.com/platform/frameworks/base/+/8417c7bb1cbb/services/core/java/com/android/server/input/InputShellCommand.java) 一次生成整批键事件；[InputDispatcher](https://android.googlesource.com/platform/frameworks/native/+/e4623041f91c3fac633fc0f1803bc3a7c08c6eb9/services/inputflinger/dispatcher/InputDispatcher.cpp) 丢弃超时事件。
+- 仅调整测试驱动：每批64字符刷新事件时间戳，不加入业务等待、不重试或补写已丢字，不放宽整段原文断言；另存期望/实际原文。重新执行最终完整验收，旧失败仍不计入通过。

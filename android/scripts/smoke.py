@@ -60,6 +60,14 @@ def tap(label):
     x, y = reveal(label)
     adb('shell','input','tap',str(x),str(y))
     time.sleep(1)
+
+def type_ascii(value):
+    # input text stamps a complete KeyCharacterMap batch before dispatching.
+    # Long batches can outlive InputDispatcher's stale-event deadline on a
+    # software-rendered emulator. New batches refresh timestamps; assertions
+    # below still require every original character, without retrying lost text.
+    for start in range(0, len(value), 64):
+        adb('shell', 'input text ' + shlex.quote(value[start:start + 64].replace(' ', '%s')))
 def shot(name, required):
     # A successful launch command is not a Compose frame/readiness fence.
     for attempt in range(8):
@@ -119,7 +127,7 @@ for index, line in enumerate(reader_source_lines):
     if index:
         adb('shell', 'input', 'keyevent', 'KEYCODE_ENTER')
     if line:
-        adb('shell', 'input text ' + shlex.quote(line.replace(' ', '%s')))
+        type_ascii(line)
 adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
 # Do not misdiagnose a malformed hardware-input fixture as a paging failure.
 # The actual editor must retain the complete source before it can be saved.
@@ -160,9 +168,11 @@ for index, line in enumerate(continuous_lines):
     if index:
         adb('shell', 'input', 'keyevent', 'KEYCODE_ENTER')
     if line:
-        adb('shell', 'input text ' + shlex.quote(line.replace(' ', '%s')))
+        type_ascii(line)
 adb('shell', 'input', 'keyevent', 'KEYCODE_BACK')
 continuous_editors = [n.get('text', '') for n in nodes() if n.get('class') == 'android.widget.EditText']
+(out / 'release-continuous-source-expected.txt').write_text('\n'.join(continuous_lines))
+(out / 'release-continuous-source-actual.txt').write_text('\n--- editor ---\n'.join(continuous_editors))
 assert '\n'.join(continuous_lines) in continuous_editors, 'Continuous reader source changed before saving'
 tap('保存修改')
 reader_settings(); tap('连续滚动'); tap('关闭阅读方式与字号')
