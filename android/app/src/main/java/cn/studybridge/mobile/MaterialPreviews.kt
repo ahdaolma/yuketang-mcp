@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -96,7 +97,8 @@ class MaterialPreviews(context: Context) {
         // prevent the reader from reaching the remaining pages.
         renderReady?.invoke(result?.let { it.key == key && it.attempt == retry } == true)
     }
-    Surface(Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium) {
+    val registerVisual = LocalNoteVisualRegistered.current
+    Surface(Modifier.fillMaxWidth().onGloballyPositioned { registerVisual?.invoke(it) }, color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val current = result?.takeIf { it.key == key && it.attempt == retry }
             if (current == null) Box(Modifier.fillMaxWidth().height(110.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)); }

@@ -10,6 +10,7 @@ val LocalNoteContentWidth = staticCompositionLocalOf<androidx.compose.ui.unit.Dp
 // Lazy reader items must never measure raw Markdown and later shrink to its
 // rendered form: a reverse gesture is anchored near that item's old bottom.
 val LocalNoteStableMarkdown = staticCompositionLocalOf { false }
+val LocalNoteVisualRegistered = staticCompositionLocalOf<((androidx.compose.ui.layout.LayoutCoordinates) -> Unit)?> { null }
 // AndroidView consumes ordinary text taps before Compose's Final pass. Native
 // text forwards only taps that do not belong to selection, a link or a remark.
 val LocalNotePageTap = staticCompositionLocalOf<((Float) -> Unit)?> { null }

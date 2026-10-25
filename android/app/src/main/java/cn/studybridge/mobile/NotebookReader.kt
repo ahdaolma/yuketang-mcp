@@ -71,6 +71,7 @@ private class ReadingFrame(val page: Int, val token: Int) {
     val scroll = ScrollState(0)
     val text = ReaderTextRegistry()
     var positioned by mutableStateOf(false)
+    var contentHeight = Int.MAX_VALUE
     var layer: GraphicsLayer? = null
     var draws = 0
     var captureRequest by mutableIntStateOf(0)
@@ -193,6 +194,14 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
             }
         }
     }
+    fun endIsVisible(frame: ReadingFrame): Boolean {
+        if (frame.contentHeight.toLong() - frame.scroll.value > viewport) return false
+        val tool = with(density) {
+            android.graphics.RectF(bodyLeft + bodyWidth - 56.dp.toPx(), bodyTop + viewport - 56.dp.toPx(),
+                bodyLeft + bodyWidth - 8.dp.toPx(), bodyTop + viewport - 8.dp.toPx())
+        }
+        return !frame.text.contentIntersects(tool)
+    }
     suspend fun preparePage(page: Int, offset: Int = 0, end: Boolean = false, anchor: NoteTextAnchor? = null, title: Boolean = false): ReadingFrame? {
         val destination = if (continuous) null else ReadingFrame(page, ++frameToken).also { incomingFrame = it }
         traceMotion("prepare gen=${commands.generation} page=$page frame=${destination?.token} offset=$offset end=$end width=$bodyWidth")
@@ -216,7 +225,8 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
             val bottomSpace = if (page == segments.lastIndex) with(density) { 72.dp.roundToPx() } else 0
             val targetOffset = if (end) (size - viewport + bottomSpace).coerceAtLeast(0) else offset.coerceAtMost((size - 1).coerceAtLeast(0))
             list.scrollToItem(if (title) 0 else page + 1, targetOffset)
-        } else destinationScroll.scrollTo(if (end) destinationScroll.maxValue else offset.coerceIn(0, destinationScroll.maxValue))
+        } else destinationScroll.scrollTo(if (end && destination != null && !endIsVisible(destination)) destinationScroll.maxValue
+            else offset.coerceIn(0, destinationScroll.maxValue))
         destination?.positioned = true
         traceMotion("positioned gen=${commands.generation} page=$page frame=${destination?.token} scroll=${destinationScroll?.value}/${destinationScroll?.maxValue}")
         return destination
@@ -325,7 +335,8 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         rememberPosition()
         foldBottom = true; foldTouchY = viewport * .7f; motionAnimation = pageAnimation
         val current = activeFrame
-        val nextOffset = nextReadingScreen(current.scroll.value, current.scroll.maxValue, viewport, direction)
+        val nextOffset = if (direction > 0 && endIsVisible(current)) current.scroll.value
+            else nextReadingScreen(current.scroll.value, current.scroll.maxValue, viewport, direction)
         val nextPage = if (nextOffset != current.scroll.value) selected else (selected + direction).coerceIn(segments.indices)
         operate {
             if (nextPage == selected && nextOffset == current.scroll.value) {
@@ -343,7 +354,8 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
         foldBottom = touchY >= viewport / 2f; foldTouchY = touchY; motionAnimation = pageAnimation
         val direction = if (displacement < 0) 1 else -1
         val current = activeFrame
-        val nextOffset = nextReadingScreen(current.scroll.value, current.scroll.maxValue, viewport, direction)
+        val nextOffset = if (direction > 0 && endIsVisible(current)) current.scroll.value
+            else nextReadingScreen(current.scroll.value, current.scroll.maxValue, viewport, direction)
         val nextPage = if (nextOffset != current.scroll.value) selected else (selected + direction).coerceIn(segments.indices)
         val hasDestination = nextOffset != current.scroll.value || nextPage != selected
         var generation: Int? = null
@@ -485,6 +497,7 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
                         if (frame != null) { if (frame === activeFrame || frame === incomingFrame) readyFrames[frame.token] = ready }
                         else if (epoch == renderEpoch) { if (ready) readyPages[page] = epoch else readyPages.remove(page) }; Unit },
                         LocalNoteTextRegistered provides { view, start -> (frame?.text ?: continuousText).register(page, start, view) }, LocalNoteContentWidth provides contentWidth,
+                        LocalNoteVisualRegistered provides frame?.let { { coordinates -> it.text.registerVisual(coordinates) } },
                         LocalNoteSearchTarget provides (if (frame == null || frame === activeFrame) target else null),
                         LocalNotePageTap provides (if (frame == null || frame === activeFrame) pageTap else null)) {
                         IllustratedMarkdown(shown, vm.sourceImages, part.start - part.prefix.length + raw.length - shown.length, part.sourceForDisplay(note.content, raw.length - shown.length))
@@ -528,8 +541,10 @@ private class ReadingDrag(val generation: Int, val direction: Int) {
                             }
                             drawLayer(layer)
                         }.background(paperColor).verticalScroll(frame.scroll), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            if (frame.page == 0) heading()
-                            segment(frame.page, frame)
+                            Column(Modifier.fillMaxWidth().onSizeChanged { frame.contentHeight = it.height }, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                if (frame.page == 0) Column(Modifier.onGloballyPositioned { frame.text.registerVisual(it) }, verticalArrangement = Arrangement.spacedBy(14.dp)) { heading() }
+                                segment(frame.page, frame)
+                            }
                             Spacer(Modifier.height(72.dp))
                         }
                     } }

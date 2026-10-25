@@ -44,3 +44,11 @@
 3. 此步不改点击边界、不抑制焦点、不改手势阈值。原 3 项回退及短页往返应转绿，留白用例应仍红，以确认单一变量；随后单独处理有效正文末尾与工具避让。
 
 Markwon 对照：[4.6.2 TableRowSpan](https://github.com/noties/Markwon/blob/v4.6.2/markwon-ext-tables/src/main/java/io/noties/markwon/ext/tables/TableRowSpan.java)、[CorePlugin](https://github.com/noties/Markwon/blob/v4.6.2/markwon-core/src/main/java/io/noties/markwon/core/CorePlugin.java)。
+
+- `40165156340` / `24aba70`：仅文字测量修正后，三项小幅反向及短页往返通过，留白仍红，符合单一变量预期。反向均从 y=200 稳定到 y=261（手指 81.8px，扣除触摸门槛后约 61px）。所测可见小段格式化 0.2–4.7ms，尚不能外推长文本。报告 ZIP SHA-256 `d4d265302e9819cd16faa406a5060615b8dbc8c4948707c7cde8dd4036de0383`。
+
+### 点击/横滑的有效末尾
+
+选择按可见内容判定，而非删除 72dp 留白或给所有屏幕减少阅读高度：实际内容底部进入视口且文字/图片没有被右下工具遮住时，下一次前进直接进入下一源页；被遮挡的末行/图片仍先滚到可读位置。正文高度独立记录，不把尾部 spacer 当内容。文字检查原生 glyph 行左右边界，图片/预览及顶部辅助内容记录实际布局区域；布局引用保持弱引用，随 frame 释放。不为修复额外创建同向滚动层，不改焦点或源页划分。
+
+验证增加未被遮挡和确被工具遮挡的两个接近一屏样本，同时覆盖点击、横滑。被遮挡样本必须先显示末行、再换源页；未遮挡样本必须一次推进。扩展表格和接近 12000 字符的可见分段，核对实际位移上限及 `ReaderFormat` 耗时。
