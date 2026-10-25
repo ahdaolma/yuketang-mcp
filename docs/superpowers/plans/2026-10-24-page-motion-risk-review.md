@@ -28,3 +28,9 @@
 `7981480` / [40107407408](https://github.com/ahdaolma/yuketang-mcp/actions/runs/40107407408) 受控时序稳定复现：2 项中笔记编辑器失败、普通字段对照成功。真实字段已接受 C、O；下一次 apply 后插 N，笔记变为 `R8_SECN`，普通字段保持 `R8_SECON`，焦点和语义 node ID 未更换。队列中的旧 `LaunchedEffect(text)` 回写 history，并使 CoreTextField 重置真实编辑缓冲。使用当前 Compose 官方源码确认 action 访问同一可更新 node，而非测试闭包持有旧 TextFieldValue；测试不手写延时阻塞产品 effect。报告 artifact `12565123266` / SHA-256 `d16f00948984eb14f7ae3a55586e6de6fa8c7d907c091098fefa34464803ee3a`。
 
 对应修正给所有实际本地文本/选区/IME 组合、撤销和重做增加 revision；过期同步不回写，真正外部替换随最新 revision 重新协调。新增外部替换及撤销/重做保护，保留原完整字符断言。需重新完成编辑器专项、正式 R8 保存前原文核对及全量回归，不能将基线失败计作修复通过。
+
+`08a4b31` 的 API 26/35 各 6 项编辑器检查中，原丢字复现和硬件输入已通过，新增外部替换用例读到初始 `base`，仍判整轮失败。该用例也使用排队的 effect 调度器，却只等 idle，没有像受控复现一样推进各 apply 阶段。`1c9f5a8` 仅改测试，明确推进输入、外部替换、撤销、重做每阶段的虚拟帧，保留逐阶段父状态及 EditableText 完整断言。API 26 / [40108847337](https://github.com/ahdaolma/yuketang-mcp/actions/runs/40108847337) 6 项成功，trace 显示每阶段原文、替换、撤销、重做均正确，原丢字复现保留 O；报告 SHA-256 `3e7daecb1e20e21cd50028d99669194c2c0f25c60cdd89a4b526a5ef55e29ae0`。不是增加产品延时或调整文本断言来通过；正式包与完整回归仍等待同一源码。
+
+同一源码首次完整 run [40108842763](https://github.com/ahdaolma/yuketang-mcp/actions/runs/40108842763) 在 SDK 系统镜像安装时报 `Error reading Zip content from a SeekableByteChannel`，模拟器尚未启动，未执行 App 烟测或设备用例，不记作通过。失败报告 artifact `12565349942` / SHA-256 `c3d481e64f9133d79e3d4b794f30602bf85e3b7bc8168cc20200663e88a48dfe` 已保存；用新 run [40109517696](https://github.com/ahdaolma/yuketang-mcp/actions/runs/40109517696) 在新云端环境重新验收，没有修改或拼接构建输入。
+
+2026-10-25 最终闭环：`1c9f5a8` 的完整 Android / [40109517696](https://github.com/ahdaolma/yuketang-mcp/actions/runs/40109517696)、Python / [40108842770](https://github.com/ahdaolma/yuketang-mcp/actions/runs/40108842770) 全成功。下载原始报告确认 187 单元、160 完整设备操作无失败/跳过，API 26 的 14 专项及 API 35 的 6 编辑器专项也通过；R8 保存前原文、两种动画实际前后翻页、公开 1.0.2 升级保留笔记和偏好通过。19 张最终重点截图已复查，文件摘要、签名、警告与真实设备边界见 [最终验证记录](../../releases/1.0.3-verification.md)。上列旧失败和“待验证”保留为调查历史，不作为当前最终状态。
