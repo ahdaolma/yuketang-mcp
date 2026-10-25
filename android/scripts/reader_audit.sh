@@ -14,7 +14,7 @@ if [ "${RAIN_READER_SUITE:-reader}" = echo ]; then
   classes=cn.studybridge.mobile.NoteEditorEchoRaceTest
 fi
 if [ "${RAIN_READER_SUITE:-reader}" = boundary ]; then
-  classes=cn.studybridge.mobile.ReaderBoundaryRegressionTest
+  classes=cn.studybridge.mobile.ReaderBoundaryRegressionTest,cn.studybridge.mobile.ReaderPreviewSizeTest
 fi
 gradle --no-daemon connectedDebugAndroidTest \
   -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true \

@@ -20,6 +20,7 @@ fun imageDigest(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(
 // record. They are content-addressed, so repeated pages do not duplicate storage.
 class SourceImages(context: Context) {
     private val root = File(context.noBackupFilesDir, "note-images").apply { mkdirs() }
+    private val aspectRatios = android.util.LruCache<String, Float>(128)
     val markupStore = ImageMarkupStore(context)
     private fun file(id: String): File { require(imageIdPattern.matches(id)); return File(root, "$id.image") }
     @Synchronized fun save(data: String): String {
@@ -39,6 +40,18 @@ class SourceImages(context: Context) {
         root.listFiles()?.filter { it.extension == "image" && it.nameWithoutExtension !in active }?.forEach { it.delete() }
     }
     fun bytes(id: String): ByteArray = file(id).let { require(it.isFile) { "本机原页图片不可用。" }; it.readBytes() }
+    // Decode headers only; pixel decoding and annotation rendering remain on
+    // their existing workers. Neighbor preparation warms this bounded cache.
+    fun aspectRatio(id: String): Float? {
+        aspectRatios.get(id)?.let { return it }
+        return runCatching {
+            val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeFile(file(id).path, options)
+            if (options.outWidth > 0 && options.outHeight > 0)
+                (options.outWidth.toFloat() / options.outHeight).also { aspectRatios.put(id, it) }
+            else null
+        }.getOrNull()
+    }
     fun data(id: String): String {
         val bytes = bytes(id)
         val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }

@@ -212,7 +212,11 @@ class MainActivity : ComponentActivity() {
     }
     val format = {
         synchronized(renderer) {
-            val body = renderStudyMarks(toMarkdown(text), density, dark)
+            val began = System.nanoTime()
+            val rendered = toMarkdown(text)
+            val renderedAt = System.nanoTime()
+            val body = renderStudyMarks(rendered, density, dark)
+            val markedAt = System.nanoTime()
             // TablePlugin owns mutable visitor state. Render prefix context in
             // the same worker sequence, never concurrently on the UI thread.
             val prefix = if (syntheticPrefixLength == 0) "" else toMarkdown(text.take(syntheticPrefixLength)).toString().trimEnd('\r', '\n')
@@ -220,6 +224,8 @@ class MainActivity : ComponentActivity() {
             val decorated = renderPersonalAnnotations(body, annotationSource?.source.orEmpty(), annotationSource?.sourceStart, personalMarks, annotationContent, annotationStart, text.take(syntheticPrefixLength)) { raw ->
                 renderStudyMarks(toMarkdown(raw), density, dark).toString()
             }
+            if (stableMarkdown && context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
+                android.util.Log.d("ReaderStage", "chars=${text.length} renderNs=${renderedAt - began} marksNs=${markedAt - renderedAt} annotationsNs=${System.nanoTime() - markedAt}")
             Triple(text, decorated, annotationStart)
         }
     }

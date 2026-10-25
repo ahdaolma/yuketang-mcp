@@ -80,9 +80,11 @@ class MaterialPreviews(context: Context) {
     }
 }
 
-@Composable fun PagePreview(key: String, label: String, repository: MaterialPreviews, markup: ImageMarkupStore = repository.markup, source: suspend () -> Attachment) {
+@Composable fun PagePreview(key: String, label: String, repository: MaterialPreviews, markup: ImageMarkupStore = repository.markup, sizeHint: (() -> Float?)? = null, source: suspend () -> Attachment) {
     val loader by rememberUpdatedState(source)
     var retry by remember(key) { mutableIntStateOf(0) }
+    val stable = sizeHint != null
+    val aspect = remember(key, retry) { sizeHint?.invoke()?.takeIf { it.isFinite() && it > 0f } }
     var enlarged by rememberSaveable(key) { mutableStateOf(false) }
     val result by produceState<VisualLoad?>(null, key, retry) {
         value = null
@@ -98,16 +100,23 @@ class MaterialPreviews(context: Context) {
         renderReady?.invoke(result?.let { it.key == key && it.attempt == retry } == true)
     }
     val registerVisual = LocalNoteVisualRegistered.current
-    Surface(Modifier.fillMaxWidth().onGloballyPositioned { registerVisual?.invoke(it) }, color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium) {
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+    val previewSize = if (!stable) Modifier else if (aspect != null) Modifier.height(maxOf(48.dp, maxWidth / aspect)) else Modifier.height(110.dp)
+    Surface(Modifier.fillMaxWidth().then(previewSize).onGloballyPositioned { registerVisual?.invoke(it) }, color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium) {
+        Column(Modifier.fillMaxWidth().then(if (stable) Modifier.fillMaxHeight() else Modifier), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             val current = result?.takeIf { it.key == key && it.attempt == retry }
-            if (current == null) Box(Modifier.fillMaxWidth().height(110.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)); }
-            else if (current.visual == null) Row(verticalAlignment = Alignment.CenterVertically) { Text(current.error, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); TextButton(onClick = { retry++ }) { Text("重试预览") } }
+            if (current == null) Box(Modifier.fillMaxWidth().then(if (stable) Modifier.fillMaxHeight() else Modifier.height(110.dp)), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)); }
+            else if (current.visual == null) {
+                if (stable) Box(Modifier.fillMaxSize().clickable(onClickLabel = "${current.error}，重试预览") { retry++ }, contentAlignment = Alignment.Center) {
+                    Text("重试预览", maxLines = 1, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                } else Row(verticalAlignment = Alignment.CenterVertically) { Text(current.error, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); TextButton(onClick = { retry++ }) { Text("重试预览") } }
+            }
             else {
-                current.visual?.bitmap?.let { Image(it.asImageBitmap(), "$label 缩略图", Modifier.fillMaxWidth().aspectRatio(it.width.toFloat() / it.height).clickable(onClickLabel = "查看和批注图片") { enlarged = true }, contentScale = ContentScale.Fit) }
+                current.visual?.bitmap?.let { Image(it.asImageBitmap(), "$label 缩略图", (if (stable) Modifier.fillMaxSize() else Modifier.fillMaxWidth().aspectRatio(it.width.toFloat() / it.height)).clickable(onClickLabel = "查看和批注图片") { enlarged = true }, contentScale = ContentScale.Fit) }
                     ?: Text(current.visual?.text.orEmpty().ifBlank { "此页没有可预览内容" }, Modifier.fillMaxWidth().padding(8.dp).clickable(onClickLabel = "查看完整内容") { enlarged = true }, maxLines = 5, style = MaterialTheme.typography.bodySmall)
             }
         }
+    }
     }
     if (enlarged) ImageViewer(label, onClose = { enlarged = false; retry++ }, markup = markup) { loader() }
 }
@@ -158,6 +167,7 @@ class MaterialPreviews(context: Context) {
     // remain ordinary Markdown and never trigger file or network image access.
     val matches = remember(text) { sourceImagePattern.findAll(text).toList() }
     val report = LocalNoteRenderReady.current
+    val stable = LocalNoteStableMarkdown.current
     val ready = remember(text) { mutableStateMapOf<Int, Boolean>() }
     val count = remember(text) {
         var position = 0; var total = 0
@@ -181,7 +191,7 @@ class MaterialPreviews(context: Context) {
         val slot = block++
         key(id, match.range.first) {
             CompositionLocalProvider(LocalNoteRenderReady provides remember(text, slot) { { done: Boolean -> ready[slot] = done } }) {
-                PagePreview("note:$id", label, repository, images.markupStore) { withContext(Dispatchers.IO) { Attachment(images.data(id), label, "") } }
+                PagePreview("note:$id", label, repository, images.markupStore, sizeHint = if (stable) ({ images.aspectRatio(id) }) else null) { withContext(Dispatchers.IO) { Attachment(images.data(id), label, "") } }
             }
         }
         start = match.range.last + 1

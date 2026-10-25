@@ -97,6 +97,7 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
             for (p in listOf(page, page - 1, page + 1).filter { it in parts.indices }.distinct()) {
                 val raw = parts[p].display(note.content)
                 parser.warm(if (p == 0) noteTextForDisplay(raw, note.title) else raw)
+                sourceImagePattern.findAll(raw).forEach { vm.sourceImages.aspectRatio(it.groupValues[2]) }
             }
             PreparedReading(note.content, parts, parser)
         }
@@ -167,6 +168,7 @@ private data class PreparedReading(val content: String, val segments: List<NoteR
             for (p in listOf(selected - 1, selected + 1).filter { it in segments.indices }) {
                 val raw = segments[p].display(note.content)
                 reading.parser.warm(if (p == 0) noteTextForDisplay(raw, note.title) else raw)
+                sourceImagePattern.findAll(raw).forEach { vm.sourceImages.aspectRatio(it.groupValues[2]) }
             }
         }
     }
