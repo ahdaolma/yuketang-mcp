@@ -341,6 +341,32 @@ class ReaderBoundaryRegressionTest {
         }
     }
 
+    private fun markerIsActuallyDrawn(marker: String, name: String): Boolean {
+        val bounds = native { views ->
+            val view = views.firstOrNull { it.isAttachedToWindow && it.alpha >= .99f && it.text.contains(marker) } ?: return@native null
+            val layout = view.layout ?: return@native null
+            val line = layout.getLineForOffset(view.text.indexOf(marker))
+            val location = IntArray(2); view.getLocationOnScreen(location)
+            android.graphics.Rect(location[0] + view.totalPaddingLeft + layout.getLineLeft(line).toInt(),
+                location[1] + view.totalPaddingTop - view.scrollY + layout.getLineTop(line),
+                location[0] + view.totalPaddingLeft + layout.getLineRight(line).toInt(),
+                location[1] + view.totalPaddingTop - view.scrollY + layout.getLineBottom(line))
+        } ?: return false
+        // Observe SurfaceFlinger pixels without invalidating the reader's
+        // custom GraphicsLayer; a stale blank recording must fail this check.
+        val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot() ?: return false
+        try {
+            var ink = 0
+            for (y in bounds.top.coerceAtLeast(0) until bounds.bottom.coerceAtMost(bitmap.height) step 2)
+                for (x in bounds.left.coerceAtLeast(0) until bounds.right.coerceAtMost(bitmap.width) step 2) {
+                    val color = bitmap.getPixel(x, y)
+                    if (android.graphics.Color.red(color) < 150 && android.graphics.Color.green(color) < 150 && android.graphics.Color.blue(color) < 150) ink++
+                }
+            if (ink > 10) { saveUiReviewBitmap(compose.activity, name, bitmap); return true }
+            return false
+        } finally { bitmap.recycle() }
+    }
+
     private fun resizeDuringMotion(mode: String, released: Boolean) {
         val note = fixture().copy(content = "## 第 1 页\n\nFIRST_START。\n\n## 第 2 页\n\nSECOND_START。")
         val heightFraction = mutableStateOf(1f)
@@ -370,7 +396,10 @@ class ReaderBoundaryRegressionTest {
                             compose.onAllNodesWithTag("笔记翻页画面").fetchSemanticsNodes().isEmpty()
                     }
                 } finally { compose.mainClock.autoAdvance = true }
-                advancedUiShot(compose.activity, "reader-resize-$mode-$released-$direction")
+                val marker = if (released && direction > 0) "SECOND_START" else "FIRST_START"
+                val began = android.os.SystemClock.elapsedRealtime()
+                compose.waitUntil(12000) { markerIsActuallyDrawn(marker, "reader-resize-$mode-$released-$direction") }
+                Log.i("ReaderPixels", "mode=$mode released=$released direction=$direction actualInkAfterMs=${android.os.SystemClock.elapsedRealtime() - began}")
             }
         }
     }
