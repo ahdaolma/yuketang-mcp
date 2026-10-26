@@ -91,14 +91,20 @@ class ReaderMarkdownLeaseTest {
         assertEquals(2, firstRows.size)
         assertTrue(firstRows.none { a -> secondRows.any { b -> a === b } })
         compose.runOnIdle {
-            val a = TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = 42f }
-            val b = TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = 63f }
+            val a = TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = 42f; density = 3.25f; linkColor = android.graphics.Color.MAGENTA; drawableState = intArrayOf(android.R.attr.state_enabled) }
+            val b = TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { textSize = 63f; density = 4.5f; linkColor = android.graphics.Color.CYAN; drawableState = intArrayOf(android.R.attr.state_selected) }
             prepareReaderTables(first, a, 900, false)
             prepareReaderTables(second, b, 600, false)
             assertEquals(450, firstRows.first().cellWidth())
             assertEquals(300, secondRows.first().cellWidth())
             assertEquals(42f, requireNotNull(firstRows.first().findLayoutForHorizontalOffset(0)).paint.textSize, .1f)
             assertEquals(63f, requireNotNull(secondRows.first().findLayoutForHorizontalOffset(0)).paint.textSize, .1f)
+            listOf(firstRows to a, secondRows to b).forEach { (rows, expected) -> rows.forEach { row ->
+                val actual = requireNotNull(row.findLayoutForHorizontalOffset(0)).paint
+                assertEquals("Table layout must preserve text density", expected.density, actual.density, .001f)
+                assertEquals("Table layout must preserve link color", expected.linkColor, actual.linkColor)
+                assertArrayEquals("Table layout must preserve drawable state", expected.drawableState, actual.drawableState)
+            } }
         }
     }
     @Test fun aLateWorkerCannotPublishThePreviousTheme() {
