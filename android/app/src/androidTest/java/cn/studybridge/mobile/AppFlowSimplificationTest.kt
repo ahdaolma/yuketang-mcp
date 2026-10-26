@@ -54,8 +54,14 @@ class AppFlowSimplificationTest {
         for (mode in listOf(3 to false, 1 to false, 2 to true)) {
             compose.runOnIdle { scenario = mode }
             val action = compose.onNodeWithTag("测试底部操作")
-            val originalBottom = action.getUnclippedBoundsInRoot().bottom
-            val originalRootBottom = compose.onRoot().getUnclippedBoundsInRoot().bottom
+            fun bottomSnapshot(): Pair<Float, Float> {
+                val root = compose.onRoot().fetchSemanticsNode()
+                val button = action.fetchSemanticsNode()
+                var result = 0f to 0f
+                compose.runOnIdle { result = root.boundsInRoot.bottom to button.boundsInRoot.bottom }
+                return result
+            }
+            val (originalRootBottom, originalBottom) = bottomSnapshot()
             compose.runOnIdle { show = true }
             val notice = compose.onNodeWithTag("操作反馈")
             compose.waitUntil(5000) { notice.getUnclippedBoundsInRoot().let { (it.bottom - it.top).value > 0f } }
@@ -65,12 +71,11 @@ class AppFlowSimplificationTest {
             action.performTouchInput { click() }
             compose.runOnIdle { assertEquals(previousClicks + 1, clicks); feedback.currentSnackbarData!!.dismiss() }
             compose.waitUntil(5000) { notice.getUnclippedBoundsInRoot().let { (it.bottom - it.top).value == 0f } }
-            val restoredBottom = action.getUnclippedBoundsInRoot().bottom
-            val restoredRootBottom = compose.onRoot().getUnclippedBoundsInRoot().bottom
+            val (restoredRootBottom, restoredBottom) = bottomSnapshot()
             android.util.Log.i("FeedbackLayout", "mode=$mode beforeRoot=$originalRootBottom beforeAction=$originalBottom afterRoot=$restoredRootBottom afterAction=$restoredBottom")
             // API26 can finish hiding its system bar after the first snapshot.
             // Validate the full space of the CURRENT root, not an old absolute Y.
-            assertEquals("Dismissal must restore the entire body in $mode", originalRootBottom - originalBottom, restoredRootBottom - restoredBottom)
+            assertEquals("Dismissal must restore the entire body in $mode", originalRootBottom - originalBottom, restoredRootBottom - restoredBottom, .5f)
             compose.runOnIdle { show = false }
         }
     }
