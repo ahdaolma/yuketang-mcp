@@ -24,8 +24,9 @@ class Vault(context: Context, name: String = "study-v1.enc") {
         }.generateKey()
     }
     @Synchronized fun load(): Saved {
-        if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) return Saved()
-        val bytes = file.readFully()
+        val bytes = PrivateFileLocks.access(file.baseFile) {
+            if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) null else file.readFully()
+        } ?: return Saved()
         require(bytes.size > 28)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
@@ -34,7 +35,9 @@ class Vault(context: Context, name: String = "study-v1.enc") {
     @Synchronized fun save(data: Saved) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }
         val bytes = cipher.iv + cipher.doFinal(data.toJson().toString().toByteArray(Charsets.UTF_8))
-        val output = file.startWrite()
-        try { output.write(bytes); file.finishWrite(output) } catch (e: Exception) { file.failWrite(output); throw e }
+        PrivateFileLocks.access(file.baseFile) {
+            val output = file.startWrite()
+            try { output.write(bytes); file.finishWrite(output) } catch (e: Exception) { file.failWrite(output); throw e }
+        }
     }
 }

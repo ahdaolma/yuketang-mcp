@@ -17,7 +17,7 @@ class ImageMarkupStore(context: Context) {
     // stripes avoid retaining one lock/path for every image ever opened.
     private fun <T> access(id: String, block: (AtomicFile) -> T): T {
         val file = file(id)
-        return synchronized(locks[(file.baseFile.path.hashCode() and Int.MAX_VALUE) % locks.size]) { block(file) }
+        return PrivateFileLocks.access(file.baseFile) { block(file) }
     }
     fun load(id: String): List<ImageStroke> = access(id) { file ->
         if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) emptyList()
@@ -44,7 +44,6 @@ class ImageMarkupStore(context: Context) {
         if (strokes.isEmpty()) return original
         return original.copy(Bitmap.Config.ARGB_8888, true).also { drawImageStrokes(Canvas(it), strokes, it.width.toFloat(), it.height.toFloat()) }
     }
-    private companion object { val locks = Array(64) { Any() } }
 }
 
 fun drawImageStrokes(canvas: Canvas, strokes: List<ImageStroke>, width: Float, height: Float) {

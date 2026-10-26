@@ -29,24 +29,27 @@ class SourceImages(context: Context) {
         val bytes = Base64.decode(data.substringAfter(','), Base64.DEFAULT)
         val bitmap = boundedBitmap(bytes); bitmap.recycle()
         val id = imageDigest(bytes); val target = file(id)
-        if (!target.isFile) {
-            val atomic = AtomicFile(target); val out = atomic.startWrite()
-            try { out.write(bytes); atomic.finishWrite(out) } catch (e: Exception) { atomic.failWrite(out); throw e }
+        PrivateFileLocks.access(target) {
+            if (!target.isFile) {
+                val atomic = AtomicFile(target); val out = atomic.startWrite()
+                try { out.write(bytes); atomic.finishWrite(out) } catch (e: Exception) { atomic.failWrite(out); throw e }
+            }
         }
         return id
     }
     fun prune(saved: Saved) {
         val active = (saved.imageBearingNotes().map { it.content } + saved.noteDrafts.map { it.content }).flatMap { text -> sourceImagePattern.findAll(text).map { it.groupValues[2] }.toList() }.toMutableSet()
-        root.listFiles()?.filter { it.extension == "image" && it.nameWithoutExtension !in active }?.forEach { it.delete() }
+        root.listFiles()?.filter { it.extension == "image" && it.nameWithoutExtension !in active }?.forEach { target -> PrivateFileLocks.access(target) { target.delete() } }
     }
-    fun bytes(id: String): ByteArray = file(id).let { require(it.isFile) { "本机原页图片不可用。" }; it.readBytes() }
+    fun bytes(id: String): ByteArray = file(id).let { target -> PrivateFileLocks.access(target) { require(target.isFile) { "本机原页图片不可用。" }; target.readBytes() } }
     // Decode headers only; pixel decoding and annotation rendering remain on
     // their existing workers. Neighbor preparation warms this bounded cache.
     fun aspectRatio(id: String): Float? {
         aspectRatios.get(id)?.let { return it }
         return runCatching {
             val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            android.graphics.BitmapFactory.decodeFile(file(id).path, options)
+            val target = file(id)
+            PrivateFileLocks.access(target) { android.graphics.BitmapFactory.decodeFile(target.path, options) }
             if (options.outWidth > 0 && options.outHeight > 0)
                 (options.outWidth.toFloat() / options.outHeight).also { aspectRatios.put(id, it) }
             else null
