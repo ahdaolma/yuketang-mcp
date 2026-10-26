@@ -143,14 +143,45 @@ class NotebookHierarchyUiTest {
         }
     }
     @Test fun splitWindowKeepsFolderPickerAndCloseInsideTheWindow() = viewport(920, 1600) {
-        library(fontScale = 1.5f) { _, _ ->
+        library(fontScale = 1.5f) { _, vm ->
             compose.onNodeWithTag("平板笔记本目录").assertDoesNotExist()
             chooseFolder("dna")
-            advancedUiShot(compose.activity, "sample-notebook-split-window")
+            settledWindowShot("sample-notebook-split-window-settled", 1)
             compose.onNodeWithTag("笔记列表").performScrollToNode(hasTestTag("当前笔记本"))
-            compose.onNodeWithTag("当前笔记本").performClick()
-            compose.onNodeWithContentDescription("关闭选择笔记本").assertIsDisplayed().performClick()
+            compose.onNodeWithTag("当前笔记本").performTouchInput { click() }
+            settledWindowShot("sample-notebook-split-picker-settled", 2)
+            compose.onNodeWithContentDescription("关闭选择笔记本").assertIsDisplayed().performTouchInput { click() }
+            compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记本面板").fetchSemanticsNodes().isEmpty() }
+            settledWindowShot("sample-notebook-split-closed-settled", 1)
+            compose.onNodeWithTag("笔记卡片 b").assertIsDisplayed().performTouchInput { click() }
+            compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记正文").fetchSemanticsNodes().isNotEmpty() }
+            assertEquals("b", vm.noteReader.id)
+            settledWindowShot("sample-notebook-split-reader-settled", 1)
         }
+    }
+    /** Observe platform window exit animations as well as Compose semantics. */
+    private fun settledWindowShot(name: String, windows: Int) {
+        var previous: android.graphics.Bitmap? = null
+        var identicalFrames = 0
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        try {
+            repeat(80) { sample ->
+                var attached = 0
+                compose.runOnIdle { attached = android.view.inspector.WindowInspector.getGlobalWindowViews().count { it.isAttachedToWindow } }
+                val bitmap = requireNotNull(automation.takeScreenshot())
+                if (sample == 0) saveUiReviewBitmap(compose.activity, "$name-initial", bitmap)
+                identicalFrames = if (attached == windows && previous?.sameAs(bitmap) == true) identicalFrames + 1 else 0
+                android.util.Log.i("SettledWindow", "$name sample=$sample windows=$attached identical=$identicalFrames")
+                previous?.recycle()
+                previous = bitmap
+                if (identicalFrames >= 3) {
+                    saveUiReviewBitmap(compose.activity, name, bitmap)
+                    return
+                }
+                android.os.SystemClock.sleep(80)
+            }
+            error("Window/pixels did not settle for $name (expected $windows windows)")
+        } finally { previous?.recycle() }
     }
     @Test fun batchMoveCanCreateItsDestinationWithoutOpeningAnotherManager() = library { _, vm ->
         top(); compose.onNodeWithContentDescription("多选笔记").performClick()

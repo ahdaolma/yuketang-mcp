@@ -2,7 +2,11 @@ package cn.studybridge.mobile
 
 import android.text.SpannableStringBuilder
 import android.text.TextPaint
-import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.*
+import androidx.lifecycle.ViewModelStore
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import io.noties.markwon.ext.tables.TableRowSpan
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +21,58 @@ import java.util.concurrent.TimeUnit
 
 class ReaderMarkdownLeaseTest {
     @get:Rule val compose = createAndroidComposeRule<WebFixtureActivity>()
+    @Test fun continuousTableTextKeepsContrastAcrossLightAndDarkThemes() = tablePalette("continuous")
+    @Test fun pagedTableTextKeepsContrastAcrossLightAndDarkThemes() = tablePalette("buttons")
+
+    private fun tablePalette(mode: String) {
+        val app = noteTestApplication(compose.activity.applicationContext)
+        val note = Note(id = "table-palette", title = "表格对比度", source = "fixture", model = "fixture", content = "## 第 1 页\n\n| 概念 | 解释 |\n| --- | --- |\n| 表格正文 | 深色与浅色均可阅读 |\n\nTABLE_END")
+        Vault(app).save(Saved(notes = listOf(note), noteReadMode = mode))
+        val store = ViewModelStore(); lateinit var vm: StudyViewModel
+        compose.runOnUiThread { vm = noteTestViewModel(app, store) }
+        var dark by mutableStateOf(true)
+        lateinit var palette: StudyMarkdownPalette
+        compose.setContent {
+            val ui by vm.ui.collectAsState()
+            StudyTheme(dark) {
+                val p = studyMarkdownPalette(); SideEffect { palette = p }
+                StudyFrame(ui, vm::tab, { vm.noteReader.closeRequested = true }, vm::stop, noteOpen = vm.noteReader.id != null) { padding ->
+                    Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding)) { NotesScreen(ui, vm) }
+                }
+            }
+        }
+        fun descendants(view: android.view.View): List<android.view.View> = listOf(view) + if (view is android.view.ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
+        fun tables() = descendants(compose.activity.window.decorView).filterIsInstance<NoteSelectableTextView>().filter { it.isAttachedToWindow && it.alpha >= .99f && it.layout != null && it.text.contains("TABLE_END") }
+        var expectedHeights: List<Int>? = null
+        try {
+            compose.waitUntil(5000) { vm.ui.value.ready }
+            compose.runOnIdle { vm.tab(2) }
+            compose.onNodeWithText(note.title).performClick()
+            for (theme in listOf(true, false, true)) {
+                compose.runOnIdle { dark = theme }
+                compose.waitUntil(8000) {
+                    var ready = false
+                    compose.runOnIdle { ready = tables().any { view -> view.currentTextColor == palette.color && (view.text as? android.text.Spanned)?.getSpans(0, view.text.length, TableRowSpan::class.java)?.size == 2 } }
+                    ready
+                }
+                compose.runOnIdle {
+                    val view = tables().single()
+                    val text = view.text as android.text.Spanned
+                    val rows = text.getSpans(0, text.length, TableRowSpan::class.java)
+                    val heights = rows.map { row ->
+                        val layout = requireNotNull(row.findLayoutForHorizontalOffset(0))
+                        android.util.Log.i("TablePalette", "mode=$mode dark=$theme native=${view.currentTextColor} cell=${layout.paint.color} size=${layout.paint.textSize}")
+                        assertEquals("Table cells must use the actual native text color in $mode dark=$theme", view.currentTextColor, layout.paint.color)
+                        for (background in listOf(palette.code, palette.row, palette.background)) assertTrue("Readable contrast against every table row", androidx.core.graphics.ColorUtils.calculateContrast(layout.paint.color, background) >= 4.5)
+                        layout.height
+                    }
+                    expectedHeights?.let { assertEquals("Theme changes must not alter table geometry", it, heights) }
+                    expectedHeights = heights
+                }
+                advancedUiShot(compose.activity, "reader-table-palette-$mode-$theme")
+            }
+        } finally { compose.runOnIdle { store.clear() } }
+    }
     @Test fun preparedTablesBelongToOneViewAndKeepIndependentFontAndWidth() {
         lateinit var palette: StudyMarkdownPalette
         compose.setContent { StudyTheme(false) { val p = studyMarkdownPalette(); SideEffect { palette = p } } }

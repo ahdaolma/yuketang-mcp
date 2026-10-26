@@ -278,7 +278,8 @@ class MainActivity : ComponentActivity() {
         if (parsed != null && it.tag !== parsed) {
             if (stableMarkdown && readerWidth != null) prepareReaderTables(parsed, it.paint,
                 readerWidth - it.totalPaddingLeft - it.totalPaddingRight,
-                context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0)
+                context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0,
+                textColor = it.currentTextColor)
             renderer.setParsedMarkdown(it, parsed); it.tag = parsed
         }
         val renderedView = it
