@@ -262,6 +262,11 @@ private class ReadingPublication {
     suspend fun preparePage(page: Int, offset: Int = 0, end: Boolean = false, anchor: NoteTextAnchor? = null, title: Boolean = false): ReadingFrame? {
         val destination = if (continuous) null else ReadingFrame(page, ++frameToken).also { incomingFrame = it }
         traceMotion("prepare gen=${commands.generation} page=$page frame=${destination?.token} offset=$offset end=$end width=$bodyWidth")
+        // Scaffold can remember this restoration effect while subcomposing a
+        // measurement. scrollToItem forces a synchronous remeasure: leave that
+        // layout stack before positioning the continuous list. The same command
+        // retains cancellation ownership while waiting for the frame boundary.
+        if (continuous) withFrameNanos { }
         if (continuous && title && anchor == null && offset == 0 && !end) { list.scrollToItem(0); return null }
         if (continuous) list.scrollToItem(page + 1)
         // Both frames are measured at the real viewport width. Incoming text has

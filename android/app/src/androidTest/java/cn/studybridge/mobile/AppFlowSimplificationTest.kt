@@ -116,6 +116,59 @@ class AppFlowSimplificationTest {
         } finally { compose.runOnIdle { store.clear() } }
     }
 
+    @Test fun preopenedContinuousReaderRestoresAcrossScaffoldRemeasuresAndReentry() {
+        val app = noteTestApplication(compose.activity.applicationContext)
+        val note = Note("flow-restore-layout", "连续阅读布局恢复", "## 第 1 页\n\nFIRST_RESTORE。\n\n" +
+            (1..18).joinToString("\n\n") { "第一页段落$it。" + "布局恢复必须保留实际阅读位置。".repeat(3) } +
+            "\n\n## 第 2 页\n\nSECOND_RESTORE。\n\n" +
+            (1..18).joinToString("\n\n") { "第二页段落$it。" + "重新进入后仍能继续阅读。".repeat(3) }, "合成笔记", "手写")
+        Vault(app).save(Saved(notes = listOf(note), noteReadMode = "continuous"))
+        Vault(app, "note-reading-v1.enc").save(Saved(noteReadingPositions = listOf(
+            NoteReadingPosition(note.id, 1, 0, "第 2 页", noteContentHash(note.content)))))
+        val width = mutableStateOf(1f)
+        val store = ViewModelStore(); lateinit var vm: StudyViewModel
+        fun descendants(view: android.view.View): List<android.view.View> = listOf(view) +
+            if (view is android.view.ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
+        fun restoredLineVisible(): Boolean {
+            val body = compose.onAllNodesWithTag("笔记正文").fetchSemanticsNodes().firstOrNull()?.boundsInWindow ?: return false
+            var visible = false
+            compose.runOnIdle {
+                visible = descendants(compose.activity.window.decorView).filterIsInstance<NoteSelectableTextView>().any { view ->
+                    val offset = view.text.indexOf("SECOND_RESTORE")
+                    val layout = view.layout
+                    if (offset < 0 || layout == null || !view.isShown) false else {
+                        val location = IntArray(2); view.getLocationInWindow(location)
+                        val line = layout.getLineForOffset(offset)
+                        val top = location[1] + view.totalPaddingTop - view.scrollY + layout.getLineTop(line)
+                        val bottom = location[1] + view.totalPaddingTop - view.scrollY + layout.getLineBottom(line)
+                        top >= body.top && bottom <= body.bottom
+                    }
+                }
+            }
+            return visible
+        }
+        try {
+            compose.runOnUiThread { vm = noteTestViewModel(app, store) }
+            compose.waitUntil(5000) { vm.ui.value.ready }
+            compose.runOnIdle { vm.tab(2); vm.noteReader.open(note) }
+            // StudyApp's real Scaffold subcomposes during measurement. Starting
+            // with an open reader covers the failing initial layout path too.
+            compose.setContent { StudyTheme(false) { Box(Modifier.fillMaxWidth(width.value).fillMaxHeight()) { StudyApp(vm) } } }
+            repeat(6) { cycle ->
+                compose.waitUntil(8000) { restoredLineVisible() }
+                compose.runOnIdle {
+                    width.value = if (cycle % 2 == 0) .83f else 1f
+                    vm.updateNotebookState { it.copy(noteFontSize = if (cycle % 2 == 0) 21 else 18) }
+                }
+                compose.waitUntil(8000) { restoredLineVisible() }
+                compose.runOnIdle { vm.closeNoteReader() }
+                compose.onNodeWithTag("笔记列表").assertIsDisplayed()
+                compose.runOnIdle { vm.noteReader.open(note) }
+            }
+            compose.waitUntil(8000) { restoredLineVisible() }
+        } finally { compose.runOnIdle { store.clear() } }
+    }
+
     @Test fun courseSystemBackRestoresDeckLessonAndCourseParentsWithoutReloading() {
         val app = noteTestApplication(compose.activity.applicationContext)
         Vault(app).save(Saved(providers = listOf(provider), selectedProvider = provider.id, session = "synthetic-session", sessionVerified = true))
