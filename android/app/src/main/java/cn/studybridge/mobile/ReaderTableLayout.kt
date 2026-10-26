@@ -17,7 +17,8 @@ internal fun prepareReaderTables(text: Spanned, paint: TextPaint, width: Int, de
     val began = System.nanoTime()
     // TextView updates currentTextColor before onDraw updates its TextPaint.
     // TableRowSpan retains the first draw paint while its width stays equal.
-    val tablePaint = TextPaint(paint).apply { color = textColor }
+    // The Paint copy constructor omits TextPaint's density/link/drawable state.
+    val tablePaint = TextPaint().apply { set(paint); color = textColor }
     val bitmap = Bitmap.createBitmap(width, 1, Bitmap.Config.ARGB_8888)
     try {
         val canvas = Canvas(bitmap)
