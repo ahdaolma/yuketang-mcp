@@ -15,6 +15,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelStore
+import kotlin.math.roundToInt
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -313,7 +314,10 @@ class ReaderBoundaryRegressionTest {
         val note = fixture().copy(content = "$first\n\n$second")
         val heightFraction = mutableStateOf(1f)
         withReader(note, "buttons", true, heightFraction) { _, _ ->
-            compose.waitUntil(8000) { kotlin.math.abs(top("SECOND_START") - compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow.top) < 2 }
+            // The full paper now includes its former external8dp top gutter.
+            // Compare against the native content origin, preserving tolerance.
+            val topGutter = (8 * compose.activity.resources.displayMetrics.density).roundToInt()
+            compose.waitUntil(8000) { kotlin.math.abs(top("SECOND_START") - compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow.top - topGutter) < 2 }
             val body = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow
             val lastBottom = native { views ->
                 val view = views.first { it.text.contains("SECOND_END") }

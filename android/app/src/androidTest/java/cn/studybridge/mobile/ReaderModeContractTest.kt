@@ -99,7 +99,7 @@ class ReaderModeContractTest {
     private fun entirePaper(style: String) = reader("swipe", style) {
         val outer = compose.onNodeWithTag("笔记阅读页").getUnclippedBoundsInRoot()
         val outerPixels = compose.onNodeWithTag("笔记阅读页").fetchSemanticsNode().boundsInWindow
-        if (style == "cover") assertTrue("Tablet fixture must exercise a genuinely wide reading window", outer.width.value > 880f)
+        if (style == "cover") assertTrue("Tablet fixture must exercise a genuinely wide reading window", (outer.right - outer.left).value > 880f)
         val body = compose.onNodeWithTag("笔记正文").getUnclippedBoundsInRoot()
         advancedUiShot(compose.activity, "reader-mode-$style-before")
         assertEquals("Paper must include the left gutter", outer.left.value, body.left.value, 1f)

@@ -627,7 +627,11 @@ private class ReadingPublication {
                             // ScrollState remains available to search and screen
                             // navigation; direct vertical drags are disabled.
                             Column(Modifier.align(Alignment.CenterHorizontally).padding(horizontal = 20.dp)
-                                .widthIn(max = 840.dp).fillMaxWidth().onSizeChanged { frame.contentHeight = it.height }
+                                .widthIn(max = 840.dp).fillMaxWidth().onSizeChanged {
+                                    // Bottom paper decoration is not unread
+                                    // content and must not manufacture a turn.
+                                    frame.contentHeight = (it.height - with(density) { 8.dp.roundToPx() }).coerceAtLeast(0)
+                                }
                                 .padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                 if (frame.page == 0) Column(Modifier.onGloballyPositioned { frame.text.registerVisual(it) }, verticalArrangement = Arrangement.spacedBy(14.dp)) { heading() }
                                 segment(frame.page, frame)
