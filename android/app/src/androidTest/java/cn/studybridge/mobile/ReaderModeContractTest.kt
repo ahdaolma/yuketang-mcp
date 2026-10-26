@@ -140,8 +140,11 @@ class ReaderModeContractTest {
     @Suppress("DEPRECATION")
     @Test fun tabletCoverAnimatesBothGuttersWithoutStretchingText() {
         check(shell("getprop ro.kernel.qemu").trim() == "1")
+        // API26's disposable1080px emulator caps forced width at2160px.
+        // Both supported sizes still exercise the840dp text limit and gutters.
+        val targetWidth = if (android.os.Build.VERSION.SDK_INT <= 26) 2160 else 2560
         try {
-            shell("wm size 2560x1600"); shell("wm density 320")
+            shell("wm size ${targetWidth}x1600"); shell("wm density 320")
             var reported = false
             compose.waitUntil(15000) {
                 val usable = compose.activity.resources.displayMetrics
@@ -149,7 +152,7 @@ class ReaderModeContractTest {
                 // Older Android excludes the landscape navigation bar from
                 // resource metrics. Check physical resize separately from the
                 // actual app window, which must still be wider than880dp.
-                val ready = kotlin.math.abs(real.widthPixels - 2560) < 16 && usable.widthPixels > 1800 &&
+                val ready = kotlin.math.abs(real.widthPixels - targetWidth) < 16 && usable.widthPixels > 1800 &&
                     kotlin.math.abs(usable.density - 2f) < .01f && compose.activity.lifecycle.currentState == Lifecycle.State.RESUMED
                 if (!reported || ready) { android.util.Log.i("ModeTablet", "real=${real.widthPixels}x${real.heightPixels} usable=${usable.widthPixels}x${usable.heightPixels} density=${usable.density} ready=$ready"); reported = true }
                 ready
