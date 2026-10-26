@@ -2,15 +2,18 @@ package cn.studybridge.mobile
 
 import android.view.View
 import android.view.ViewGroup
+import android.graphics.Bitmap
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelStore
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlin.math.roundToInt
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -95,6 +98,8 @@ class ReaderModeContractTest {
     }
     private fun entirePaper(style: String) = reader("swipe", style) {
         val outer = compose.onNodeWithTag("笔记阅读页").getUnclippedBoundsInRoot()
+        val outerPixels = compose.onNodeWithTag("笔记阅读页").fetchSemanticsNode().boundsInWindow
+        if (style == "cover") assertTrue("Tablet fixture must exercise a genuinely wide reading window", outer.width.value > 880f)
         val body = compose.onNodeWithTag("笔记正文").getUnclippedBoundsInRoot()
         advancedUiShot(compose.activity, "reader-mode-$style-before")
         assertEquals("Paper must include the left gutter", outer.left.value, body.left.value, 1f)
@@ -103,25 +108,52 @@ class ReaderModeContractTest {
             val view = texts().first { it.text.contains("MODE_FIRST") }
             val density = compose.activity.resources.displayMetrics.density
             assertTrue("Tablet text must remain limited to840dp", view.width <= 840 * density + 2)
+            val expectedWidth = (outerPixels.width.roundToInt() - 2 * (20 * density).roundToInt()).coerceAtMost((840 * density).roundToInt())
+            assertEquals("Native text width must exactly match the padded paper even at fractional density", expectedWidth, view.width)
         }
+        val before = compose.onNodeWithTag("笔记正文").captureToImage().asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false)!!
         compose.mainClock.autoAdvance = false
         try {
             compose.onNodeWithTag("笔记正文").performTouchInput { down(Offset(width * .85f, height * .6f)); moveTo(Offset(width * .5f, height * .6f), 220) }
             compose.waitUntil(12000) { compose.mainClock.advanceTimeByFrame(); compose.onAllNodesWithTag("笔记翻页画面").fetchSemanticsNodes().isNotEmpty() }
             val canvas = compose.onNodeWithTag("笔记翻页画面").getUnclippedBoundsInRoot()
             assertEquals(outer.left.value, canvas.left.value, 1f); assertEquals(outer.right.value, canvas.right.value, 1f)
-            advancedUiShot(compose.activity, "reader-mode-$style-entire-paper")
+            // A composed Canvas node can precede its actual Android draw. Wait
+            // for changed paper pixels, and save exactly the verified bitmap.
+            compose.waitUntil(12000) {
+                compose.mainClock.advanceTimeByFrame()
+                val middle = compose.onNodeWithTag("笔记正文").captureToImage().asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false)!!
+                try {
+                    assertEquals(outerPixels.width.roundToInt(), middle.width)
+                    var changed = 0
+                    for (y in 0 until middle.height step 8) for (x in 0 until middle.width step 8)
+                        if (before.getPixel(x, y) != middle.getPixel(x, y)) changed++
+                    if (changed > 50) { saveUiReviewBitmap(compose.activity, "reader-mode-$style-entire-paper", middle); true } else false
+                } finally { middle.recycle() }
+            }
             compose.onNodeWithTag("笔记正文").performTouchInput { up() }
-        } finally { compose.mainClock.autoAdvance = true }
+        } finally { compose.mainClock.autoAdvance = true; before.recycle() }
         settle()
     }
     @Test fun phoneCurlAnimatesBothGutters() = entirePaper("curl")
     private fun shell(command: String): String = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command).let { android.os.ParcelFileDescriptor.AutoCloseInputStream(it).bufferedReader().use { input -> input.readText() } }
+    @Suppress("DEPRECATION")
     @Test fun tabletCoverAnimatesBothGuttersWithoutStretchingText() {
         check(shell("getprop ro.kernel.qemu").trim() == "1")
         try {
             shell("wm size 2560x1600"); shell("wm density 320")
-            compose.waitUntil(15000) { val metrics = compose.activity.resources.displayMetrics; kotlin.math.abs(metrics.widthPixels - 2560) < 16 && kotlin.math.abs(metrics.density - 2f) < .01f && compose.activity.lifecycle.currentState == Lifecycle.State.RESUMED }
+            var reported = false
+            compose.waitUntil(15000) {
+                val usable = compose.activity.resources.displayMetrics
+                val real = android.util.DisplayMetrics().also { compose.activity.windowManager.defaultDisplay.getRealMetrics(it) }
+                // Older Android excludes the landscape navigation bar from
+                // resource metrics. Check physical resize separately from the
+                // actual app window, which must still be wider than880dp.
+                val ready = kotlin.math.abs(real.widthPixels - 2560) < 16 && usable.widthPixels > 1800 &&
+                    kotlin.math.abs(usable.density - 2f) < .01f && compose.activity.lifecycle.currentState == Lifecycle.State.RESUMED
+                if (!reported || ready) { android.util.Log.i("ModeTablet", "real=${real.widthPixels}x${real.heightPixels} usable=${usable.widthPixels}x${usable.heightPixels} density=${usable.density} ready=$ready"); reported = true }
+                ready
+            }
             entirePaper("cover")
         } finally { shell("wm size reset"); shell("wm density reset") }
     }

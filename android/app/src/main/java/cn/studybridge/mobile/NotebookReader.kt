@@ -560,7 +560,11 @@ private class ReadingPublication {
             BoxWithConstraints(Modifier.weight(1f).then(if (continuous) Modifier.widthIn(max = 840.dp) else Modifier).fillMaxWidth().align(Alignment.CenterHorizontally).onSizeChanged { viewport = it.height; bodyWidth = it.width }.onGloballyPositioned { bodyTop = it.positionInWindow().y; bodyLeft = it.positionInWindow().x }) {
                 // Native text keeps the actual reader width during lazy item
                 // premeasurement as well as its later placement on screen.
-                val contentWidth = if (continuous) maxWidth else (maxWidth - 40.dp).coerceIn(1.dp, 840.dp)
+                // Match PaddingModifier's independently rounded physical
+                // gutters, including fractional display densities.
+                val contentWidth = if (continuous) maxWidth else with(density) {
+                    (constraints.maxWidth - 2 * 20.dp.roundToPx()).coerceIn(1, 840.dp.roundToPx()).toDp()
+                }
                 val bodyModifier = Modifier.fillMaxSize().testTag("笔记正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier)
                 val heading: @Composable () -> Unit = {
                     Text(note.title, Modifier.onSizeChanged { titleHeight = it.height }.testTag("笔记原始标题"), style = MaterialTheme.typography.titleLarge)

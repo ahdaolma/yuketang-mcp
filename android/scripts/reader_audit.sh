@@ -6,7 +6,7 @@ status=0
 if [ "${RAIN_READER_SUITE:-reader}" = modes ]; then
   gradle --no-daemon connectedDebugAndroidTest \
     -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true \
-    '-Pandroid.testInstrumentationRunnerArguments.class=cn.studybridge.mobile.ReaderModeContractTest' || status=$?
+    '-Pandroid.testInstrumentationRunnerArguments.class=cn.studybridge.mobile.ReaderModeContractTest,cn.studybridge.mobile.ReaderNativeTapTest' || status=$?
   adb pull /sdcard/Pictures/StudyUiReview reader-audit-ui || true
   adb pull /sdcard/Android/data/cn.studybridge.mobile/files/StudyUiReview reader-audit-ui || true
   exit "$status"
