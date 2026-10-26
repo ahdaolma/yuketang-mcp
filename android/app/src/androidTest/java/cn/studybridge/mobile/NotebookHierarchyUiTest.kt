@@ -146,7 +146,7 @@ class NotebookHierarchyUiTest {
         library(fontScale = 1.5f) { _, vm ->
             compose.onNodeWithTag("平板笔记本目录").assertDoesNotExist()
             chooseFolder("dna")
-            settledWindowShot("sample-notebook-split-window-settled", 1)
+            settledWindowShot("sample-notebook-split-window", 1)
             compose.onNodeWithTag("笔记列表").performScrollToNode(hasTestTag("当前笔记本"))
             compose.onNodeWithTag("当前笔记本").performTouchInput { click() }
             settledWindowShot("sample-notebook-split-picker-settled", 2)
