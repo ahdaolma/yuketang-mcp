@@ -565,7 +565,11 @@ private fun preview(bytes: ByteArray): Bitmap? {
         if (details) AlertDialog(onDismissRequest = { details = false }, title = { Text("来源与模型") }, text = {
             Text("来源：${note.source}\n\n模型：${note.model}", Modifier.verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodyMedium)
         }, confirmButton = { TextButton(onClick = { details = false }) { Text("关闭") } })
-        Column(Modifier.fillMaxSize().testTag("笔记阅读页").padding(horizontal = 20.dp, vertical = 8.dp)) {
+        // Paged gutters belong to the moving paper, not a stationary wrapper.
+        // Continuous reading and the editor retain their existing layout.
+        val pagedReading = !reader.editing && validNoteReadingMode(ui.data.noteReadMode) != "continuous"
+        Column(Modifier.fillMaxSize().testTag("笔记阅读页").padding(
+            horizontal = if (pagedReading) 0.dp else 20.dp, vertical = if (pagedReading) 0.dp else 8.dp)) {
             val heading: @Composable () -> Unit = {
                 Text(note.title, style = MaterialTheme.typography.titleLarge)
                 OriginalNotePages(note, ui, vm)

@@ -423,7 +423,7 @@ private class ReadingPublication {
     }
     fun beginDrag(displacement: Float, touchY: Float): Int? {
         traceMotion("begin dx=$displacement mode=$mode gen=${commands.generation}/${commands.settled} busy=${commands.busy} restored=$restored ready=$renderReady selection=${selectionController?.selection != null}")
-        if (!canTurn() || selectionController?.selection != null) return null
+        if (mode != "swipe" || !canTurn() || selectionController?.selection != null) return null
         rememberPosition()
         foldBottom = touchY >= viewport / 2f; foldTouchY = touchY; motionAnimation = pageAnimation
         val direction = if (displacement < 0) 1 else -1
@@ -528,7 +528,7 @@ private class ReadingPublication {
         NOTE_READING_MODES.forEach { (id, title) ->
             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).selectable(mode == id, role = Role.RadioButton, onClick = { rememberPosition(); vm.updateNotebookState { it.copy(noteReadMode = id) } }), verticalAlignment = Alignment.CenterVertically) { RadioButton(mode == id, null); Text(title) }
         }
-        Text("点击翻页：点正文右侧前进一屏，左侧返回一屏。横滑：向左前进，向右返回。先看完当前页每一屏，再进入下一页。", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
+        Text("点击翻页只响应点按；横向滑屏只响应左右滑动。这两种方式不支持上下滚动，先逐屏看完当前页，再进入下一页。连续滚动可上下浏览整本笔记。", Modifier.padding(12.dp), style = MaterialTheme.typography.bodySmall)
         HorizontalDivider()
         ReadingActionGroup("翻页动画")
         NOTE_PAGE_ANIMATIONS.forEach { (id, title) ->
@@ -557,10 +557,10 @@ private class ReadingPublication {
                 FeedbackIconButton(onClick = { selectHit(hits[(hitIndex + 1).coerceAtMost(hits.lastIndex)], query) }, enabled = hits.isNotEmpty() && hitIndex < hits.lastIndex) { Icon(Icons.Default.ChevronRight, "下一处") }
                 FeedbackIconButton(onClick = { query = ""; searchOffset = -1 }) { Icon(Icons.Default.Close, "结束查找") }
             }
-            BoxWithConstraints(Modifier.weight(1f).widthIn(max = 840.dp).fillMaxWidth().align(Alignment.CenterHorizontally).onSizeChanged { viewport = it.height; bodyWidth = it.width }.onGloballyPositioned { bodyTop = it.positionInWindow().y; bodyLeft = it.positionInWindow().x }) {
+            BoxWithConstraints(Modifier.weight(1f).then(if (continuous) Modifier.widthIn(max = 840.dp) else Modifier).fillMaxWidth().align(Alignment.CenterHorizontally).onSizeChanged { viewport = it.height; bodyWidth = it.width }.onGloballyPositioned { bodyTop = it.positionInWindow().y; bodyLeft = it.positionInWindow().x }) {
                 // Native text keeps the actual reader width during lazy item
                 // premeasurement as well as its later placement on screen.
-                val contentWidth = maxWidth
+                val contentWidth = if (continuous) maxWidth else (maxWidth - 40.dp).coerceIn(1.dp, 840.dp)
                 val bodyModifier = Modifier.fillMaxSize().testTag("笔记正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier)
                 val heading: @Composable () -> Unit = {
                     Text(note.title, Modifier.onSizeChanged { titleHeight = it.height }.testTag("笔记原始标题"), style = MaterialTheme.typography.titleLarge)
@@ -617,8 +617,14 @@ private class ReadingPublication {
                                 traceMotion("draw frame=${frame.token} count=${frame.draws} capture=$captureRevision ready=${readyFrames[frame.token]} scroll=${frame.scroll.value}")
                             }
                             drawLayer(layer)
-                        }.background(paperColor).verticalScroll(frame.scroll), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                            Column(Modifier.fillMaxWidth().onSizeChanged { frame.contentHeight = it.height }, verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        }.background(paperColor).verticalScroll(frame.scroll, enabled = false), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            // Capture the entire paper, including blank gutters,
+                            // while preserving the native text's former width.
+                            // ScrollState remains available to search and screen
+                            // navigation; direct vertical drags are disabled.
+                            Column(Modifier.align(Alignment.CenterHorizontally).padding(horizontal = 20.dp)
+                                .widthIn(max = 840.dp).fillMaxWidth().onSizeChanged { frame.contentHeight = it.height }
+                                .padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                 if (frame.page == 0) Column(Modifier.onGloballyPositioned { frame.text.registerVisual(it) }, verticalArrangement = Arrangement.spacedBy(14.dp)) { heading() }
                                 segment(frame.page, frame)
                             }
@@ -672,8 +678,11 @@ private fun Modifier.noteScreenSwipe(mode: String, slop: Float, longPress: Long,
                     if (canceledRelease) canceled = true
                     if (moves++ < 2 || !change.pressed) currentTrace("event mode=$mode pressed=${change.pressed} dx=$dx dy=${delta.y} consumed=${change.isConsumed} age=${change.uptimeMillis - down.uptimeMillis} owner=$owner canceled=$canceled")
                     if (event.changes.count { it.pressed } > 1 || owner == null && change.uptimeMillis - down.uptimeMillis >= longPress) canceled = true
+                    // Once a tap has become a drag, returning to its origin
+                    // cannot turn the release into a new page action.
+                    if (mode == "buttons" && delta.getDistance() >= slop) canceled = true
                     if (owner == null && abs(delta.y) > slop && abs(delta.y) > abs(delta.x)) canceled = true
-                    if (!canceled && owner == null && abs(dx) > slop && abs(dx) > abs(delta.y) * 1.4f) {
+                    if (!canceled && mode == "swipe" && owner == null && abs(dx) > slop && abs(dx) > abs(delta.y) * 1.4f) {
                         owner = currentOnBegin(dx, down.position.y)
                         currentTrace("recognized mode=$mode owner=$owner dx=$dx")
                         if (owner == null) canceled = true

@@ -15,3 +15,9 @@
 - [ ] Prepare1.0.5 with fixed-signature1.0.4 upgrade baseline, complete cloud regression and actual APK/report review before stable publication. Do not claim the existing1.0.4 results validate changed gesture/layout code.
 
 No local Android execution. Every fix review asks whether it introduces new bugs and whether a smaller correct approach exists. Record red/green run IDs below.
+
+## Cloud baseline
+
+40306418256 / 1c6fb3b:194unit pass;7device,5failures exactly matching the reported contracts,0errors/skips. Tap horizontal drag moves native first text fromY275 to-1238; both vertical-drag cases moveY275 to-1357. Paper starts20.19dp inside the phone edge and220dp inside the tablet edge. Continuous control and drag-return control pass. Artifact12643541077 SHA043f12a8e5451c796108987c4b3d45a8f8aed21f8710d7fe0cc6dc2df49a5e9e, downloaded digest verified. No production changes in this baseline.
+
+Fix uses Compose's disabled-touch scrolling with the same programmatic ScrollState, rather than a new pagination engine: https://android.googlesource.com/platform/frameworks/support/+/79353bfe455684ea90e2973087df508359dcecb3/compose/foundation/foundation/src/commonMain/kotlin/androidx/compose/foundation/Scroll.kt . Keep two viewport-sized captures only; full-width blank gutters modestly increase bitmap size. Existing OOM/native fallback is retained. Text width and native first text position are preserved by moving the same20dp horizontal/8dp vertical spacing inside frames, not scaling a narrow snapshot.
