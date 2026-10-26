@@ -12,6 +12,9 @@ if [ "${RAIN_READER_SUITE:-reader}" = modes ]; then
   exit "$status"
 fi
 classes=cn.studybridge.mobile.ReaderExperienceTest,cn.studybridge.mobile.ReaderNativeTapTest,cn.studybridge.mobile.ReaderMotionPreviewTest,cn.studybridge.mobile.ReaderSourceAnnotationTest,cn.studybridge.mobile.ReaderBackwardStabilityTest,cn.studybridge.mobile.ReaderLegacyAnnotationTest,cn.studybridge.mobile.ReaderLayerCaptureTest,cn.studybridge.mobile.ReaderPaperVisualTest,cn.studybridge.mobile.ReaderMotionCompletionTest,cn.studybridge.mobile.ReaderBoundaryRegressionTest,cn.studybridge.mobile.ReaderPreviewSizeTest,cn.studybridge.mobile.ReaderMarkdownLeaseTest
+if [ "${RAIN_READER_SUITE:-reader}" = materials ]; then
+  classes=cn.studybridge.mobile.CourseLibraryUiTest#wideLearningMaterialsSurfaceActuallyPlacesCardsInColumns
+fi
 if [ "${RAIN_READER_SUITE:-reader}" = paper ]; then
   classes=cn.studybridge.mobile.ReaderLayerCaptureTest,cn.studybridge.mobile.ReaderPaperVisualTest,cn.studybridge.mobile.ReaderMotionPreviewTest,cn.studybridge.mobile.ReaderMotionCompletionTest
 fi

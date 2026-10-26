@@ -137,6 +137,30 @@ class CourseLibraryUiTest {
         compose.onNodeWithText("发布时间：2026-10-20 08:00:01", substring = true).assertIsDisplayed()
         compose.onNodeWithContentDescription("关闭学习资料").assertIsDisplayed()
         compose.waitForIdle()
-        advancedUiShot(compose.activity, "sample-courseware-tablet-materials")
+        // Resource metrics/semantics can settle before SurfaceFlinger applies
+        // the resized dialog window. Observe both distant title regions without
+        // forcing a Compose capture: blank windows/wallpaper are not UI proof.
+        val titles = listOf("最新课件", "早期课件").map { compose.onNodeWithText(it).fetchSemanticsNode().boundsInWindow }
+        var initial = true
+        compose.waitUntil(12000) {
+            val bitmap = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+            if (bitmap == null) false else try {
+                if (initial) { saveUiReviewBitmap(compose.activity, "courseware-tablet-initial", bitmap); initial = false }
+                val painted = titles.all { bounds ->
+                    var light = 0; var ink = 0; var total = 0
+                    for (y in bounds.top.toInt().coerceAtLeast(0) until bounds.bottom.toInt().coerceAtMost(bitmap.height) step 2)
+                        for (x in bounds.left.toInt().coerceAtLeast(0) until bounds.right.toInt().coerceAtMost(bitmap.width) step 2) {
+                            val color = bitmap.getPixel(x, y)
+                            val r = android.graphics.Color.red(color); val g = android.graphics.Color.green(color); val b = android.graphics.Color.blue(color)
+                            if (r > 180 && g > 180 && b > 180) light++
+                            if (r < 150 && g < 150 && b < 150) ink++
+                            total++
+                        }
+                    light > total / 2 && ink > 10
+                }
+                if (painted) saveUiReviewBitmap(compose.activity, "sample-courseware-tablet-materials", bitmap)
+                painted
+            } finally { bitmap.recycle() }
+        }
     }
 }
