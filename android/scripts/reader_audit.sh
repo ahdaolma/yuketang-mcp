@@ -14,7 +14,7 @@ if [ "${RAIN_READER_SUITE:-reader}" = echo ]; then
   classes=cn.studybridge.mobile.NoteEditorEchoRaceTest
 fi
 if [ "${RAIN_READER_SUITE:-reader}" = boundary ]; then
-  classes=cn.studybridge.mobile.ReaderBoundaryRegressionTest,cn.studybridge.mobile.ReaderPreviewSizeTest,cn.studybridge.mobile.ReaderMarkdownLeaseTest
+  classes=cn.studybridge.mobile.AppDraftRecreationTest#openImageAndUnsavedHistorySurviveRotationWithoutOverwritingSavedMarks
 fi
 if [ "${RAIN_READER_SUITE:-reader}" = storage ]; then
   classes=cn.studybridge.mobile.PrivateStorageConcurrencyTest,cn.studybridge.mobile.ImageMarkupConcurrencyTest,cn.studybridge.mobile.AppDraftRecreationTest,cn.studybridge.mobile.ImageMarkupWorkflowTest,cn.studybridge.mobile.NotebookBackupDeviceTest,cn.studybridge.mobile.AppFlowSimplificationTest

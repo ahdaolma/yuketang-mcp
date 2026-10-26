@@ -99,7 +99,9 @@ class AppDraftRecreationTest {
                 assertEquals(listOf(original), images.markupStore.load(id))
                 compose.onNodeWithText("撤销").performScrollTo().performClick()
                 compose.onNodeWithTag("image-markup-canvas").assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription, "2 笔批注，缩放 1.0"))
-                advancedUiShot(compose.activity, "sample-image-draft-rotated")
+                settledImageShot()
+                assertViewerStatusBarHidden()
+                compose.onNodeWithTag("image-markup-canvas").assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription, "2 笔批注，缩放 1.0"))
                 compose.onNodeWithText("保存批注").performClick()
                 compose.waitUntil(5000) { images.markupStore.load(id).size == 2 }
                 assertEquals(original, images.markupStore.load(id).first())
@@ -110,6 +112,28 @@ class AppDraftRecreationTest {
                 compose.onNodeWithTag("image-markup-canvas").assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.StateDescription, "2 笔批注，缩放 1.0"))
             } finally { compose.activityRule.scenario.onActivity { it.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED } }
         }
+    }
+
+    private fun settledImageShot() {
+        var previous: android.graphics.Bitmap? = null
+        var identicalFrames = 0
+        val automation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation
+        try {
+            repeat(80) { sample ->
+                compose.waitForIdle()
+                val bitmap = requireNotNull(automation.takeScreenshot())
+                if (sample == 0) saveUiReviewBitmap(compose.activity, "image-rotation-initial", bitmap)
+                identicalFrames = if (bitmap.width > bitmap.height && previous?.sameAs(bitmap) == true) identicalFrames + 1 else 0
+                android.util.Log.i("SettledImage", "sample=$sample size=${bitmap.width}x${bitmap.height} identical=$identicalFrames")
+                previous?.recycle(); previous = bitmap
+                if (identicalFrames >= 3) {
+                    saveUiReviewBitmap(compose.activity, "image-rotation-settled", bitmap)
+                    return
+                }
+                android.os.SystemClock.sleep(80)
+            }
+            error("Landscape pixels did not settle after rotating the actual image window")
+        } finally { previous?.recycle() }
     }
 
     private fun canvasReady() {
