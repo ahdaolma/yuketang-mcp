@@ -101,7 +101,7 @@ class ReaderModeContractTest {
         val outerPixels = compose.onNodeWithTag("笔记阅读页").fetchSemanticsNode().boundsInWindow
         if (style == "cover") assertTrue("Tablet fixture must exercise a genuinely wide reading window", (outer.right - outer.left).value > 880f)
         val body = compose.onNodeWithTag("笔记正文").getUnclippedBoundsInRoot()
-        advancedUiShot(compose.activity, "reader-mode-$style-before")
+        if (android.os.Build.VERSION.SDK_INT > 26) advancedUiShot(compose.activity, "reader-mode-$style-before")
         assertEquals("Paper must include the left gutter", outer.left.value, body.left.value, 1f)
         assertEquals("Paper must include the right gutter", outer.right.value, body.right.value, 1f)
         compose.runOnIdle {
@@ -112,6 +112,9 @@ class ReaderModeContractTest {
             assertEquals("Native text width must exactly match the padded paper even at fractional density", expectedWidth, view.width)
         }
         val before = compose.onNodeWithTag("笔记正文").captureToImage().asAndroidBitmap().copy(Bitmap.Config.ARGB_8888, false)!!
+        // Legacy UiAutomation may return a null system screenshot after wm
+        // resizing. The paper PixelCopy is the actual surface under test.
+        if (android.os.Build.VERSION.SDK_INT <= 26) saveUiReviewBitmap(compose.activity, "reader-mode-$style-before", before)
         compose.mainClock.autoAdvance = false
         try {
             compose.onNodeWithTag("笔记正文").performTouchInput { down(Offset(width * .85f, height * .6f)); moveTo(Offset(width * .5f, height * .6f), 220) }
