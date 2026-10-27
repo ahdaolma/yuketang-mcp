@@ -12,19 +12,18 @@ internal class ReaderTextRegistry {
     private val views = mutableMapOf<Pair<Int, Int>, WeakReference<TextView>>()
     private val visuals = java.util.WeakHashMap<LayoutCoordinates, Unit>()
     fun registerVisual(coordinates: LayoutCoordinates) { visuals[coordinates] = Unit }
-    fun screenOffsets(offset: Int, maximum: Int, viewport: Int, bodyTop: Float, clearance: Int): List<Int> {
-        val lines = views.values.flatMap { reference ->
+    fun lineBoxes(offset: Int, bodyLeft: Float, bodyTop: Float): List<RectF> =
+        views.values.flatMap { reference ->
             val view = reference.get()
             if (view == null || !view.isAttachedToWindow || view.alpha < .99f || view.layout == null) emptyList()
             else {
                 val location = IntArray(2); view.getLocationInWindow(location)
-                val origin = location[1] + view.totalPaddingTop - view.scrollY + offset - bodyTop
+                val x = location[0] + view.totalPaddingLeft - view.scrollX - bodyLeft
+                val y = location[1] + view.totalPaddingTop - view.scrollY + offset - bodyTop
                 val boxes = if (view is NoteSelectableTextView) view.readerLines() else readerNativeLines(view, (8 * view.resources.displayMetrics.density).toInt())
-                boxes.map { ReaderLineBand(kotlin.math.ceil(origin + it.top).toInt(), kotlin.math.ceil(origin + it.bottom).toInt()) }
+                boxes.map { RectF(it).apply { offset(x, y) } }
             }
-        }
-        return readerScreenOffsets(maximum, viewport, clearance, lines)
-    }
+        }.sortedBy { it.top }
     // Only actual glyphs intersecting the floating tool require end clearance.
     // A full-width TextView box alone would treat a short left-aligned last
     // line as occluded and manufacture a padding-only reading screen.

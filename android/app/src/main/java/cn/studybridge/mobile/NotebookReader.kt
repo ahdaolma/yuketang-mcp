@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -72,6 +73,7 @@ private class ReadingFrame(val page: Int, val token: Int) {
     val text = ReaderTextRegistry()
     var positioned by mutableStateOf(false)
     var contentHeight = Int.MAX_VALUE
+    var lines by mutableStateOf<List<android.graphics.RectF>>(emptyList())
     var layer: GraphicsLayer? = null
     var draws = 0
     var captureRequest by mutableIntStateOf(0)
@@ -275,6 +277,10 @@ private class ReadingPublication {
         traceMotion("ready gen=${commands.generation} page=$page frame=${destination?.token}")
         withFrameNanos { }; withFrameNanos { }
         val registry = destination?.text ?: continuousText
+        // Snapshot measured content coordinates before scrolling. Native view
+        // display lists can be reused after a parent scroll; viewport clipping
+        // therefore belongs to the paper's draw, never TextView.onDraw.
+        if (destination != null) destination.lines = registry.lineBoxes(0, bodyLeft, bodyTop)
         val destinationScroll = destination?.scroll
         val view = anchor?.let { registry.find(page, it.sourceStart) }
         if (view != null && anchor != null) {
@@ -410,7 +416,8 @@ private class ReadingPublication {
     fun canTurn() = !continuous && !commands.busy && restored && renderReady && commands.settled == commands.generation
     fun nextScreen(frame: ReadingFrame, direction: Int): Int {
         if (direction > 0 && endIsVisible(frame)) return frame.scroll.value
-        val offsets = frame.text.screenOffsets(frame.scroll.value, frame.scroll.maxValue, viewport, bodyTop, with(density) { 64.dp.roundToPx() })
+        val offsets = readerScreenOffsets(frame.scroll.maxValue, viewport, with(density) { 64.dp.roundToPx() },
+            frame.lines.map { ReaderLineBand(kotlin.math.ceil(it.top).toInt(), kotlin.math.ceil(it.bottom).toInt()) })
         return if (direction > 0) offsets.firstOrNull { it > frame.scroll.value } ?: frame.scroll.value
             else offsets.lastOrNull { it < frame.scroll.value } ?: frame.scroll.value
     }
@@ -588,10 +595,6 @@ private class ReadingPublication {
                         else if (epoch == renderEpoch) { if (ready) readyPages[page] = epoch else readyPages.remove(page) }; Unit },
                         LocalNoteTextRegistered provides { view, start -> (frame?.text ?: continuousText).register(page, start, view) }, LocalNoteContentWidth provides contentWidth,
                         LocalNoteVisualRegistered provides frame?.let { { coordinates -> it.text.registerVisual(coordinates) } },
-                        LocalNotePageWindow provides if (frame == null) null else ({
-                            ReaderPageWindow(android.graphics.RectF(bodyLeft, bodyTop, bodyLeft + bodyWidth, bodyTop + viewport),
-                                with(density) { android.graphics.RectF(bodyLeft + bodyWidth - 64.dp.toPx(), bodyTop + viewport - 64.dp.toPx(), bodyLeft + bodyWidth, bodyTop + viewport) })
-                        }),
                         LocalNoteSearchTarget provides (if (frame == null || frame === activeFrame) target else null),
                         LocalNotePageTap provides (if (frame == null || frame === activeFrame) pageTap else null)) {
                         IllustratedMarkdown(shown, vm.sourceImages, part.start - part.prefix.length + raw.length - shown.length, part.sourceForDisplay(note.content, raw.length - shown.length))
@@ -627,7 +630,25 @@ private class ReadingPublication {
                         // changes still invalidate this layer independently.
                         Column(Modifier.fillMaxSize().graphicsLayer().drawWithContent {
                             val captureRevision = frame.captureRequest
-                            layer.record { this@drawWithContent.drawContent() }
+                            val offset = frame.scroll.value
+                            val lines = frame.lines
+                            val inset = with(density) { 64.dp.toPx() }
+                            layer.record {
+                                drawRect(paperColor)
+                                val canvas = drawContext.canvas.nativeCanvas
+                                val save = canvas.save()
+                                try {
+                                    val obstacle = android.graphics.RectF(size.width - inset, size.height - inset, size.width, size.height)
+                                    for (line in lines) {
+                                        val bounds = android.graphics.RectF(line).apply { offset(0f, -offset.toFloat()) }
+                                        if (bounds.top >= size.height) break
+                                        if (bounds.bottom <= 0) continue
+                                        if (bounds.top < 0 || bounds.bottom > size.height || android.graphics.RectF.intersects(bounds, obstacle))
+                                            canvas.clipOutRect(bounds.left - density.density * 2, bounds.top, bounds.right + density.density * 2, bounds.bottom)
+                                    }
+                                    this@drawWithContent.drawContent()
+                                } finally { canvas.restoreToCount(save) }
+                            }
                             frame.recordedCapture = captureRevision
                             frame.draws++
                             if (debugMotion) androidx.compose.runtime.snapshots.Snapshot.withoutReadObservation {

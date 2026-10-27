@@ -35,5 +35,3 @@ internal fun readerNativeLines(view: TextView, cellPadding: Int): List<RectF> {
     }
     return result.sortedBy { it.top }
 }
-
-internal data class ReaderPageWindow(val bounds: RectF, val tool: RectF)

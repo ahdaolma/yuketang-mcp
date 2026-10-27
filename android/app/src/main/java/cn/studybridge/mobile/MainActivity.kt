@@ -241,7 +241,6 @@ class MainActivity : ComponentActivity() {
     val renderReady = LocalNoteRenderReady.current
     val registerText = LocalNoteTextRegistered.current
     val onPageTap = LocalNotePageTap.current
-    val pageWindow = LocalNotePageWindow.current
     val annotationBlock = remember(formatted, text, annotationSource, syntheticPrefixLength) {
         annotationSource?.copy(annotationStart = formatted?.takeIf { it.first == text }?.third ?: Int.MAX_VALUE, renderPrefix = text.take(syntheticPrefixLength))
     }
@@ -266,7 +265,6 @@ class MainActivity : ComponentActivity() {
         if (kotlin.math.abs(it.textSize - bodySize) > 0.1f) it.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, bodySize)
         it.controller = if (decorated != null) selectionController else null
         it.onPageTap = if (decorated != null) onPageTap else null
-        it.readerPageWindow = pageWindow
         it.readerTableCellPadding = (8 * density).toInt()
         it.block = if (decorated != null) annotationBlock else null
         if (selectionController != null) it.useApplicationMenu() else it.customSelectionActionModeCallback = null
