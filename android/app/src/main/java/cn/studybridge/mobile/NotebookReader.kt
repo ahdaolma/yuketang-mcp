@@ -595,6 +595,15 @@ private class ReadingPublication {
                         else if (epoch == renderEpoch) { if (ready) readyPages[page] = epoch else readyPages.remove(page) }; Unit },
                         LocalNoteTextRegistered provides { view, start -> (frame?.text ?: continuousText).register(page, start, view) }, LocalNoteContentWidth provides contentWidth,
                         LocalNoteVisualRegistered provides frame?.let { { coordinates -> it.text.registerVisual(coordinates) } },
+                        LocalNoteTextTouch provides frame?.let { current -> { x, y ->
+                            val line = current.lines.firstOrNull { it.contains(x - bodyLeft, y - bodyTop + current.scroll.value) }
+                            if (line == null) true else {
+                                val bounds = android.graphics.RectF(line).apply { offset(0f, -current.scroll.value.toFloat()) }
+                                val inset = with(density) { 64.dp.toPx() }
+                                bounds.top >= 0 && bounds.bottom <= viewport && !android.graphics.RectF.intersects(bounds,
+                                    android.graphics.RectF(bodyWidth - inset, viewport - inset, bodyWidth.toFloat(), viewport.toFloat()))
+                            }
+                        } },
                         LocalNoteSearchTarget provides (if (frame == null || frame === activeFrame) target else null),
                         LocalNotePageTap provides (if (frame == null || frame === activeFrame) pageTap else null)) {
                         IllustratedMarkdown(shown, vm.sourceImages, part.start - part.prefix.length + raw.length - shown.length, part.sourceForDisplay(note.content, raw.length - shown.length))
@@ -608,6 +617,8 @@ private class ReadingPublication {
                         }
                     }, verticalArrangement = Arrangement.spacedBy(14.dp)) { segment(page, null) } }
                 } else Box(bodyModifier.clipToBounds().semantics {
+                    this[ReaderReadyKey] = canTurn()
+                    this[ReaderGenerationKey] = commands.generation
                     verticalScrollAxisRange = ScrollAxisRange({ activeFrame.scroll.value.toFloat() }, { activeFrame.scroll.maxValue.toFloat() })
                 }.noteScreenSwipe(mode, configuration.touchSlop, configuration.longPressTimeoutMillis, with(density) { 56.dp.toPx() },
                     enabled = { (canTurn() && selectionController?.selection == null).also {

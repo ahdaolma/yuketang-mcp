@@ -13,9 +13,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Upgrade/R8 checks plus the complete device suite exceeded 45 minutes
-    # while still making progress (180/193, no failures). Keep the full suite.
-    timeout-minutes: 60
+    # Keep the full suite, including long-table glyph pixel checks in portrait
+    # and landscape, R8 and upgrade verification. Do not trim regression cases.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4

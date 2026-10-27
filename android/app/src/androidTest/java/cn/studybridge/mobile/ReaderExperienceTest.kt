@@ -14,6 +14,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -117,6 +118,13 @@ class ReaderExperienceTest {
 
     private fun readingOffset(): Float = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].value()
     private fun readingMaximum(): Float = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange].maxValue()
+    private fun awaitPagedIdle(after: Int? = null) {
+        compose.waitUntil(15000) {
+            val config = compose.onAllNodesWithTag("笔记正文").fetchSemanticsNodes().firstOrNull()?.config
+            config?.getOrNull(ReaderReadyKey) == true && (after == null || (config.getOrNull(ReaderGenerationKey) ?: -1) > after)
+        }
+    }
+    private fun readerGeneration() = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config[ReaderGenerationKey]
     private fun setMode(vm: StudyViewModel, mode: String, label: String) {
         compose.openNoteTool("阅读设置")
         compose.onNodeWithText(label).performScrollTo().performClick()
@@ -229,12 +237,15 @@ class ReaderExperienceTest {
                 compose.runOnIdle { vm.updateNotebookState { it.copy(notePageAnimation = animation) } }
                 setMode(vm, mode, NOTE_READING_MODES.getValue(mode))
                 jump("整本开头")
+                awaitPagedIdle()
                 repeat(5) { screen ->
+                    val generation = readerGeneration()
                     compose.onNodeWithTag("笔记正文").performTouchInput {
                         if (mode == "buttons") click(Offset(width * .92f, height * .5f))
                         else swipeLeft(durationMillis = 220)
                     }
                     compose.waitForIdle()
+                    awaitPagedIdle(generation)
                     advancedUiShot(compose.activity, "reader-edge-$animation-$mode-$screen")
                     nativeSnapshot { views -> views.filter { it.isShown && it.alpha >= .99f }.forEach { view ->
                         val layout = view.layout ?: return@forEach
@@ -268,24 +279,30 @@ class ReaderExperienceTest {
             compose.waitUntil(15000) { compose.activity.resources.displayMetrics.widthPixels > 1700 && compose.activity.lifecycle.currentState == Lifecycle.State.RESUMED }
         }
         try {
+            val picture = Bitmap.createBitmap(64, 8, Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.rgb(190, 218, 235)) }
+            val bytes = java.io.ByteArrayOutputStream().also { picture.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+            picture.recycle()
+            val image = "data:image/png;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
             val content = "## 资料 · 第 1 页\n\n### 从条件到结论\n\n" +
                 "==核心条件==与 x²、单位和原始依据需要一起保留。".repeat(8) +
+                "\n\n" + sourceImageMarkdown(imageDigest(bytes), "合成原页") +
                 "\n\n| 项目 | 定义与过程 | 条件与数值 |\n| --- | --- | --- |\n" +
                 "| 阶段甲 | " + "先确认方向，再联系步骤与因果。".repeat(24) + " | " + "边界条件不同，结论不可混用。".repeat(19) + " |\n" +
                 "| 阶段乙 | 短定义 | 0.2 s；x² |\n\n!!图中刻度不自动等于指标范围。!!\n\n" +
                 "FINAL_SOURCE。原始依据与 AI 补充要区分。"
             val note = Note(title = "整行与表格阅读", content = content, source = "合成资料", model = "fixture")
-            withReader(note, heightFraction = if (landscape) null else mutableStateOf(.63f)) { _, vm ->
+            withReader(note, setup = { app -> SourceImages(app).save(image) }, heightFraction = if (landscape) null else mutableStateOf(.63f)) { _, vm ->
                 compose.runOnIdle { vm.updateNotebookState { it.copy(noteFontSize = 27) } }
                 setMode(vm, "buttons", "点击翻页")
                 for (animation in listOf("cover", "curl")) {
                     compose.runOnIdle { vm.updateNotebookState { it.copy(notePageAnimation = animation) } }
                     jump("整本开头")
+                    awaitPagedIdle()
                     val expected = mutableSetOf<String>(); val seen = mutableSetOf<String>()
                     val forward = mutableListOf<Float>()
                     var complete = false
                     for (screen in 0 until 70) {
-                        compose.mainClock.advanceTimeBy(1200); compose.waitForIdle()
+                        awaitPagedIdle()
                         val lines = nativeSnapshot { views -> views.filter { it.isShown && it.alpha >= .99f }.flatMap { view ->
                             val layout = view.layout ?: return@flatMap emptyList()
                             val location = IntArray(2); view.getLocationOnScreen(location)
@@ -343,18 +360,20 @@ class ReaderExperienceTest {
                                 assertEquals("Partial edge line must not paint cropped glyphs: $key at $bounds", 0, darkPixels(visible))
                             }
                         }
+                        if (screen < 3 || screen % 4 == 0) saveUiReviewBitmap(compose.activity, "reader-rich-$landscape-$animation-$screen", bitmap)
                         bitmap.recycle()
-                        if (screen < 3 || screen % 4 == 0) advancedUiShot(compose.activity, "reader-rich-$landscape-$animation-$screen")
                         val before = readingOffset(); forward += before
+                        val generation = readerGeneration()
                         compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * .92f, height * .5f)) }
-                        compose.mainClock.advanceTimeBy(1200); compose.waitForIdle()
+                        awaitPagedIdle(generation)
                         if (readingOffset() == before) { complete = true; break }
                     }
                     assertTrue("Must reach source end", complete)
                     assertEquals("Every cell/body line must actually paint on some settled screen; missing=${expected - seen}", expected, seen)
                     for (offset in forward.dropLast(1).asReversed()) {
+                        val generation = readerGeneration()
                         compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * .08f, height * .5f)) }
-                        compose.mainClock.advanceTimeBy(1200); compose.waitForIdle()
+                        awaitPagedIdle(generation)
                         assertEquals("Reverse must retrace the measured screens", offset, readingOffset(), 1f)
                     }
                 }
@@ -364,6 +383,31 @@ class ReaderExperienceTest {
 
     @Test fun richPagedEdgesPaintEveryTableAndBodyLineWithoutHalfGlyphs() = inspectRichPagedInk(false)
     @Test fun landscapePagedEdgesPaintEveryTableAndBodyLineWithoutHalfGlyphs() = inspectRichPagedInk(true)
+
+    @Test fun hiddenEdgeTextCannotOpenSelectionButItsBlankAreaCanStillTurnThePage() {
+        withReader(fullNote(), heightFraction = mutableStateOf(.571f)) { _, vm ->
+            compose.runOnIdle { vm.updateNotebookState { it.copy(noteFontSize = 27) } }
+            setMode(vm, "buttons", "点击翻页"); jump("整本开头")
+            awaitPagedIdle()
+            val touchY = nativeSnapshot { views ->
+                views.firstNotNullOfOrNull { view ->
+                    val layout = view.layout ?: return@firstNotNullOfOrNull null
+                    val position = IntArray(2); view.getLocationOnScreen(position)
+                    val origin = position[1] + view.totalPaddingTop - view.scrollY
+                    (0 until layout.lineCount).firstOrNull { line -> origin + layout.getLineTop(line) < readingViewport.bottom - 2 && origin + layout.getLineBottom(line) > readingViewport.bottom + 2 }?.let { line ->
+                        (origin + layout.getLineTop(line) + readingViewport.bottom) / 2f - readingViewport.top
+                    }
+                }
+            }
+            assertNotNull("Fixture must expose a clipped bottom line", touchY)
+            val before = readingOffset()
+            compose.onNodeWithTag("笔记正文").performTouchInput { longClick(Offset(width * .75f, touchY!!)) }
+            compose.onNodeWithTag("正文选词工具条").assertDoesNotExist()
+            assertEquals(before, readingOffset(), 1f)
+            compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * .75f, touchY!!)) }
+            compose.waitUntil(8000) { readingOffset() > before }
+        }
+    }
 
     @Test fun twoShortPagesSettleAtBothEndsWithoutChangingLayoutAfterTheGesture() {
         val note = Note(title = "两页短笔记", content = (1..2).joinToString("\n\n") { page ->

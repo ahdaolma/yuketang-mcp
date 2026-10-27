@@ -86,11 +86,17 @@ class NoteSelectableTextView(context: Context) : TextView(context) {
     init { isHapticFeedbackEnabled = false }
     internal var readerTableCellPadding: Int = (8 * resources.displayMetrics.density).toInt()
     private var geometryLayout: android.text.Layout? = null
+    private var geometryText: CharSequence? = null
+    private var geometryWidth = -1
+    private var geometrySize = -1f
+    private var geometryHeight = -1
     private var geometryPadding = -1
     private var geometryLines: List<RectF> = emptyList()
     internal fun readerLines(): List<RectF> {
-        if (layout !== geometryLayout || readerTableCellPadding != geometryPadding) {
+        if (layout !== geometryLayout || text !== geometryText || width != geometryWidth || textSize != geometrySize ||
+            layout?.height != geometryHeight || readerTableCellPadding != geometryPadding) {
             geometryLayout = layout; geometryPadding = readerTableCellPadding
+            geometryText = text; geometryWidth = width; geometrySize = textSize; geometryHeight = layout?.height ?: -1
             geometryLines = readerNativeLines(this, readerTableCellPadding)
         }
         return geometryLines
@@ -99,6 +105,7 @@ class NoteSelectableTextView(context: Context) : TextView(context) {
     var block: NoteSelectionBlock? = null
     var controller: NoteSelectionController? = null
     var onPageTap: ((Float) -> Unit)? = null
+    internal var allowTextTouch: ((Float, Float) -> Boolean)? = null
     private var applicationActionMode: ActionMode? = null
     private val selectionLayoutListener = ViewTreeObserver.OnPreDrawListener {
         // Parent scrolling and window/IME changes do not call onSelectionChanged.
@@ -192,6 +199,14 @@ class NoteSelectableTextView(context: Context) : TextView(context) {
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             downX = event.x; downY = event.y; downAt = event.eventTime
             selectionOwnedGesture = controller?.selection != null || selectionStart >= 0 && selectionEnd > selectionStart
+            val textTouch = allowTextTouch
+            if (!selectionOwnedGesture && textTouch != null) {
+                val location = IntArray(2); getLocationInWindow(location)
+                if (!textTouch(location[0] + event.x, location[1] + event.y)) {
+                    tapCandidate = false
+                    return false
+                }
+            }
             tapCandidate = true
         }
         if (event.pointerCount > 1 || event.actionMasked == MotionEvent.ACTION_CANCEL) tapCandidate = false
