@@ -110,7 +110,7 @@ class NoteSelectableTextView(context: Context) : TextView(context) {
                 val bounds = RectF(line).apply { offset(originX.toFloat(), originY.toFloat()) }
                 if (bounds.top >= window.bounds.bottom) break
                 if (bounds.bottom <= window.bounds.top) continue
-                if (!window.bounds.contains(bounds) || RectF.intersects(bounds, window.tool)) {
+                if (bounds.top < window.bounds.top || bounds.bottom > window.bounds.bottom || RectF.intersects(bounds, window.tool)) {
                     // A hidden edge line fits completely on an adjacent screen;
                     // table-cell inner lines must be treated independently.
                     canvas.clipOutRect(line.left + totalPaddingLeft - 1, line.top + totalPaddingTop,

@@ -254,8 +254,8 @@ private class ReadingPublication {
     fun endIsVisible(frame: ReadingFrame): Boolean {
         if (frame.contentHeight.toLong() - frame.scroll.value > viewport) return false
         val tool = with(density) {
-            android.graphics.RectF(bodyLeft + bodyWidth - 56.dp.toPx(), bodyTop + viewport - 56.dp.toPx(),
-                bodyLeft + bodyWidth - 8.dp.toPx(), bodyTop + viewport - 8.dp.toPx())
+            android.graphics.RectF(bodyLeft + bodyWidth - 64.dp.toPx(), bodyTop + viewport - 64.dp.toPx(),
+                bodyLeft + bodyWidth, bodyTop + viewport)
         }
         return !frame.text.contentIntersects(tool)
     }

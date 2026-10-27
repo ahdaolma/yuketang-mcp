@@ -26,9 +26,9 @@ internal fun readerNativeLines(view: TextView, cellPadding: Int): List<RectF> {
             val offset = top + cellPadding + (layout.getLineBottom(line) - top - height) / 4
             for ((column, cell) in cells) for (inner in 0 until cell.lineCount) {
                 if (cell.getLineLeft(inner) < cell.getLineRight(inner)) result += RectF(
-                    (column * width + cellPadding) + cell.getLineLeft(inner),
+                    layout.getLineLeft(line) + (column * width + cellPadding) + cell.getLineLeft(inner),
                     (offset + cell.getLineTop(inner)).toFloat(),
-                    (column * width + cellPadding) + cell.getLineRight(inner),
+                    layout.getLineLeft(line) + (column * width + cellPadding) + cell.getLineRight(inner),
                     (offset + cell.getLineBottom(inner)).toFloat())
             }
         }

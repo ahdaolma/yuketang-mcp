@@ -257,6 +257,114 @@ class ReaderExperienceTest {
         }
     }
 
+    private data class InkLine(val key: String, val bounds: android.graphics.RectF)
+    private fun inspectRichPagedInk(landscape: Boolean) {
+        fun shell(command: String) = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command).let {
+            android.os.ParcelFileDescriptor.AutoCloseInputStream(it).bufferedReader().use { input -> input.readText() }
+        }
+        if (landscape) {
+            check(shell("getprop ro.kernel.qemu").trim() == "1")
+            shell("wm size 1920x1080"); shell("wm density 320")
+            compose.waitUntil(15000) { compose.activity.resources.displayMetrics.widthPixels > 1700 && compose.activity.lifecycle.currentState == Lifecycle.State.RESUMED }
+        }
+        try {
+            val content = "## 资料 · 第 1 页\n\n### 从条件到结论\n\n" +
+                "==核心条件==与 x²、单位和原始依据需要一起保留。".repeat(8) +
+                "\n\n| 项目 | 定义与过程 | 条件与数值 |\n| --- | --- | --- |\n" +
+                "| 阶段甲 | " + "先确认方向，再联系步骤与因果。".repeat(24) + " | " + "边界条件不同，结论不可混用。".repeat(19) + " |\n" +
+                "| 阶段乙 | 短定义 | 0.2 s；x² |\n\n!!图中刻度不自动等于指标范围。!!\n\n" +
+                "FINAL_SOURCE。原始依据与 AI 补充要区分。"
+            val note = Note(title = "整行与表格阅读", content = content, source = "合成资料", model = "fixture")
+            withReader(note, heightFraction = if (landscape) null else mutableStateOf(.63f)) { _, vm ->
+                compose.runOnIdle { vm.updateNotebookState { it.copy(noteFontSize = 27) } }
+                setMode(vm, "buttons", "点击翻页")
+                for (animation in listOf("cover", "curl")) {
+                    compose.runOnIdle { vm.updateNotebookState { it.copy(notePageAnimation = animation) } }
+                    jump("整本开头")
+                    val expected = mutableSetOf<String>(); val seen = mutableSetOf<String>()
+                    val forward = mutableListOf<Float>()
+                    var complete = false
+                    for (screen in 0 until 70) {
+                        compose.mainClock.advanceTimeBy(1200); compose.waitForIdle()
+                        val lines = nativeSnapshot { views -> views.filter { it.isShown && it.alpha >= .99f }.flatMap { view ->
+                            val layout = view.layout ?: return@flatMap emptyList()
+                            val location = IntArray(2); view.getLocationOnScreen(location)
+                            val x = location[0] + view.totalPaddingLeft - view.scrollX
+                            val y = location[1] + view.totalPaddingTop - view.scrollY
+                            val rows = (view.text as? Spanned)?.getSpans(0, view.text.length, io.noties.markwon.ext.tables.TableRowSpan::class.java).orEmpty()
+                            val result = mutableListOf<InkLine>()
+                            val id = view.block?.sourceStart ?: -1
+                            for (line in 0 until layout.lineCount) {
+                                val row = rows.firstOrNull { (view.text as Spanned).getSpanStart(it) in layout.getLineStart(line) until layout.getLineEnd(line) }
+                                if (row == null) {
+                                    if (layout.getLineLeft(line) < layout.getLineRight(line)) result += InkLine("$id:text:${layout.getLineStart(line)}",
+                                        android.graphics.RectF(x + layout.getLineLeft(line), (y + layout.getLineTop(line)).toFloat(), x + layout.getLineRight(line), (y + layout.getLineBottom(line)).toFloat()))
+                                } else {
+                                    val cellWidth = row.cellWidth()
+                                    if (cellWidth <= 0) continue
+                                    val cells = (0 until (layout.width + cellWidth - 1) / cellWidth).mapNotNull { col -> row.findLayoutForHorizontalOffset(col * cellWidth)?.let { col to it } }
+                                    val padding = (8 * compose.activity.resources.displayMetrics.density).toInt()
+                                    val top = y + layout.getLineTop(line) + padding + (layout.getLineBottom(line) - layout.getLineTop(line) - (cells.maxOfOrNull { it.second.height } ?: 0)) / 4
+                                    for ((col, cell) in cells) for (inner in 0 until cell.lineCount) if (cell.getLineLeft(inner) < cell.getLineRight(inner)) {
+                                        result += InkLine("$id:row:${layout.getLineStart(line)}:$col:${cell.getLineStart(inner)}", android.graphics.RectF(
+                                            x + col * cellWidth + padding + cell.getLineLeft(inner), (top + cell.getLineTop(inner)).toFloat(),
+                                            x + col * cellWidth + padding + cell.getLineRight(inner), (top + cell.getLineBottom(inner)).toFloat()))
+                                    }
+                                }
+                            }
+                            result
+                        } }
+                        assertTrue("Inspect actual table inner lines", lines.size > 30)
+                        expected += lines.map { it.key }
+                        val tool = compose.onNodeWithTag("笔记悬浮工具").fetchSemanticsNode().boundsInWindow
+                        val margin = 8 * compose.activity.resources.displayMetrics.density
+                        val obstacle = android.graphics.RectF(tool.left - margin, tool.top - margin, tool.right + margin, tool.bottom + margin)
+                        val viewport = android.graphics.RectF(readingViewport)
+                        val bitmap = compose.onNodeWithTag("笔记正文").captureToImage().asAndroidBitmap()
+                        fun darkPixels(rect: android.graphics.RectF): Int {
+                            val left = kotlin.math.ceil(rect.left - readingViewport.left).toInt().coerceIn(0, bitmap.width)
+                            val right = kotlin.math.floor(rect.right - readingViewport.left).toInt().coerceIn(left, bitmap.width)
+                            val top = kotlin.math.ceil(rect.top - readingViewport.top).toInt().coerceIn(0, bitmap.height)
+                            val bottom = kotlin.math.floor(rect.bottom - readingViewport.top).toInt().coerceIn(top, bitmap.height)
+                            var count = 0
+                            for (y in top until bottom step 2) for (x in left until right step 2) {
+                                if (obstacle.contains((x + readingViewport.left).toFloat(), (y + readingViewport.top).toFloat())) continue
+                                val color = bitmap.getPixel(x, y)
+                                if (android.graphics.Color.red(color) + android.graphics.Color.green(color) + android.graphics.Color.blue(color) < 390) count++
+                            }
+                            return count
+                        }
+                        for ((key, bounds) in lines) {
+                            if (viewport.contains(bounds) && !android.graphics.RectF.intersects(obstacle, bounds)) {
+                                assertTrue("Fully visible line must actually paint: $key at $bounds screen=$screen landscape=$landscape", darkPixels(bounds) > 2)
+                                seen += key
+                            } else if (android.graphics.RectF.intersects(viewport, bounds) && (bounds.top < viewport.top || bounds.bottom > viewport.bottom)) {
+                                val visible = android.graphics.RectF(bounds).apply { intersect(viewport) }
+                                assertEquals("Partial edge line must not paint cropped glyphs: $key at $bounds", 0, darkPixels(visible))
+                            }
+                        }
+                        bitmap.recycle()
+                        if (screen < 3 || screen % 4 == 0) advancedUiShot(compose.activity, "reader-rich-$landscape-$animation-$screen")
+                        val before = readingOffset(); forward += before
+                        compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * .92f, height * .5f)) }
+                        compose.mainClock.advanceTimeBy(1200); compose.waitForIdle()
+                        if (readingOffset() == before) { complete = true; break }
+                    }
+                    assertTrue("Must reach source end", complete)
+                    assertEquals("Every cell/body line must actually paint on some settled screen; missing=${expected - seen}", expected, seen)
+                    for (offset in forward.dropLast(1).asReversed()) {
+                        compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * .08f, height * .5f)) }
+                        compose.mainClock.advanceTimeBy(1200); compose.waitForIdle()
+                        assertEquals("Reverse must retrace the measured screens", offset, readingOffset(), 1f)
+                    }
+                }
+            }
+        } finally { if (landscape) { shell("wm size reset"); shell("wm density reset") } }
+    }
+
+    @Test fun richPagedEdgesPaintEveryTableAndBodyLineWithoutHalfGlyphs() = inspectRichPagedInk(false)
+    @Test fun landscapePagedEdgesPaintEveryTableAndBodyLineWithoutHalfGlyphs() = inspectRichPagedInk(true)
+
     @Test fun twoShortPagesSettleAtBothEndsWithoutChangingLayoutAfterTheGesture() {
         val note = Note(title = "两页短笔记", content = (1..2).joinToString("\n\n") { page ->
             "## 第 $page 页\n\n" + (1..7).joinToString("\n\n") { "第${page}页短段落${it}。" }
