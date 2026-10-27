@@ -219,6 +219,40 @@ class ReaderExperienceTest {
     @Test fun everyRenderedNativeLineRemainsReachableAtLargeFontInEachMode() = inspectEveryNativeLine("curl")
     @Test fun coverKeepsEveryRenderedNativeLineReachableAtLargeFontInEachMode() = inspectEveryNativeLine("cover")
 
+    @Test fun settledPagedScreensNeverStartInsideANativeTextLine() {
+        // A short viewport reproduces landscape/split-screen geometry without
+        // letting activity recreation replace this test's injected model.
+        val height = mutableStateOf(.57f)
+        withReader(fullNote(), heightFraction = height) { _, vm ->
+            compose.runOnIdle { vm.updateNotebookState { it.copy(noteFontSize = 27) } }
+            for (animation in listOf("cover", "curl")) for (mode in listOf("buttons", "swipe")) {
+                compose.runOnIdle { vm.updateNotebookState { it.copy(notePageAnimation = animation) } }
+                setMode(vm, mode, NOTE_READING_MODES.first { it.first == mode }.second)
+                jump("整本开头")
+                repeat(5) { screen ->
+                    compose.onNodeWithTag("笔记正文").performTouchInput {
+                        if (mode == "buttons") click(Offset(width * .92f, height * .5f))
+                        else swipeLeft(durationMillis = 220)
+                    }
+                    compose.waitForIdle()
+                    advancedUiShot(compose.activity, "reader-edge-$animation-$mode-$screen")
+                    nativeSnapshot { views -> views.filter { it.isShown && it.alpha >= .99f }.forEach { view ->
+                        val layout = view.layout ?: return@forEach
+                        val location = IntArray(2); view.getLocationOnScreen(location)
+                        val origin = location[1] + view.totalPaddingTop - view.scrollY
+                        val edge = readingViewport.top
+                        for (line in 0 until layout.lineCount) {
+                            val top = origin + layout.getLineTop(line)
+                            val bottom = origin + layout.getLineBottom(line)
+                            if (layout.getLineLeft(line) < layout.getLineRight(line))
+                                assertFalse("Settled $animation/$mode screen $screen cuts native line $line: $top < $edge < $bottom", top + 1 < edge && edge < bottom - 1)
+                        }
+                    } }
+                }
+            }
+        }
+    }
+
     @Test fun twoShortPagesSettleAtBothEndsWithoutChangingLayoutAfterTheGesture() {
         val note = Note(title = "两页短笔记", content = (1..2).joinToString("\n\n") { page ->
             "## 第 $page 页\n\n" + (1..7).joinToString("\n\n") { "第${page}页短段落${it}。" }
