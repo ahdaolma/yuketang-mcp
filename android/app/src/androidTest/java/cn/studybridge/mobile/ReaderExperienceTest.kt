@@ -222,8 +222,8 @@ class ReaderExperienceTest {
     @Test fun settledPagedScreensNeverStartInsideANativeTextLine() {
         // A short viewport reproduces landscape/split-screen geometry without
         // letting activity recreation replace this test's injected model.
-        val height = mutableStateOf(.57f)
-        withReader(fullNote(), heightFraction = height) { _, vm ->
+        val shortViewportHeight = mutableStateOf(.57f)
+        withReader(fullNote(), heightFraction = shortViewportHeight) { _, vm ->
             compose.runOnIdle { vm.updateNotebookState { it.copy(noteFontSize = 27) } }
             for (animation in listOf("cover", "curl")) for (mode in listOf("buttons", "swipe")) {
                 compose.runOnIdle { vm.updateNotebookState { it.copy(notePageAnimation = animation) } }
