@@ -160,6 +160,10 @@ tap('悬浮阅读工具'); tap('返回笔记列表'); tap('新建笔记'); tap('
 continuous_lines = ['## R8_CONT_FIRST', '', 'release_cont_first_start', '']
 for row in range(7):
     continuous_lines.extend([f'first_row_{row}_' + 'origin_body_' * 6, ''])
+continuous_lines.extend(['| item | meaning | value |', '| --- | --- | --- |'])
+for row in range(6):
+    continuous_lines.append(f'| item_{row} | ' + 'condition_body_' * 4 + ' | 0.2 s |')
+continuous_lines.append('')
 continuous_lines.extend(['[short_link](https://example.com/' + 'long_source_path_' * 24 + ')', '',
                          'release_cont_first_end', '', '## R8_CONT_SECOND', '', 'release_cont_second_start', ''])
 for row in range(8):
@@ -196,6 +200,18 @@ for attempt in range(4):
     continuous_motion.append({'before': top, 'after': after, 'requested': delta})
 (out / 'release-continuous-motion.json').write_text(json.dumps(continuous_motion, indent=2))
 shot('release-reader-continuous-small-reverse', ['release_cont_second_start'])
+
+# Inspect intra-source-page turns in the actual R8 APK too. The unchanged
+# two-page source and table above are entered through the ordinary editor.
+# Retain actual PNGs for pixel review, not just accessibility-text assertions.
+for style, label in (('cover', '覆盖翻页'), ('curl', '仿真翻页')):
+    reader_settings(); tap('点击翻页'); tap(label); tap('关闭阅读方式与字号')
+    tap('悬浮阅读工具'); tap('整本开头')
+    reader_page(f'release-reader-long-{style}-first', 'release_cont_first_start', 'release_cont_second_start')
+    adb('shell', 'input', 'tap', str(round(reader_width * .9)), str(round(reader_height * .55)))
+    reader_page(f'release-reader-long-{style}-forward', 'release_cont_first_start', 'release_cont_second_start')
+    adb('shell', 'input', 'tap', str(round(reader_width * .1)), str(round(reader_height * .55)))
+    reader_page(f'release-reader-long-{style}-backward', 'release_cont_first_start', 'release_cont_second_start')
 
 tap('悬浮阅读工具'); tap('返回笔记列表'); tap('学习')
 shot('study-after-reader', ['从一页课件开始', '选择学习资料'])
