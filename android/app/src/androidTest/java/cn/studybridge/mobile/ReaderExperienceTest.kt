@@ -130,6 +130,7 @@ class ReaderExperienceTest {
         compose.onNodeWithText(label).performScrollTo().performClick()
         compose.waitUntil(5000) { vm.ui.value.data.noteReadMode == mode }
         compose.onNodeWithContentDescription("关闭阅读方式与字号").performClick()
+        if (mode != "continuous") awaitPagedIdle()
     }
     private fun jump(label: String) {
         compose.openNoteTool(label)
@@ -697,12 +698,17 @@ class ReaderExperienceTest {
         var previous = 0f
         var reachedEnd = false
         for (attempt in 0 until 40) {
+            awaitPagedIdle()
             if (readingOffset() >= readingMaximum() - 1f) { reachedEnd = true; break }
             previous = readingOffset()
+            val generation = readerGeneration()
             compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * .92f, height * .5f)) }
+            awaitPagedIdle(generation)
         }
         assertTrue("The current source page must reach its end", reachedEnd)
+        val generation = readerGeneration()
         compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * .08f, height * .5f)) }
+        awaitPagedIdle(generation)
         assertEquals("Forward then backward must return to the same screen", previous, readingOffset(), 2f)
     }
 

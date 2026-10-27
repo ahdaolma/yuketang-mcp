@@ -43,6 +43,24 @@ class ReaderNativeTapTest {
         compose.runOnIdle { assertEquals(1, taps()) }
     }
 
+    @Test fun windowReturnClearsOnlyTheReadOnlyCaretAndPreservesAnActiveSelection() = nativeText { view, controller, _ ->
+        compose.runOnIdle {
+            assertTrue(view.requestFocus())
+            Selection.setSelection(view.text as Spannable, 2)
+            view.onWindowFocusChanged(true)
+            assertFalse("A read-only caret must not re-anchor its parent on window return", view.isFocused)
+            assertEquals(-1, view.selectionStart)
+            assertTrue(view.requestFocus())
+            Selection.setSelection(view.text as Spannable, 1, 5)
+            view.reportSelection()
+            assertNotNull(controller.selection)
+            view.onWindowFocusChanged(true)
+            assertTrue("An actual selection must keep its handles and application actions", view.isFocused)
+            assertEquals(1, view.selectionStart); assertEquals(5, view.selectionEnd)
+            assertNotNull(controller.selection)
+        }
+    }
+
     @Test fun aSlowTapBelowTheSystemLongPressTimeoutStillForwards() = nativeText { _, _, taps ->
         compose.onNodeWithTag("原生阅读文本").performTouchInput {
             down(center)

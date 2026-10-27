@@ -15,6 +15,9 @@ classes=cn.studybridge.mobile.ReaderExperienceTest,cn.studybridge.mobile.ReaderN
 if [ "${RAIN_READER_SUITE:-reader}" = edges ]; then
   classes=cn.studybridge.mobile.ReaderExperienceTest#settledPagedScreensNeverStartInsideANativeTextLine,cn.studybridge.mobile.ReaderExperienceTest#richPagedEdgesPaintEveryTableAndBodyLineWithoutHalfGlyphs,cn.studybridge.mobile.ReaderExperienceTest#landscapePagedEdgesPaintEveryTableAndBodyLineWithoutHalfGlyphs,cn.studybridge.mobile.ReaderExperienceTest#hiddenEdgeTextCannotOpenSelectionButItsBlankAreaCanStillTurnThePage
 fi
+if [ "${RAIN_READER_SUITE:-reader}" = lifecycle ]; then
+  classes=cn.studybridge.mobile.ReaderExperienceTest#returningFromTheLastPartialScreenRestoresTheScreenJustRead,cn.studybridge.mobile.ReaderExperienceTest#shrinkingOnlyViewportHeightDuringCoverPreviewCancelsTheOldScreenGeometry,cn.studybridge.mobile.ReaderExperienceTest#backgroundingAHeldPaperAfterChangingModesCancelsItAndStillAllowsTheNextGesture,cn.studybridge.mobile.ReaderExperienceTest#horizontalDragFoldsTheActualPaperBeforeReleaseAndAShortDragReturnsInPlace,cn.studybridge.mobile.ReaderBackwardStabilityTest#continuousReturnsFromSecondToFirstAfterNativeFocusPreviewAndResume,cn.studybridge.mobile.ReaderNativeTapTest#windowReturnClearsOnlyTheReadOnlyCaretAndPreservesAnActiveSelection
+fi
 if [ "${RAIN_READER_SUITE:-reader}" = materials ]; then
   classes=cn.studybridge.mobile.CourseLibraryUiTest#wideLearningMaterialsSurfaceActuallyPlacesCardsInColumns
 fi
