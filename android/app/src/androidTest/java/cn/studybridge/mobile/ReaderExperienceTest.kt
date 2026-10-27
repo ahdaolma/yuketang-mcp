@@ -338,6 +338,11 @@ class ReaderExperienceTest {
                         val margin = 8 * compose.activity.resources.displayMetrics.density
                         val obstacle = android.graphics.RectF(tool.left - margin, tool.top - margin, tool.right + margin, tool.bottom + margin)
                         val viewport = android.graphics.RectF(readingViewport)
+                        // Keep reading order at the footer: do not hide a long
+                        // line behind the tool but show its short continuation.
+                        val safeBottom = lines.filter { android.graphics.RectF.intersects(it.bounds, obstacle) }
+                            .minOfOrNull { it.bounds.top }?.coerceIn(viewport.top, viewport.bottom) ?: viewport.bottom
+                        val textWindow = android.graphics.RectF(viewport).apply { bottom = safeBottom }
                         val bitmap = compose.onNodeWithTag("笔记正文").captureToImage().asAndroidBitmap()
                         fun darkPixels(rect: android.graphics.RectF): Int {
                             val left = kotlin.math.ceil(rect.left - readingViewport.left).toInt().coerceIn(0, bitmap.width)
@@ -353,10 +358,10 @@ class ReaderExperienceTest {
                             return count
                         }
                         for ((key, bounds) in lines) {
-                            if (viewport.contains(bounds) && !android.graphics.RectF.intersects(obstacle, bounds)) {
+                            if (textWindow.contains(bounds)) {
                                 assertTrue("Fully visible line must actually paint: $key at $bounds screen=$screen landscape=$landscape", darkPixels(bounds) > 2)
                                 seen += key
-                            } else if (android.graphics.RectF.intersects(viewport, bounds) && (bounds.top < viewport.top || bounds.bottom > viewport.bottom)) {
+                            } else if (android.graphics.RectF.intersects(viewport, bounds) && (bounds.top < textWindow.top || bounds.bottom > textWindow.bottom)) {
                                 val visible = android.graphics.RectF(bounds).apply { intersect(viewport) }
                                 assertEquals("Partial edge line must not paint cropped glyphs: $key at $bounds", 0, darkPixels(visible))
                             }
