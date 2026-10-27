@@ -50,4 +50,13 @@ class LearningContextTest {
         assertTrue(index.contains("我的疑问"))
         assertFalse(index.contains("第 1 页"))
     }
+    @Test fun headingHashesAndALongLastParagraphRetainTheirActualMeaning() {
+        val context = priorNoteContext("程序设计", "## 第 3 页\n\n### C# 与 F# ###\n\n    ### 代码里的标题\n\n" + "单段很长但仍要保留近期内容。".repeat(900) + "真实末尾")
+        val index = context.substringAfter("先前主题：").substringBefore("近期已保存笔记节选：")
+        assertTrue(index.contains("第 3 页 → C# 与 F#"))
+        assertFalse(index.contains("代码里的标题"))
+        assertTrue(context.contains("真实末尾"))
+        assertTrue(context.contains("段落前部省略"))
+        assertTrue(context.length <= 12000)
+    }
 }
