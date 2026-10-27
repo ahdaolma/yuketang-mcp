@@ -35,3 +35,24 @@ internal fun readerNativeLines(view: TextView, cellPadding: Int): List<RectF> {
     }
     return result.sortedBy { it.top }
 }
+
+// A short continuation must not appear below an earlier hidden line. Trim the
+// whole paper at the first text line touched by the tool, then hide any inner
+// cell line crossing that boundary. Wide tablet gutters need no footer reserve.
+internal fun readerPageBottom(lines: List<RectF>, offset: Int, width: Float, height: Float, tool: Float): Float {
+    var bottom = height
+    for (line in lines) {
+        val top = line.top - offset
+        if (top >= height) break
+        if (line.bottom - offset <= 0) continue
+        if (line.right > width - tool && line.left < width && line.bottom - offset > height - tool)
+            bottom = minOf(bottom, top.coerceAtLeast(0f))
+    }
+    return bottom
+}
+
+internal data class ReaderBottomShape(val bottom: Float) : androidx.compose.ui.graphics.Shape {
+    override fun createOutline(size: androidx.compose.ui.geometry.Size, layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+        density: androidx.compose.ui.unit.Density) = androidx.compose.ui.graphics.Outline.Rectangle(
+            androidx.compose.ui.geometry.Rect(0f, 0f, size.width, bottom.coerceIn(0f, size.height)))
+}

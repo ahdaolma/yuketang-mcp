@@ -596,12 +596,12 @@ private class ReadingPublication {
                         LocalNoteTextRegistered provides { view, start -> (frame?.text ?: continuousText).register(page, start, view) }, LocalNoteContentWidth provides contentWidth,
                         LocalNoteVisualRegistered provides frame?.let { { coordinates -> it.text.registerVisual(coordinates) } },
                         LocalNoteTextTouch provides frame?.let { current -> { x, y ->
+                            val inset = with(density) { 64.dp.toPx() }
+                            val bottom = readerPageBottom(current.lines, current.scroll.value, bodyWidth.toFloat(), viewport.toFloat(), inset)
                             val line = current.lines.firstOrNull { it.contains(x - bodyLeft, y - bodyTop + current.scroll.value) }
-                            if (line == null) true else {
+                            if (y - bodyTop >= bottom) false else if (line == null) true else {
                                 val bounds = android.graphics.RectF(line).apply { offset(0f, -current.scroll.value.toFloat()) }
-                                val inset = with(density) { 64.dp.toPx() }
-                                bounds.top >= 0 && bounds.bottom <= viewport && !android.graphics.RectF.intersects(bounds,
-                                    android.graphics.RectF(bodyWidth - inset, viewport - inset, bodyWidth.toFloat(), viewport.toFloat()))
+                                bounds.top >= 0 && bounds.bottom <= bottom
                             }
                         } },
                         LocalNoteSearchTarget provides (if (frame == null || frame === activeFrame) target else null),
@@ -649,12 +649,13 @@ private class ReadingPublication {
                                 val canvas = drawContext.canvas.nativeCanvas
                                 val save = canvas.save()
                                 try {
-                                    val obstacle = android.graphics.RectF(size.width - inset, size.height - inset, size.width, size.height)
+                                    val bottom = readerPageBottom(lines, offset, size.width, size.height, inset)
+                                    canvas.clipRect(0f, 0f, size.width, bottom)
                                     for (line in lines) {
                                         val bounds = android.graphics.RectF(line).apply { offset(0f, -offset.toFloat()) }
-                                        if (bounds.top >= size.height) break
+                                        if (bounds.top >= bottom) break
                                         if (bounds.bottom <= 0) continue
-                                        if (bounds.top < 0 || bounds.bottom > size.height || android.graphics.RectF.intersects(bounds, obstacle))
+                                        if (bounds.top < 0 || bounds.bottom > bottom)
                                             canvas.clipOutRect(bounds.left - density.density * 2, bounds.top, bounds.right + density.density * 2, bounds.bottom)
                                     }
                                     this@drawWithContent.drawContent()
@@ -666,7 +667,12 @@ private class ReadingPublication {
                                 traceMotion("draw frame=${frame.token} count=${frame.draws} capture=$captureRevision ready=${readyFrames[frame.token]} scroll=${frame.scroll.value}")
                             }
                             drawLayer(layer)
-                        }.background(paperColor).verticalScroll(frame.scroll, enabled = false), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        }.background(paperColor).graphicsLayer {
+                            // Match pointer hit testing to the paper's visual
+                            // crop; an image hidden in the footer is not a link.
+                            clip = true
+                            shape = ReaderBottomShape(readerPageBottom(frame.lines, frame.scroll.value, bodyWidth.toFloat(), viewport.toFloat(), with(density) { 64.dp.toPx() }))
+                        }.verticalScroll(frame.scroll, enabled = false), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                             // Capture the entire paper, including blank gutters,
                             // while preserving the native text's former width.
                             // ScrollState remains available to search and screen

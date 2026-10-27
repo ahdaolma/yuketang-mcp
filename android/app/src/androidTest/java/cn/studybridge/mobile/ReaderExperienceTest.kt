@@ -391,27 +391,51 @@ class ReaderExperienceTest {
     @Test fun landscapePagedEdgesPaintEveryTableAndBodyLineWithoutHalfGlyphs() = inspectRichPagedInk(true)
 
     @Test fun hiddenEdgeTextCannotOpenSelectionButItsBlankAreaCanStillTurnThePage() {
-        withReader(fullNote(), heightFraction = mutableStateOf(.571f)) { _, vm ->
-            compose.runOnIdle { vm.updateNotebookState { it.copy(noteFontSize = 27) } }
+        val picture = Bitmap.createBitmap(64, 8, Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.CYAN) }
+        val bytes = java.io.ByteArrayOutputStream().also { picture.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        picture.recycle()
+        val image = "data:image/png;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        val note = Note(title = "页脚触摸范围", source = "合成资料", model = "fixture", content = "## 第 1 页\n\n" +
+            (1..4).joinToString("\n\n") { "第${it}段。正文的条件与结论需要连贯地阅读。" } + "\n\n" + sourceImageMarkdown(imageDigest(bytes), "页脚原图") + "\n\n" + "后续正文，必须能够继续阅读。\n\n".repeat(24))
+        val height = mutableStateOf(1f)
+        withReader(note, setup = { app -> SourceImages(app).save(image) }, heightFraction = height) { _, vm ->
             setMode(vm, "buttons", "点击翻页"); jump("整本开头")
             awaitPagedIdle()
+            val body = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow
+            val imageBounds = compose.onNodeWithContentDescription("页脚原图 缩略图").fetchSemanticsNode().boundsInWindow
+            assertTrue("Fixture image starts inside the initial viewport", imageBounds.top > body.top && imageBounds.bottom < body.bottom)
+            val overhead = compose.onRoot().fetchSemanticsNode().boundsInWindow.height - body.height
+            val density = compose.activity.resources.displayMetrics.density
+            val imageTop = imageBounds.top - body.top
+            compose.runOnIdle { height.value = ((imageTop + 8 * density + overhead) / (body.height + overhead)).coerceIn(.3f, .95f) }
+            awaitPagedIdle()
+            val tool = compose.onNodeWithTag("笔记悬浮工具").fetchSemanticsNode().boundsInWindow
+            val obstacle = android.graphics.RectF(tool.left - 8 * density, tool.top - 8 * density, tool.right + 8 * density, tool.bottom + 8 * density)
             val touchY = nativeSnapshot { views ->
                 views.firstNotNullOfOrNull { view ->
                     val layout = view.layout ?: return@firstNotNullOfOrNull null
                     val position = IntArray(2); view.getLocationOnScreen(position)
                     val origin = position[1] + view.totalPaddingTop - view.scrollY
-                    (0 until layout.lineCount).firstOrNull { line -> origin + layout.getLineTop(line) < readingViewport.bottom - 2 && origin + layout.getLineBottom(line) > readingViewport.bottom + 2 }?.let { line ->
-                        (origin + layout.getLineTop(line) + readingViewport.bottom) / 2f - readingViewport.top
+                    (0 until layout.lineCount).firstOrNull { line ->
+                        origin + layout.getLineTop(line) < obstacle.bottom && origin + layout.getLineBottom(line) > obstacle.top &&
+                            position[0] + view.totalPaddingLeft + layout.getLineRight(line) > obstacle.left
+                    }?.let { line ->
+                        origin + (layout.getLineTop(line) + layout.getLineBottom(line)) / 2f - readingViewport.top
                     }
                 }
             }
-            assertNotNull("Fixture must expose a clipped bottom line", touchY)
+            assertNotNull("Fixture must place text behind the tool", touchY)
             val before = readingOffset()
-            compose.onNodeWithTag("笔记正文").performTouchInput { longClick(Offset(width * .75f, touchY!!)) }
+            compose.onNodeWithTag("笔记正文").performTouchInput { longClick(Offset(width * .7f, touchY!!)) }
             compose.onNodeWithTag("正文选词工具条").assertDoesNotExist()
             assertEquals(before, readingOffset(), 1f)
-            compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * .75f, touchY!!)) }
-            compose.waitUntil(8000) { readingOffset() > before }
+            val generation = readerGeneration()
+            // This is inside the image's original bounds but below the visual
+            // paper crop. It must behave as blank paper, not open that image.
+            compose.onNodeWithTag("笔记正文").performTouchInput { click(Offset(width * .7f, imageTop + 2)) }
+            compose.onNodeWithText("关闭预览").assertDoesNotExist()
+            awaitPagedIdle(generation)
+            assertTrue(readingOffset() > before)
         }
     }
 

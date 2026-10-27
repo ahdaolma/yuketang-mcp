@@ -1,10 +1,7 @@
 package cn.studybridge.mobile
 
-import android.content.ContentValues
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
-import android.graphics.Bitmap
-import android.provider.MediaStore
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -49,13 +46,7 @@ class ResponsiveReadingTest {
     }
     private fun shot(name: String, system: Boolean = false) {
         val image = if (system) requireNotNull(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()) else compose.onRoot().captureToImage().asAndroidBitmap()
-        val resolver = compose.activity.contentResolver
-        val uri = requireNotNull(resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, "$name.png"); put(MediaStore.Images.Media.MIME_TYPE, "image/png"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/StudyUiReview"); put(MediaStore.Images.Media.IS_PENDING, 1)
-        }))
-        requireNotNull(resolver.openOutputStream(uri)).use { check(image.compress(Bitmap.CompressFormat.PNG, 100, it)) }
-        resolver.update(uri, ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }, null, null)
-        image.recycle()
+        try { saveUiReviewBitmap(compose.activity, name, image) } finally { image.recycle() }
     }
     private fun assertNotebookToolSheet() {
         compose.ensureNoteTools()
