@@ -18,4 +18,11 @@ class NotePresentationTest {
         assertTrue(NOTE_FORMAT.contains("封面")); assertTrue(NOTE_FORMAT.contains("不重复"))
         assertTrue(NOTES_PROMPT.contains("AI 讲解/补充"))
     }
+    @Test fun shipped105DefaultUpgradesButAnEditedCopyIsPreserved() {
+        val previous = requireNotNull(javaClass.getResource("/notes-prompt-1.0.5.txt")).readText()
+        assertNotEquals(previous, NOTES_PROMPT)
+        assertEquals(NOTES_PROMPT, upgradedNotesPrompt(previous))
+        val custom = previous + "\n请按我自己的习惯整理。"
+        assertEquals(custom, upgradedNotesPrompt(custom))
+    }
 }

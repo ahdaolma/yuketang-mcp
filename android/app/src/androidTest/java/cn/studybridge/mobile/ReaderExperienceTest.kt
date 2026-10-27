@@ -241,11 +241,15 @@ class ReaderExperienceTest {
                         val location = IntArray(2); view.getLocationOnScreen(location)
                         val origin = location[1] + view.totalPaddingTop - view.scrollY
                         val edge = readingViewport.top
+                        val ink = android.graphics.Rect()
                         for (line in 0 until layout.lineCount) {
-                            val top = origin + layout.getLineTop(line)
-                            val bottom = origin + layout.getLineBottom(line)
+                            val start = layout.getLineStart(line)
+                            val end = layout.getLineVisibleEnd(line)
+                            view.paint.getTextBounds(view.text.toString(), start, end, ink)
+                            val top = origin + layout.getLineBaseline(line) + ink.top
+                            val bottom = origin + layout.getLineBaseline(line) + ink.bottom
                             if (layout.getLineLeft(line) < layout.getLineRight(line))
-                                assertFalse("Settled $animation/$mode screen $screen cuts native line $line: $top < $edge < $bottom", top + 1 < edge && edge < bottom - 1)
+                                assertFalse("Settled $animation/$mode screen $screen cuts actual ink in native line $line: $top < $edge < $bottom", top + 1 < edge && edge < bottom - 1)
                         }
                     } }
                 }
