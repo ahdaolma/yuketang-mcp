@@ -47,6 +47,7 @@ class ReaderNativeTapTest {
         compose.runOnIdle {
             assertTrue(view.requestFocus())
             Selection.setSelection(view.text as Spannable, 2)
+            view.onWindowFocusChanged(false)
             view.onWindowFocusChanged(true)
             assertFalse("A read-only caret must not re-anchor its parent on window return", view.isFocused)
             assertEquals(-1, view.selectionStart)
@@ -54,6 +55,7 @@ class ReaderNativeTapTest {
             Selection.setSelection(view.text as Spannable, 1, 5)
             view.reportSelection()
             assertNotNull(controller.selection)
+            view.onWindowFocusChanged(false)
             view.onWindowFocusChanged(true)
             assertTrue("An actual selection must keep its handles and application actions", view.isFocused)
             assertEquals(1, view.selectionStart); assertEquals(5, view.selectionEnd)

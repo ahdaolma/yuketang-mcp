@@ -30,14 +30,14 @@ import androidx.core.view.WindowInsetsControllerCompat
                 window = (parent as? DialogWindowProvider)?.window
                 parent = parent.parent
             }
-            window?.let { WindowCompat.getInsetsController(it, it.decorView).apply {
+            window?.takeIf { it.decorView.isAttachedToWindow }?.let { WindowCompat.getInsetsController(it, it.decorView).apply {
                 systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
                 hide(WindowInsetsCompat.Type.statusBars())
             } }
         }
         hide.run()
         view.post(hide)
-        val focus = ViewTreeObserver.OnWindowFocusChangeListener { focused -> if (focused) view.post(hide) }
+        val focus = ViewTreeObserver.OnWindowFocusChangeListener { focused -> if (focused) { hide.run(); view.post(hide) } }
         view.viewTreeObserver.addOnWindowFocusChangeListener(focus)
         onDispose { view.removeCallbacks(hide); if (view.viewTreeObserver.isAlive) view.viewTreeObserver.removeOnWindowFocusChangeListener(focus) }
     }

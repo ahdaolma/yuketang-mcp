@@ -132,6 +132,14 @@ class NoteSelectableTextView(context: Context) : TextView(context) {
     }
     override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
         if (isFocused) traceReadingFocus("windowFocus=$hasWindowFocus")
+        val hasRange = selectionStart >= 0 && selectionEnd >= 0 && selectionStart != selectionEnd
+        if (hasWindowFocus && controller != null && isFocused && !hasRange) {
+            // A read-only caret is not an editing cursor. TextView's resume
+            // pre-draw must not bring an old point back into the reader.
+            (text as? Spannable)?.let(Selection::removeSelection)
+            clearFocus()
+            if (controller?.selection?.view === this) controller?.selection = null
+        }
         super.onWindowFocusChanged(hasWindowFocus)
     }
     internal fun selectionGeometry(first: Int, last: Int): NoteSelectionGeometry? {
