@@ -227,7 +227,7 @@ class ReaderExperienceTest {
             compose.runOnIdle { vm.updateNotebookState { it.copy(noteFontSize = 27) } }
             for (animation in listOf("cover", "curl")) for (mode in listOf("buttons", "swipe")) {
                 compose.runOnIdle { vm.updateNotebookState { it.copy(notePageAnimation = animation) } }
-                setMode(vm, mode, NOTE_READING_MODES.first { it.first == mode }.second)
+                setMode(vm, mode, NOTE_READING_MODES.getValue(mode))
                 jump("整本开头")
                 repeat(5) { screen ->
                     compose.onNodeWithTag("笔记正文").performTouchInput {
