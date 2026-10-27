@@ -90,6 +90,14 @@ private object SilentHapticFeedback : HapticFeedback {
     val windowConfig = LocalConfiguration.current
     DisposableEffect(activity, lifecycle, windowView, windowConfig.screenWidthDp, windowConfig.screenHeightDp, windowConfig.densityDpi) {
         fun hideStatusBar() { activity?.window?.let { window ->
+            // Legacy hide/show otherwise resizes the decor by the status-bar
+            // height after a modal closes. Keep only that layout area stable;
+            // navigation-bar insets and adjustResize/IME behavior stay intact.
+            if (Build.VERSION.SDK_INT < 30) {
+                @Suppress("DEPRECATION")
+                window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or
+                    android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            }
             if (!window.decorView.isAttachedToWindow) return@let
             WindowCompat.getInsetsController(window, window.decorView).apply {
                 systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
