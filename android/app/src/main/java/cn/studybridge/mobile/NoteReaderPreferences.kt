@@ -14,6 +14,7 @@ val LocalNoteVisualRegistered = staticCompositionLocalOf<((androidx.compose.ui.l
 // AndroidView consumes ordinary text taps before Compose's Final pass. Native
 // text forwards only taps that do not belong to selection, a link or a remark.
 val LocalNotePageTap = staticCompositionLocalOf<((Float) -> Unit)?> { null }
+internal val LocalNotePageWindow = staticCompositionLocalOf<(() -> ReaderPageWindow)?> { null }
 data class ReaderProgress(val text: String, val description: String, val title: String? = null, val titleVisible: Boolean = false)
 val LocalReaderProgress = staticCompositionLocalOf<(ReaderProgress?) -> Unit> { {} }
 fun validNoteReadingMode(value: String) = value.takeIf { it in NOTE_READING_MODES } ?: "continuous"

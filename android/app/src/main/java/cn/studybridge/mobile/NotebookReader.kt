@@ -408,13 +408,18 @@ private class ReadingPublication {
         }
     }
     fun canTurn() = !continuous && !commands.busy && restored && renderReady && commands.settled == commands.generation
+    fun nextScreen(frame: ReadingFrame, direction: Int): Int {
+        if (direction > 0 && endIsVisible(frame)) return frame.scroll.value
+        val offsets = frame.text.screenOffsets(frame.scroll.value, frame.scroll.maxValue, viewport, bodyTop, with(density) { 64.dp.roundToPx() })
+        return if (direction > 0) offsets.firstOrNull { it > frame.scroll.value } ?: frame.scroll.value
+            else offsets.lastOrNull { it < frame.scroll.value } ?: frame.scroll.value
+    }
     fun turn(direction: Int) {
         if (!canTurn()) return
         rememberPosition()
         foldBottom = true; foldTouchY = viewport * .7f; motionAnimation = pageAnimation
         val current = activeFrame
-        val nextOffset = if (direction > 0 && endIsVisible(current)) current.scroll.value
-            else nextReadingScreen(current.scroll.value, current.scroll.maxValue, viewport, direction)
+        val nextOffset = nextScreen(current, direction)
         val nextPage = if (nextOffset != current.scroll.value) selected else (selected + direction).coerceIn(segments.indices)
         operate {
             if (nextPage == selected && nextOffset == current.scroll.value) {
@@ -433,8 +438,7 @@ private class ReadingPublication {
         foldBottom = touchY >= viewport / 2f; foldTouchY = touchY; motionAnimation = pageAnimation
         val direction = if (displacement < 0) 1 else -1
         val current = activeFrame
-        val nextOffset = if (direction > 0 && endIsVisible(current)) current.scroll.value
-            else nextReadingScreen(current.scroll.value, current.scroll.maxValue, viewport, direction)
+        val nextOffset = nextScreen(current, direction)
         val nextPage = if (nextOffset != current.scroll.value) selected else (selected + direction).coerceIn(segments.indices)
         val hasDestination = nextOffset != current.scroll.value || nextPage != selected
         var generation: Int? = null
@@ -584,6 +588,10 @@ private class ReadingPublication {
                         else if (epoch == renderEpoch) { if (ready) readyPages[page] = epoch else readyPages.remove(page) }; Unit },
                         LocalNoteTextRegistered provides { view, start -> (frame?.text ?: continuousText).register(page, start, view) }, LocalNoteContentWidth provides contentWidth,
                         LocalNoteVisualRegistered provides frame?.let { { coordinates -> it.text.registerVisual(coordinates) } },
+                        LocalNotePageWindow provides if (frame == null) null else ({
+                            ReaderPageWindow(android.graphics.RectF(bodyLeft, bodyTop, bodyLeft + bodyWidth, bodyTop + viewport),
+                                with(density) { android.graphics.RectF(bodyLeft + bodyWidth - 64.dp.toPx(), bodyTop + viewport - 64.dp.toPx(), bodyLeft + bodyWidth, bodyTop + viewport) })
+                        }),
                         LocalNoteSearchTarget provides (if (frame == null || frame === activeFrame) target else null),
                         LocalNotePageTap provides (if (frame == null || frame === activeFrame) pageTap else null)) {
                         IllustratedMarkdown(shown, vm.sourceImages, part.start - part.prefix.length + raw.length - shown.length, part.sourceForDisplay(note.content, raw.length - shown.length))

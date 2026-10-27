@@ -84,6 +84,42 @@ internal class NoteSelectionPositionProvider(private val geometry: NoteSelection
 // wraps; all visible selection actions belong to the application's Compose UI.
 class NoteSelectableTextView(context: Context) : TextView(context) {
     init { isHapticFeedbackEnabled = false }
+    internal var readerPageWindow: (() -> ReaderPageWindow)? = null
+    internal var readerTableCellPadding: Int = (8 * resources.displayMetrics.density).toInt()
+    private var geometryLayout: android.text.Layout? = null
+    private var geometryPadding = -1
+    private var geometryLines: List<RectF> = emptyList()
+    internal fun readerLines(): List<RectF> {
+        if (layout !== geometryLayout || readerTableCellPadding != geometryPadding) {
+            geometryLayout = layout; geometryPadding = readerTableCellPadding
+            geometryLines = readerNativeLines(this, readerTableCellPadding)
+        }
+        return geometryLines
+    }
+    override fun onDraw(canvas: android.graphics.Canvas) {
+        val window = readerPageWindow?.invoke()
+        if (window == null) { super.onDraw(canvas); return }
+        val location = IntArray(2); getLocationInWindow(location)
+        val originX = location[0] + totalPaddingLeft - scrollX
+        val originY = location[1] + totalPaddingTop - scrollY
+        val save = canvas.save()
+        try {
+            canvas.clipRect(window.bounds.left - location[0] + scrollX, window.bounds.top - location[1] + scrollY,
+                window.bounds.right - location[0] + scrollX, window.bounds.bottom - location[1] + scrollY)
+            for (line in readerLines()) {
+                val bounds = RectF(line).apply { offset(originX.toFloat(), originY.toFloat()) }
+                if (bounds.top >= window.bounds.bottom) break
+                if (bounds.bottom <= window.bounds.top) continue
+                if (!window.bounds.contains(bounds) || RectF.intersects(bounds, window.tool)) {
+                    // A hidden edge line fits completely on an adjacent screen;
+                    // table-cell inner lines must be treated independently.
+                    canvas.clipOutRect(line.left + totalPaddingLeft - 1, line.top + totalPaddingTop,
+                        line.right + totalPaddingLeft + 1, line.bottom + totalPaddingTop)
+                }
+            }
+            super.onDraw(canvas)
+        } finally { canvas.restoreToCount(save) }
+    }
     var searchRevealKey: String? = null
     var block: NoteSelectionBlock? = null
     var controller: NoteSelectionController? = null
