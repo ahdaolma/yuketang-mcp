@@ -22,4 +22,32 @@ class LearningContextTest {
         assertTrue(input.contains(attachment)); assertEquals("生化 · 第 2 页", input[input.lastIndex - 1].source)
         assertTrue(input.any { it.text.contains(NOTE_FORMAT) })
     }
+
+    @Test fun sourceAndNestedKnowledgeTopicsSurviveLongNotebooksWithoutInventingPages() {
+        val notes = (1..80).joinToString("\n\n") { page ->
+            "## 课件 · 第 $page 页\n\n### 概念$page\n\n#### 条件$page\n\n本页原文条件$page。"
+        }
+        val context = priorNoteContext("课件", notes)
+        val index = context.substringAfter("先前主题：").substringBefore("近期已保存笔记节选：")
+        assertTrue("Index must contain source AND concept, not just page numbers", index.contains("第 80 页 → 概念80"))
+        assertTrue(index.contains("概念80 / 条件80"))
+        assertTrue(index.contains("第 1 页 → 概念1"))
+        assertTrue(context.contains("主题索引有省略"))
+        assertTrue(context.contains("本页原文条件80"))
+        assertTrue(context.length <= 12000)
+    }
+
+    @Test fun fencedHeadingsCannotBeMistakenForSourceOrKnowledgeTopics() {
+        val notes = "## 真实资料 · 第 7 页\n\n### 动量\n\n~~~markdown\n## 伪造来源 · 第 999 页\n### 伪造主题\n~~~\n\n#### 守恒条件\n\n仅在合外力为零时成立。"
+        val index = priorNoteContext("力学", notes).substringAfter("先前主题：").substringBefore("近期已保存笔记节选：")
+        assertFalse(index.contains("999")); assertFalse(index.contains("伪造主题"))
+        assertTrue(index.contains("第 7 页 → 动量 / 守恒条件"))
+    }
+
+    @Test fun sourceLessPersonalNotesUseOnlyTheirRealHeadings() {
+        val context = priorNoteContext("手写整理", "### 我的疑问\n\n为什么需要前提条件？")
+        val index = context.substringAfter("先前主题：").substringBefore("近期已保存笔记节选：")
+        assertTrue(index.contains("我的疑问"))
+        assertFalse(index.contains("第 1 页"))
+    }
 }
