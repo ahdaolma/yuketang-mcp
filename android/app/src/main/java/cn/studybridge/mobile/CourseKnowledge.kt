@@ -64,7 +64,7 @@ fun knowledgePassages(note: Note): List<KnowledgePassage> {
             val firstBody = noteSourceLines(rawSection).firstOrNull { range -> rawSection.substring(range.start, range.contentEnd).let { it.isNotBlank() && !knowledgeHeading.matches(it) } }?.start ?: 0
             val contextAt = from + firstBody
             val section = headings.lastOrNull { it.first <= contextAt }?.second.orEmpty()
-            val pageHeading = headings.lastOrNull { it.first <= contextAt && knowledgePageMarker.containsMatchIn(it.second) }?.second
+            val pageHeading = headings.lastOrNull { it.first <= contextAt && note.content.startsWith("## ", it.first) && knowledgePageMarker.containsMatchIn(it.second) }?.second
             val page = pageHeading?.let { knowledgePageMarker.findAll(it).lastOrNull()?.value }
             val label = listOf(note.title.take(80), page?.take(60), section.take(80).takeIf { section != pageHeading && it.isNotBlank() }).filterNotNull().joinToString(" · ")
             while (start < until) {
@@ -138,6 +138,16 @@ fun knowledgeSourceText(saved: Saved, location: KnowledgeLocation): Pair<Note, S
     val actual = note.content.substring(location.start, location.end)
     if (noteContentHash(actual) != location.hash) return null
     return note to actual
+}
+
+fun knowledgeSourceImage(note: Note, location: KnowledgeLocation): String? {
+    val pages = knowledgeHeadings(note.content).filter { note.content.startsWith("## ", it.first) && knowledgePageMarker.containsMatchIn(it.second) }
+    val start = pages.lastOrNull { it.first <= location.start }?.first ?: return null
+    val end = pages.firstOrNull { it.first > location.start }?.first ?: note.content.length
+    // Without an explicit original-page section, do not attach the notebook's
+    // first image to an unrelated later concept. Inline excerpt images still
+    // render through IllustratedMarkdown.
+    return sourceImagePattern.find(note.content, start)?.takeIf { it.range.first < end }?.value
 }
 
 fun remapKnowledgeLinks(text: String, mapping: Map<String, String>): String = sourceUrl.replace(text) { match ->

@@ -48,6 +48,13 @@ class CourseKnowledgeTest {
         assertEquals(original.content, passages.joinToString("") { original.content.substring(it.start, it.end) })
         val longHeading = note(body = "## ${"超长课程名".repeat(60)} · 第 44 页\n\n实际的知识依据。")
         assertEquals("心电图 · 第 44 页", knowledgePassages(longHeading).single().label)
+        val firstImage = sourceImageMarkdown("a".repeat(64), "第 1 页原图")
+        val rightImage = sourceImageMarkdown("b".repeat(64), "第 44 页原图")
+        val illustrated = note(body = "## 第 1 页\n$firstImage\n前文\n## ${"超长课程名".repeat(60)} · 第 44 页\n$rightImage\n${"正文证据".repeat(800)}")
+        val location = knowledgeLocation(knowledgePassages(illustrated).last().url)!!
+        assertEquals(rightImage.trim(), knowledgeSourceImage(illustrated, location)?.trim())
+        val unpaged = note(body = "## 第一章\n$firstImage\n前文\n## 第二章\n后文证据")
+        assertNull(knowledgeSourceImage(unpaged, knowledgeLocation(knowledgePassages(unpaged).last().url)!!))
     }
 
     @Test fun overviewReadsCompleteScopeWithRemarksAndExcludesOtherCoursesAndOldOverviews() {
