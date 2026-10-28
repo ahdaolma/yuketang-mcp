@@ -64,6 +64,7 @@ class CourseKnowledgeWorkflowTest {
             shot("course-knowledge-chat-scope")
             compose.onNodeWithContentDescription("退出课程范围").performClick()
             assertNull(vm.ui.value.data.chat().notebookId)
+            assertTrue(vm.ui.value.notice.contains("原对话保留"))
         } finally { compose.runOnIdle { store.clear() } }
     }
 

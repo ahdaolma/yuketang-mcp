@@ -264,7 +264,9 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         if (state.value.locked) return
         // A fresh conversation prevents another course from inheriting scoped
         // source quotations through the old transcript. The old chat is kept.
+        val previous = state.value.data.chat().id
         newChat()
+        if (state.value.data.chat().id != previous) notice("已退出课程范围，原对话保留在会话记录中。")
     }
     fun organizeKnowledge(folderId: String?, ids: Set<String>? = null) {
         val snapshot = state.value.data
