@@ -709,7 +709,6 @@ private fun preview(bytes: ByteArray): Bitmap? {
             }
             Spacer(Modifier.height(if (compactFraction > 0.5f) 72.dp else 24.dp))
         }
-        }
     }, composer = {})
 }
 
