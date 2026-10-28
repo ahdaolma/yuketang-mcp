@@ -85,6 +85,11 @@ class ResponsiveReadingTest {
         assertSettledStatusBarHidden("sample-note-tools-system-hidden")
         compose.onNodeWithContentDescription("阅读设置").performScrollTo().performClick()
         compose.onNodeWithContentDescription("关闭阅读方式与字号").assertIsDisplayed()
+        val originalMode = vm.ui.value.data.noteReadMode
+        val alternateMode = if (originalMode == "swipe") "buttons" else "swipe"
+        compose.onNodeWithText(NOTE_READING_MODES.getValue(alternateMode)).performScrollTo().performClick()
+        assertSettledStatusBarHidden("sample-note-preferences-mode-change-hidden")
+        compose.onNodeWithText(NOTE_READING_MODES.getValue(originalMode)).performScrollTo().performClick()
         assertSettledStatusBarHidden("sample-note-preferences-system-hidden")
         compose.onNodeWithContentDescription("关闭阅读方式与字号").performClick()
         compose.ensureNoteTools()
