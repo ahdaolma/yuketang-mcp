@@ -253,6 +253,45 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         return true
     }
     fun newChat() { if (state.value.locked) return; val c = Conversation(); data { it.copy(conversations = listOf(c) + it.conversations, currentChat = c.id) }; state.update { it.copy(pending = null) } }
+    fun startCourseChat(folderId: String) {
+        if (state.value.locked) return
+        if (state.value.data.noteFolders.none { it.id == folderId }) { notice("请先选择仍然存在的笔记本或章节。"); return }
+        val c = Conversation(title = state.value.data.folderPath(folderId).take(28) + " · 问答", notebookId = folderId)
+        data { it.copy(conversations = listOf(c) + it.conversations, currentChat = c.id) }
+        closeMaterials(); state.update { it.copy(pending = null, tab = 0) }
+    }
+    fun leaveCourseChatScope() {
+        if (state.value.locked) return
+        // A fresh conversation prevents another course from inheriting scoped
+        // source quotations through the old transcript. The old chat is kept.
+        newChat()
+    }
+    fun organizeKnowledge(folderId: String?, ids: Set<String>? = null) {
+        val snapshot = state.value.data
+        operation("整理章节知识总览") {
+            val p = snapshot.provider()
+            require(snapshot.providerReady(p) && p.model.isNotBlank()) { "请先在设置连接可用的模型。" }
+            val input = withContext(Dispatchers.Default) { knowledgeOverviewInput(snapshot, folderId, ids) }
+            val text = StringBuilder()
+            val style = if (snapshot.superFocusNotes) "\n超重点模式：只保留核心结论、必要条件、易错点和来源，话少但信息充分。" else ""
+            val request = tutorMessages(KNOWLEDGE_OVERVIEW_PROMPT + style, listOf(Message("user", input.text)), "本次仅整理选定的 ${input.notes.size} 份已保存笔记。", snapshot.learnerProfile)
+            ai.stream(authorizedProvider(p), request) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
+            require(text.isNotBlank()) { "模型未生成总览，原笔记保持原样。" }
+            val versions = withContext(Dispatchers.Default) { input.notes.associate { it.id to knowledgeNoteVersion(it) } }
+            val content = withContext(Dispatchers.Default) {
+                "> 整理范围：${input.title}；${input.notes.size} 份已保存笔记、${input.passages.size} 个来源段落。此总览由 AI 整理，不代表原课件原文；原笔记和个人修改保留。\n\n" +
+                    verifiedKnowledgeOutput(text.toString(), input.passages) + "\n\n## 来源目录\n\n" + input.passages.joinToString("\n") { "- ${it.link}" }
+            }
+            val note = Note(title = "${input.title.take(90)} · 知识总览", content = content, source = "章节知识总览：${input.title}", model = "${p.name} / ${p.model}",
+                folderId = folderId ?: input.notes.first().folderId, relatedNoteIds = input.notes.map { it.id }, overviewSources = versions)
+            checkpoint { current ->
+                require(versions.all { (id, hash) -> current.notes.find { it.id == id }?.let { knowledgeNoteVersion(it) == hash } == true && current.noteTrash.none { it.note.id == id } }) { "整理期间来源已变化或删除，请重新整理；没有覆盖任何原笔记。" }
+                require(note.folderId.isEmpty() || current.noteFolders.any { it.id == note.folderId }) { "原分类已删除，请重新选择整理范围。" }
+                current.copy(notes = listOf(note) + current.notes)
+            }
+            notice("知识总览已另存到原分类，点击来源可核对；原笔记未被覆盖。")
+        }
+    }
     fun chatDraft(id: String, text: String) {
         if (state.value.data.conversations.none { it.id == id }) return
         state.update { it.copy(chatDrafts = it.chatDrafts + (id to text)) }
@@ -318,6 +357,8 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
     fun send(text: String): Boolean {
         if (text.isBlank() || state.value.locked || !state.value.ready || storageBlocked) return false
         val s = state.value; val p = s.data.provider(); val c = s.data.chat(); val a = s.pending
+        if (c.notebookId != null && s.data.noteFolders.none { it.id == c.notebookId }) { notice("此对话的课程范围已删除，请退出课程范围后继续。"); return false }
+        if (c.notebookId != null && !a?.noteId.isNullOrBlank() && s.data.notes.none { it.id == a?.noteId && s.data.effectiveFolder(it) in s.data.folderScope(c.notebookId) }) { notice("这份笔记不在当前课程范围，请退出课程范围后提问。"); return false }
         if (!s.data.providerReady(p) || p.model.isBlank()) { notice("请先在设置使用 ChatGPT 登录并选择模型，或填写其他服务的 API 配置。") ; tab(3); return false }
         if (!p.images && (a?.image != null || c.messages.any { it.image != null })) { notice("此对话包含课件图片，请选择并开启支持图片的模型，或新建纯文字对话。") ; return false }
         val user = Message("user", text + (a?.text?.takeIf { it.isNotBlank() }?.let { "\n\n课件原文：\n$it" } ?: ""), a?.image, a?.label)
@@ -333,12 +374,13 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
                 else chat.copy(messages = chat.messages.mapIndexed { index, message -> if (index == answerIndex) change(message) else message })
             }
             try {
-                val notebook = withContext(Dispatchers.Default) { chatNotebookContext(s.data, text, a?.noteId.orEmpty(), c.messages) }
+                val notebook = withContext(Dispatchers.Default) { chatNotebookContext(s.data, text, a?.noteId.orEmpty(), c.messages, c.notebookId) }
                 updateAnswer { it.copy(noteRefs = notebook.references) }
                 val input = if (notebook.text.isBlank()) history else history.dropLast(1) + Message("user", notebook.text) + history.last()
                 ai.stream(authorizedProvider(p), tutorMessages(s.data.tutorPrompt, input, "本次上下文包含 ${history.count { it.image != null || it.source != null }} 条带课件图片或来源的消息，实际检索了 ${notebook.references.size} 份本机已保存笔记。上课模式${if (s.classUi.running && !s.classUi.paused) "已开启" else "未运行或已暂停"}。", s.data.learnerProfile)) { chunk ->
                     updateAnswer { it.copy(text = it.text + chunk) }
                 }
+                updateAnswer { it.copy(text = verifiedKnowledgeOutput(it.text, notebook.passages)) }
             } catch (e: Exception) {
                 updateChat(c.id) { chat -> val last = chat.messages.lastOrNull(); if (last?.role == "assistant" && last.text.isNotBlank()) chat.copy(messages = chat.messages.dropLast(1) + last.copy(text = last.text + "\n\n> 本次生成已中断，以上内容可能不完整。")) else chat }
                 throw e
@@ -439,7 +481,7 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         closeMaterials()
         state.update { it.copy(pending = Attachment(null, current.title, "", noteId = current.id), tab = 0, notice = "已选择原笔记；提问时将读取最新已保存内容。") }
     }
-    fun openChatNote(id: String, edit: Boolean = false): Boolean {
+    fun openChatNote(id: String, edit: Boolean = false, returnToChat: Boolean = true): Boolean {
         if (state.value.locked) return false
         val note = state.value.data.notes.find { it.id == id } ?: run { notice("这份笔记已删除或暂不可用。"); return false }
         val open = state.value.data.notes.find { it.id == noteReader.id }
@@ -449,7 +491,7 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         if (edit && !state.value.data.noteWritable(id)) { notice("课堂正在写入此笔记，请暂停并结束整理后再编辑。"); return false }
         if (noteReader.id != id) noteReader.open(note)
         if (edit) noteReader.beginEditing(note)
-        state.update { it.copy(noteChatOrigin = it.data.chat().id) }
+        state.update { it.copy(noteChatOrigin = if (returnToChat) it.data.chat().id else it.noteChatOrigin) }
         closeMaterials(); tab(2)
         return true
     }

@@ -48,4 +48,5 @@ finally:
         required.update({f'reader-completion-{style}-{direction}.png'
                          for style in ('curl', 'cover') for direction in (1, -1)})
         required.add('reader-layer-capture-bitmap.png')
+        required.add('course-knowledge-source.png')
         verify_screenshots(target, required)

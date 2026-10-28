@@ -63,6 +63,7 @@ import kotlinx.coroutines.withContext
                             Text(if (selecting) "已选 ${selectedIds.size} 份" else if (query.isBlank()) "${visible.size} 份笔记" else "找到 ${visible.size} 份", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (selecting) {
                                 FeedbackTextButton(onClick = { selectedIds = visible.map { it.id } }, enabled = !ui.locked && visible.isNotEmpty()) { Text("全选当前结果") }
+                                FeedbackTextButton(onClick = { vm.organizeKnowledge(null, selectedIds.toSet()) }, enabled = !ui.locked && selectedIds.isNotEmpty()) { Text("整理知识总览") }
                                 FeedbackIconButton(onClick = { moving = true }, enabled = !ui.locked && selectedIds.isNotEmpty()) { Icon(Icons.Outlined.DriveFileMove, "移动所选笔记") }
                                 FeedbackIconButton(onClick = { selecting = false; selectedIds = emptyList() }) { Icon(Icons.Outlined.Close, "退出多选") }
                             } else {
@@ -77,6 +78,18 @@ import kotlinx.coroutines.withContext
                     item { OutlinedTextField(query, { query = it.take(200) }, Modifier.fillMaxWidth(), label = { Text("搜索笔记") }, placeholder = { Text("标题、正文、标签或来源") }, singleLine = true, leadingIcon = { Icon(Icons.Outlined.Search, null) }, trailingIcon = if (query.isNotBlank()) ({ FeedbackIconButton(onClick = { query = "" }) { Icon(Icons.Outlined.Close, "清除笔记搜索") } }) else null) }
                     if (!wide) item { NoteFolderBar(ui, vm, selectedFolder) { selectedFolder = it } }
                     else item { Text(if (selectedFolder == null) "全部笔记" else ui.data.folderPath(selectedFolder.orEmpty()), style = MaterialTheme.typography.titleSmall) }
+                    if (!selecting && !selectedFolder.isNullOrBlank() && ui.data.noteFolders.any { it.id == selectedFolder }) item {
+                        StudyPanel {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("串起这一章的知识", style = MaterialTheme.typography.titleSmall)
+                                Text("将原笔记另存为有来源的知识总览，或围绕当前笔记本提问。原笔记与备注保留。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    FeedbackOutlinedButton(onClick = { vm.organizeKnowledge(selectedFolder) }, enabled = !ui.locked) { Text("整理章节总览") }
+                                    FeedbackTextButton(onClick = { selectedFolder?.let(vm::startCourseChat) }, enabled = !ui.locked) { Text("围绕本章提问") }
+                                }
+                            }
+                        }
+                    }
                     item { FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         NOTE_QUICK_VIEWS.forEach { (id, label) -> FeedbackFilterChip(quick == id, { quick = id }, label = { Text(label) }) }
                     } }
@@ -92,6 +105,7 @@ import kotlinx.coroutines.withContext
                                 Text(remember(note.content) { notePreview(note.content) }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 Text(remember(note.createdAt) { "创建于 " + java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.CHINA).format(java.util.Date(note.createdAt)) }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 NotebookStatus(note)
+                                KnowledgeOverviewStatus(note, ui.data)
                             }
                         }
                     }

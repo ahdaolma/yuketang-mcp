@@ -27,6 +27,13 @@ internal fun createStudyMarkdownRenderer(context: Context, p: StudyMarkdownPalet
     .usePlugin(TablePlugin.create { builder -> builder.tableBorderColor(p.line).tableBorderWidth(maxOf(1, (p.density * .5f).toInt()))
         .tableCellPadding((8 * p.density).toInt()).tableHeaderRowBackgroundColor(p.code).tableOddRowBackgroundColor(p.row).tableEvenRowBackgroundColor(p.background) })
     .usePlugin(object : AbstractMarkwonPlugin() {
+        private val externalLinks = io.noties.markwon.LinkResolverDef()
+        override fun configureConfiguration(builder: io.noties.markwon.MarkwonConfiguration.Builder) {
+            builder.linkResolver { view, link ->
+                if (link.startsWith("study-note:")) (view as? NoteSelectableTextView)?.knowledgeLink?.invoke(link)
+                else externalLinks.resolve(view, link)
+            }
+        }
         override fun configureTheme(builder: MarkwonTheme.Builder) {
             builder.linkColor(p.link).codeTextColor(p.color).codeBlockTextColor(p.color).codeBackgroundColor(p.code).codeBlockBackgroundColor(p.code)
                 .blockQuoteColor(p.link).blockQuoteWidth((2 * p.density).toInt()).headingBreakHeight(0).thematicBreakColor(p.line).listItemColor(p.link)

@@ -97,7 +97,7 @@ private fun readBackupData(json: JSONObject): Saved {
     json.requireKeys(backupFields)
     require(backupFields.all { json.has(it) }) { "备份缺少笔记字段。" }
     fun note(o: JSONObject): Note {
-        o.requireKeys(backupNoteFields)
+        o.requireKeys(backupNoteFields + "overviewSources")
         require(backupNoteFields.all { o.has(it) }) { "备份缺少笔记字段。" }
         // Validate raw links before the normal vault parser deduplicates/trims.
         val links = o.getJSONArray("relatedNoteIds").let { array -> (0 until array.length()).map { array.getString(it) } }
@@ -210,7 +210,7 @@ fun mergeNotebookBackup(current: Saved, backup: Saved): Saved {
     val incomingActive = backup.notes.map { it.id }.toSet(); val incomingTrash = backup.noteTrash.map { it.note.id }.toSet()
     val orphanOwners = (current.noteDrafts.map { it.noteId } + listOfNotNull(current.classRun?.noteId)).toSet() - occupied.keys
     val noteMap = mutableMapOf<String, String>(); val reserved = mutableSetOf<String>()
-    fun transformWith(note: Note, mapping: Map<String, String>) = note.portable().copy(id = mapping.getValue(note.id), folderId = folderMap[note.folderId].orEmpty(),
+    fun transformWith(note: Note, mapping: Map<String, String>) = note.portable().copy(id = mapping.getValue(note.id), content = remapKnowledgeLinks(note.content, mapping), overviewSources = note.overviewSources.mapKeys { mapping[it.key] ?: it.key }, folderId = folderMap[note.folderId].orEmpty(),
         relatedNoteIds = note.relatedNoteIds.map { mapping.getValue(it) }.distinct().filter { it != mapping[note.id] })
     // Linked components move together. A single deterministic generation lets
     // cyclic links be compared in full before any candidate ID is accepted.

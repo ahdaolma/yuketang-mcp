@@ -147,6 +147,7 @@ class MainActivity : ComponentActivity() {
     }
     val controlFeedback = remember(vm, unavailable) { ControlFeedback(vm::notice, unavailable) }
     CompositionLocalProvider(LocalControlFeedback provides controlFeedback) {
+    KnowledgeSourceHost(ui, vm) {
     ClassManagerHost(ui, vm) {
     StudyFrame(ui, onTab = { target -> if (target == 3) previousTab = ui.tab; vm.tab(target) }, onBack = { if (ui.tab == 2) vm.noteReader.closeRequested = true else if (ui.tab == 3 && ui.settingsPage.isNotEmpty()) vm.settingsPage("") else vm.tab(previousTab) }, onStop = vm::stop, snackbar = snackbar, noteOpen = ui.tab == 2 && ui.data.notes.any { it.id == vm.noteReader.id }, onClassToggle = { if (ui.classUi.paused) vm.resumeClass() else vm.pauseClass() }, classServiceRunning = follow.serviceRunning) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
@@ -157,6 +158,7 @@ class MainActivity : ComponentActivity() {
         }
     }
     LearningMaterialsHost(ui, vm)
+    }
     }
     }
 }
@@ -245,6 +247,7 @@ class MainActivity : ComponentActivity() {
     val annotationBlock = remember(formatted, text, annotationSource, syntheticPrefixLength) {
         annotationSource?.copy(annotationStart = formatted?.takeIf { it.first == text }?.third ?: Int.MAX_VALUE, renderPrefix = text.take(syntheticPrefixLength))
     }
+    val knowledgeOpen = LocalKnowledgeLink.current
     val decorated = remember(formatted, text, searchQuery) { formatted?.takeIf { it.first == text }?.second?.let { searchHighlight(it, searchQuery) as android.text.Spanned } }
     val locatedSearch by produceState<Pair<NoteSearchTarget, Int>?>(null, searchTarget, formatted, text, sourceOffset, renderer, density, dark) {
         value = null
@@ -268,6 +271,7 @@ class MainActivity : ComponentActivity() {
         it.onPageTap = if (decorated != null) onPageTap else null
         it.allowTextTouch = textTouch
         it.readerTableCellPadding = (8 * density).toInt()
+        it.knowledgeLink = knowledgeOpen
         it.block = if (decorated != null) annotationBlock else null
         if (selectionController != null) it.useApplicationMenu() else it.customSelectionActionModeCallback = null
         val parsed = decorated
@@ -372,6 +376,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
         }
     }, body = {
         LazyColumn(Modifier.fillMaxSize().testTag("学习正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(top = 8.dp, bottom = if (compactFraction > 0.5f) 72.dp else 8.dp)) {
+            if (chat.notebookId != null) item { CourseChatScope(ui, vm) }
             if (chat.messages.isEmpty()) item { StudyEmpty(Icons.Outlined.Description, "从一页课件开始", "连接雨课堂或导入文件，带入课件提问，也可以直接输入问题。", Modifier.padding(top = 24.dp)) { Spacer(Modifier.height(4.dp)); Button(onClick = vm::openMaterials, enabled = !ui.locked) { Icon(Icons.Outlined.FolderOpen, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("选择学习资料") } } }
             itemsIndexed(chat.messages, key = { index, _ -> "${chat.id}:$index" }, contentType = { _, m -> m.role }) { index, m -> ChatMessageCard(m, "${chat.id}:$index", ui.data.provider().name, ui.busy && m.role == "assistant" && index == chat.messages.lastIndex, ui.data.notes, { id, edit -> vm.openChatNote(id, edit) }, !ui.locked) }
         }

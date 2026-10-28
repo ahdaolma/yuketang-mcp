@@ -83,6 +83,7 @@ internal class NoteSelectionPositionProvider(private val geometry: NoteSelection
 // Native text layout and drag handles remain accurate across fonts and line
 // wraps; all visible selection actions belong to the application's Compose UI.
 class NoteSelectableTextView(context: Context) : TextView(context) {
+    var knowledgeLink: ((String) -> Unit)? = null
     init { isHapticFeedbackEnabled = false }
     internal var readerTableCellPadding: Int = (8 * resources.displayMetrics.density).toInt()
     private var geometryLayout: android.text.Layout? = null
