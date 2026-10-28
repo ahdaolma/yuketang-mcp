@@ -72,7 +72,15 @@ class ResponsiveReadingTest {
         assertTrue("Floating controls must not narrow the text column", compact.right - compact.left >= before.right - before.left)
         compose.onNodeWithTag("应用顶部栏").assertDoesNotExist()
         compose.onNodeWithTag("应用时间栏").assertIsDisplayed()
-        compose.waitUntil(5000) { androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars()) == false }
+        compose.waitUntil(5000) {
+            val decor = compose.activity.window.decorView
+            // Before API30 compat visibility is inferred from inset sizes;
+            // stable fullscreen layout can retain the status-bar inset.
+            if (android.os.Build.VERSION.SDK_INT < 30) {
+                @Suppress("DEPRECATION")
+                (decor.systemUiVisibility and android.view.View.SYSTEM_UI_FLAG_FULLSCREEN) != 0
+            } else androidx.core.view.ViewCompat.getRootWindowInsets(decor)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars()) == false
+        }
         compose.onNodeWithContentDescription("悬浮阅读工具").assertIsDisplayed().performClick()
         compose.onNodeWithTag("应用底部导航").assertIsDisplayed()
         listOf("学习资料", "新对话", "对话笔记", "消息跳转", "设置", "课程").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }

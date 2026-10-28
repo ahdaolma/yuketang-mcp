@@ -396,7 +396,7 @@ class ReaderExperienceTest {
         picture.recycle()
         val image = "data:image/png;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
         val note = Note(title = "页脚触摸范围", source = "合成资料", model = "fixture", content = "## 第 1 页\n\n" +
-            (1..4).joinToString("\n\n") { "第${it}段。正文的条件与结论需要连贯地阅读。" } + "\n\n" + sourceImageMarkdown(imageDigest(bytes), "页脚原图") + "\n\n" + "后续正文，必须能够继续阅读。\n\n".repeat(24))
+            (1..4).joinToString("\n\n") { "第${it}段。" + "正文的条件与结论需要连贯地阅读。".repeat(3) } + "\n\n" + sourceImageMarkdown(imageDigest(bytes), "页脚原图") + "\n\n" + "后续正文，必须能够继续阅读。\n\n".repeat(24))
         val height = mutableStateOf(1f)
         withReader(note, setup = { app -> SourceImages(app).save(image) }, heightFraction = height) { _, vm ->
             setMode(vm, "buttons", "点击翻页"); jump("整本开头")
@@ -407,7 +407,12 @@ class ReaderExperienceTest {
             val overhead = compose.onRoot().fetchSemanticsNode().boundsInWindow.height - body.height
             val density = compose.activity.resources.displayMetrics.density
             val imageTop = imageBounds.top - body.top
-            compose.runOnIdle { height.value = ((imageTop + 8 * density + overhead) / (body.height + overhead)).coerceIn(.3f, .95f) }
+            val targetHeight = imageTop + 8 * density
+            compose.runOnIdle { height.value = ((targetHeight + overhead) / (body.height + overhead)).coerceIn(.3f, .95f) }
+            // A height-only change deliberately preserves the command and
+            // offset. Wait for its actual layout, not the old ready flag.
+            compose.waitUntil(5000) { kotlin.math.abs(compose.onNodeWithTag("笔记正文").fetchSemanticsNode().boundsInWindow.height - targetHeight) < 3 }
+            compose.waitForIdle()
             awaitPagedIdle()
             val tool = compose.onNodeWithTag("笔记悬浮工具").fetchSemanticsNode().boundsInWindow
             val obstacle = android.graphics.RectF(tool.left - 8 * density, tool.top - 8 * density, tool.right + 8 * density, tool.bottom + 8 * density)
@@ -424,7 +429,9 @@ class ReaderExperienceTest {
                     }
                 }
             }
-            assertNotNull("Fixture must place text behind the tool", touchY)
+            val evidence = compose.onNodeWithTag("笔记正文").captureToImage().asAndroidBitmap()
+            try { saveUiReviewBitmap(compose.activity, "reader-hidden-footer-touch", evidence) } finally { evidence.recycle() }
+            assertNotNull("Fixture must place text behind the tool: viewport=$readingViewport imageTop=$imageTop obstacle=$obstacle", touchY)
             val before = readingOffset()
             compose.onNodeWithTag("笔记正文").performTouchInput { longClick(Offset(width * .7f, touchY!!)) }
             compose.onNodeWithTag("正文选词工具条").assertDoesNotExist()
