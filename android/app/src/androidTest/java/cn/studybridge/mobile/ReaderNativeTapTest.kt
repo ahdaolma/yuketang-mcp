@@ -105,9 +105,18 @@ class ReaderNativeTapTest {
         val value = SpannableString("链接拥有这次点击").apply {
             setSpan(object : ClickableSpan() { override fun onClick(widget: View) { opened++ } }, 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
-        nativeText(value) { _, _, taps ->
+        nativeText(value) { view, _, taps ->
             compose.onNodeWithTag("原生阅读文本").performTouchInput { click(centerLeft.copy(x = 20f)) }
             compose.runOnIdle { assertEquals(0, taps()); assertEquals(1, opened) }
+            var end = androidx.compose.ui.geometry.Offset.Zero
+            compose.runOnIdle {
+                val layout = requireNotNull(view.layout)
+                val line = layout.getLineForOffset(view.text.length)
+                end = androidx.compose.ui.geometry.Offset(layout.getPrimaryHorizontal(view.text.length) - 1f + view.totalPaddingLeft,
+                    (layout.getLineTop(line) + layout.getLineBottom(line)) / 2f + view.totalPaddingTop)
+            }
+            compose.onNodeWithTag("原生阅读文本").performTouchInput { click(end) }
+            compose.runOnIdle { assertEquals(0, taps()); assertEquals(2, opened) }
         }
     }
 }

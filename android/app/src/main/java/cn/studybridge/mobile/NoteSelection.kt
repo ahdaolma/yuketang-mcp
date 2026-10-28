@@ -240,8 +240,14 @@ class NoteSelectableTextView(context: Context) : TextView(context) {
             val line = textLayout?.getLineForVertical(localY.toInt()) ?: -1
             val onGlyph = textLayout != null && line >= 0 && localY >= textLayout.getLineTop(line) && localY < textLayout.getLineBottom(line) &&
                 localX >= textLayout.getLineLeft(line) && localX < textLayout.getLineRight(line)
-            val link = if (onGlyph) value?.getSpans(offset, offset, android.text.style.ClickableSpan::class.java)?.firstOrNull {
-                value.getSpanStart(it) <= offset && offset < value.getSpanEnd(it)
+            val link = if (onGlyph && value != null && textLayout != null) value.getSpans(offset, offset, android.text.style.ClickableSpan::class.java).firstOrNull {
+                // getOffsetForPosition chooses the nearest caret, so the right
+                // half of a final glyph can resolve to the span's end offset.
+                // Test the actual selection path to include that glyph without
+                // opening a link from adjacent text, gutters or blank lines.
+                val path = android.graphics.Path()
+                textLayout.getSelectionPath(value.getSpanStart(it), value.getSpanEnd(it), path)
+                android.graphics.Region().apply { setPath(path, android.graphics.Region(0, 0, textLayout.width, textLayout.height)) }.contains(localX.toInt(), localY.toInt())
             } else null
             if (link != null) {
                 // Selectable TextView installs ArrowKeyMovementMethod, so a
