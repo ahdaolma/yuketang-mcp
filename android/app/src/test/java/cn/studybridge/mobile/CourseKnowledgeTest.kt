@@ -46,6 +46,8 @@ class CourseKnowledgeTest {
         assertTrue(passages.first().text.contains("这里是比较的证据"))
         assertTrue(passages.last().label.contains("使用条件"))
         assertEquals(original.content, passages.joinToString("") { original.content.substring(it.start, it.end) })
+        val longHeading = note(body = "## ${"超长课程名".repeat(60)} · 第 44 页\n\n实际的知识依据。")
+        assertEquals("心电图 · 第 44 页", knowledgePassages(longHeading).single().label)
     }
 
     @Test fun overviewReadsCompleteScopeWithRemarksAndExcludesOtherCoursesAndOldOverviews() {

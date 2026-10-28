@@ -24,6 +24,7 @@ fun knowledgeLocation(url: String): KnowledgeLocation? {
 }
 
 private val knowledgeHeading = Regex("^ {0,3}#{1,6}[ \\t]+(.+)$")
+private val knowledgePageMarker = Regex("第\\s*\\d+\\s*页")
 private fun knowledgeHeadings(text: String): List<Pair<Int, String>> = buildList {
     val fencePattern = Regex("^ {0,3}(`{3,}|~{3,})(.*)$")
     var fence = ""
@@ -34,7 +35,12 @@ private fun knowledgeHeadings(text: String): List<Pair<Int, String>> = buildList
             val token = marker.groupValues[1]
             if (fence.isEmpty()) fence = token
             else if (token.first() == fence.first() && token.length >= fence.length && marker.groupValues[2].isBlank()) fence = ""
-        } else if (fence.isEmpty()) knowledgeHeading.matchEntire(line)?.let { add(range.start to it.groupValues[1].replace(Regex("[ \\t]+#+[ \\t]*$"), "").take(160)) }
+        } else if (fence.isEmpty()) knowledgeHeading.matchEntire(line)?.let {
+            val full = it.groupValues[1].replace(Regex("[ \\t]+#+[ \\t]*$"), "")
+            val page = knowledgePageMarker.findAll(full).lastOrNull()?.value
+            val short = full.take(160)
+            add(range.start to if (page != null && !short.contains(page)) "$short · $page" else short)
+        }
     }
 }
 
@@ -58,8 +64,9 @@ fun knowledgePassages(note: Note): List<KnowledgePassage> {
             val firstBody = noteSourceLines(rawSection).firstOrNull { range -> rawSection.substring(range.start, range.contentEnd).let { it.isNotBlank() && !knowledgeHeading.matches(it) } }?.start ?: 0
             val contextAt = from + firstBody
             val section = headings.lastOrNull { it.first <= contextAt }?.second.orEmpty()
-            val page = headings.lastOrNull { it.first <= contextAt && Regex("第\\s*\\d+\\s*页").containsMatchIn(it.second) }?.second
-            val label = listOf(note.title.take(80), page?.take(60), section.take(80).takeIf { it != page && it.isNotBlank() }).filterNotNull().joinToString(" · ")
+            val pageHeading = headings.lastOrNull { it.first <= contextAt && knowledgePageMarker.containsMatchIn(it.second) }?.second
+            val page = pageHeading?.let { knowledgePageMarker.findAll(it).lastOrNull()?.value }
+            val label = listOf(note.title.take(80), page?.take(60), section.take(80).takeIf { section != pageHeading && it.isNotBlank() }).filterNotNull().joinToString(" · ")
             while (start < until) {
                 var end = minOf(start + KNOWLEDGE_PASSAGE_SIZE, until)
                 if (end < until) {
