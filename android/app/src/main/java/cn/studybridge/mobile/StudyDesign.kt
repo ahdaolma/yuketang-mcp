@@ -109,6 +109,19 @@ private object SilentHapticFeedback : HapticFeedback {
         // after the initial composition. Reapply once the window is ready.
         hideStatusBar()
         windowView.post(hide)
+        val decor = activity?.window?.decorView
+        @Suppress("DEPRECATION")
+        val legacyVisibility = android.view.View.OnSystemUiVisibilityChangeListener { visibility ->
+            // Legacy IMEs can clear FULLSCREEN without changing Activity
+            // focus. Restore the requested status-bar policy when that bit
+            // is lost; immersive transient bars retain it and remain usable.
+            if (visibility and android.view.View.SYSTEM_UI_FLAG_FULLSCREEN == 0 && decor?.hasWindowFocus() == true)
+                windowView.post(hide)
+        }
+        if (Build.VERSION.SDK_INT < 30) {
+            @Suppress("DEPRECATION")
+            decor?.setOnSystemUiVisibilityChangeListener(legacyVisibility)
+        }
         val focus = android.view.ViewTreeObserver.OnWindowFocusChangeListener { focused -> if (focused) {
             hideStatusBar(); windowView.post(hide)
         } }
@@ -120,6 +133,10 @@ private object SilentHapticFeedback : HapticFeedback {
         onDispose {
             lifecycle.removeObserver(observer)
             windowView.removeCallbacks(hide)
+            if (Build.VERSION.SDK_INT < 30) {
+                @Suppress("DEPRECATION")
+                decor?.setOnSystemUiVisibilityChangeListener(null)
+            }
             if (windowView.viewTreeObserver.isAlive) windowView.viewTreeObserver.removeOnWindowFocusChangeListener(focus)
         }
     }

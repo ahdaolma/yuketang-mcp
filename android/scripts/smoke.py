@@ -47,14 +47,44 @@ def nodes():
 def reveal(label):
     size = adb('shell', 'wm', 'size').decode()
     width, height = map(int, re.findall(r'(\d+)x(\d+)', size)[-1])
-    for attempt in range(6):
-        for n in nodes():
+    # Scroll the actual bounded list rather than flinging from the middle of
+    # the screen across its fixed header. Fast full-screen swipes can skip a
+    # whole action row. Inspect every overlapping viewport in both directions.
+    direction = 1
+    previous = None
+    for attempt in range(24):
+        items = nodes()
+        for n in items:
             if n.get('text') == label or n.get('content-desc') == label:
-                x1,y1,x2,y2 = map(int, re.findall(r'\d+', n.get('bounds')))
+                x1,y1,x2,y2 = map(int, re.findall(r'-?\d+', n.get('bounds')))
                 if x2 > x1 and y2 > y1 and y1 < height and y2 > 0:
-                    return ((x1+x2)//2, (y1+y2)//2)
-        adb('shell','input','swipe',str(width//2),str(height*3//4),str(width//2),str(height//3),'250')
-        time.sleep(0.5)
+                    return ((max(0,x1)+min(width,x2))//2, (max(0,y1)+min(height,y2))//2)
+        scrollables = []
+        for n in items:
+            if n.get('scrollable') == 'true':
+                left, top, right, bottom = map(int, re.findall(r'-?\d+', n.get('bounds')))
+                left, top, right, bottom = max(0,left), max(0,top), min(width,right), min(height,bottom)
+                if right > left and bottom > top + 40:
+                    scrollables.append((left, top, right, bottom))
+        if not scrollables:
+            # Wait for an asynchronously attached page/dialog without sending
+            # blind swipes to an unrelated underlying reading surface.
+            time.sleep(0.5)
+            continue
+        signature = tuple((n.get('text'), n.get('content-desc'), n.get('bounds')) for n in items)
+        if signature == previous or attempt == 12:
+            if direction < 0:
+                break
+            direction = -1
+        previous = signature
+        left, top, right, bottom = max(scrollables, key=lambda b: (b[2]-b[0])*(b[3]-b[1]))
+        x = (left+right)//2
+        first, last = top + (bottom-top)*.65, top + (bottom-top)*.35
+        if direction < 0:
+            first, last = last, first
+        with (out / 'navigation-actions.jsonl').open('a') as stream:
+            stream.write(json.dumps({'label': label, 'direction': direction, 'bounds': [left,top,right,bottom], 'attempt': attempt}, ensure_ascii=False)+'\n')
+        adb('shell','input','swipe',str(x),str(round(first)),str(x),str(round(last)),'600')
     raise AssertionError(f'Missing control: {label}')
 def tap(label):
     x, y = reveal(label)

@@ -40,6 +40,10 @@ Candidate follow-up `72a92f2` changes tests/documentation only; application sour
 
 Running stronger source72 checks: API35 edges `40620865916`, API26 window18 `40620869322`, and API26 complete reader81 `40620872732`. Full signed-candidate validation can run in parallel; publication remains blocked until every final result, artifact and image review is complete.
 
+Source72 reader API26 passed202 unit/81 device with no failures/errors/skips; edge35 passed202/4 and window26 passed202/18. Downloaded/digest checked. Manual window screenshots nevertheless showed a status bar after IME dismissal. Stronger test-only source996c316 queries actual Android8 `dumpsys window policy`: `40622276867` failed after6 seconds, focused app and actual `WINDOW_STATE_SHOWING`, flags `0xb718` instead of hidden `0xb71c`. Restore the lost legacy fullscreen bit through its actual visibility-change callback; retain transient swipe bars and the existing stable layout/navigation/IME policies. Recheck window18 and full reader81 with this application change.
+
+Full source84f21f2 run40621193298 stopped in R8 smoke before complete device regression: `整本开头` was missed. The actual failure screenshot/XML show an open working bounded menu at its bottom; the driver flung using whole-screen coordinates, overshot the target row and searched only downward. Make smoke navigation inspect the actual scrollable bounds, use overlapping low-velocity steps and search back when reaching an unchanged end. Missing controls still fail; no app menu change or longer product wait is introduced. This failed candidate is not publishable.
+
 ### 4. Verify and deliver the final candidate
 
 - [ ] Run cloud unit tests and API 26/35 targeted tests, then final full Android/lint/R8/signed APK and upgrade regression.
