@@ -48,6 +48,6 @@ Full source84f21f2 run40621193298 stopped in R8 smoke before complete device reg
 
 - [x] Run cloud unit tests and API26/35 validation: full40623381515, Python40623381366, API26reader40623433524, strengthened window40625798349, all successful.
 - [x] Download immutable artifacts; verify202 unit/206 full device,81 reader,18 window and0 failures/errors/skips,44 existing Lint warnings/no errors, v2 fixed certificate,1.0.5 upgrade, all final PNG overviews and16-page actual PDF. Record failures separately in the1.0.6 verification record.
-- [ ] Publish only the tested final stable patch and verify the public APK digest. Leave the supplied user attachments untracked.
+- [x] Publish only the tested final stable patch: v1.0.6/Release426249810 is non-draft stable Latest. All12 uploaded assets checked and public APK re-downloaded with SHA23310ea8ba0d79a43893e8309da639959bf7a48cd684eaaaeac77360a4b0000d matching cloud output. Supplied user attachments remain untracked.
 
 Final candidate preparation:1.0.6/code29; full workflow upgrades from the public1.0.5 APK, pinned SHA256 `c852ee1e436e962b91043bae7ac86c51bb9ccf96bbb93eb13d10407a47af3de1`. R8 smoke additionally enters a long table through the ordinary editor and records intra-source forward/back screens for both styles. Full suite timeout90 minutes preserves all206 device cases, including the added caret-versus-active-selection regression. No1.0.6 release has been published; `5868f4f` full-run success is historical and cannot validate the newer window/footer changes.
