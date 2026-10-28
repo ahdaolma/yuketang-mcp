@@ -13,7 +13,7 @@ if [ "${RAIN_READER_SUITE:-reader}" = modes ]; then
 fi
 classes=cn.studybridge.mobile.ReaderExperienceTest,cn.studybridge.mobile.ReaderNativeTapTest,cn.studybridge.mobile.ReaderMotionPreviewTest,cn.studybridge.mobile.ReaderSourceAnnotationTest,cn.studybridge.mobile.ReaderBackwardStabilityTest,cn.studybridge.mobile.ReaderLegacyAnnotationTest,cn.studybridge.mobile.ReaderLayerCaptureTest,cn.studybridge.mobile.ReaderPaperVisualTest,cn.studybridge.mobile.ReaderMotionCompletionTest,cn.studybridge.mobile.ReaderBoundaryRegressionTest,cn.studybridge.mobile.ReaderPreviewSizeTest,cn.studybridge.mobile.ReaderMarkdownLeaseTest
 if [ "${RAIN_READER_SUITE:-reader}" = knowledge ]; then
-  classes=cn.studybridge.mobile.CourseKnowledgeWorkflowTest,cn.studybridge.mobile.ChatNotebookWorkflowTest,cn.studybridge.mobile.NotebookHierarchyUiTest
+  classes=cn.studybridge.mobile.CourseKnowledgeWorkflowTest,cn.studybridge.mobile.ChatNotebookWorkflowTest,cn.studybridge.mobile.ReaderNativeTapTest
 fi
 if [ "${RAIN_READER_SUITE:-reader}" = edges ]; then
   classes=cn.studybridge.mobile.ReaderExperienceTest#settledPagedScreensNeverStartInsideANativeTextLine,cn.studybridge.mobile.ReaderExperienceTest#richPagedEdgesPaintEveryTableAndBodyLineWithoutHalfGlyphs,cn.studybridge.mobile.ReaderExperienceTest#landscapePagedEdgesPaintEveryTableAndBodyLineWithoutHalfGlyphs,cn.studybridge.mobile.ReaderExperienceTest#hiddenEdgeTextCannotOpenSelectionButItsBlankAreaCanStillTurnThePage

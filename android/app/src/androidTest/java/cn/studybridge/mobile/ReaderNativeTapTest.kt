@@ -101,12 +101,13 @@ class ReaderNativeTapTest {
     }
 
     @Test fun clickableSpansDoNotForwardAPageAction() {
+        var opened = 0
         val value = SpannableString("链接拥有这次点击").apply {
-            setSpan(object : ClickableSpan() { override fun onClick(widget: View) = Unit }, 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(object : ClickableSpan() { override fun onClick(widget: View) { opened++ } }, 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
         nativeText(value) { _, _, taps ->
             compose.onNodeWithTag("原生阅读文本").performTouchInput { click(centerLeft.copy(x = 20f)) }
-            compose.runOnIdle { assertEquals(0, taps()) }
+            compose.runOnIdle { assertEquals(0, taps()); assertEquals(1, opened) }
         }
     }
 }

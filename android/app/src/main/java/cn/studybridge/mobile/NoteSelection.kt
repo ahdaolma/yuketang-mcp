@@ -234,8 +234,23 @@ class NoteSelectableTextView(context: Context) : TextView(context) {
             val offset = getOffsetForPosition(event.x, event.y)
             val remark = value?.getSpans(offset, offset, NoteAnnotationSpan::class.java)?.firstOrNull { it.annotation.kind == "remark" }
             if (remark != null && controller != null) { cancelNativeTap(event); controller?.openedRemark = remark.annotation.id; performClick(); return true }
-            val link = value?.getSpans(offset, offset, android.text.style.ClickableSpan::class.java)?.isNotEmpty() == true
-            if (!link && onPageTap != null) {
+            val textLayout = layout
+            val localX = event.x - totalPaddingLeft + scrollX
+            val localY = event.y - totalPaddingTop + scrollY
+            val line = textLayout?.getLineForVertical(localY.toInt()) ?: -1
+            val onGlyph = textLayout != null && line >= 0 && localY >= textLayout.getLineTop(line) && localY < textLayout.getLineBottom(line) &&
+                localX >= textLayout.getLineLeft(line) && localX < textLayout.getLineRight(line)
+            val link = if (onGlyph) value?.getSpans(offset, offset, android.text.style.ClickableSpan::class.java)?.firstOrNull {
+                value.getSpanStart(it) <= offset && offset < value.getSpanEnd(it)
+            } else null
+            if (link != null) {
+                // Selectable TextView installs ArrowKeyMovementMethod, so a
+                // platform/default link movement method cannot own this tap.
+                // Dispatch a short, stationary glyph hit exactly once while
+                // preserving native long-press selection and drag ownership.
+                cancelNativeTap(event); finishSelection(); link.onClick(this); performClick(); return true
+            }
+            if (onPageTap != null) {
                 // Use window coordinates: text can be inset or horizontally
                 // translated while the reader's halves stay viewport-relative.
                 val location = IntArray(2); getLocationInWindow(location)
