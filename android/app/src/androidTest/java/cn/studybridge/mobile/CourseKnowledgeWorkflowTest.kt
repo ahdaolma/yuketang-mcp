@@ -73,7 +73,7 @@ class CourseKnowledgeWorkflowTest {
         val app = noteTestApplication(compose.activity.applicationContext)
         val passage = knowledgePassages(original).last()
         val bodies = Collections.synchronizedList(mutableListOf<String>())
-        Vault(app).save(Saved(providers = listOf(provider), notes = listOf(original, other), noteFolders = listOf(folder, chapter)))
+        Vault(app).save(Saved(providers = listOf(provider), notes = listOf(original, other), noteFolders = listOf(folder, chapter), notesPrompt = "保留我的学科表达偏好：先讲适用条件"))
         val store = ViewModelStore(); lateinit var vm: StudyViewModel
         try {
             compose.runOnUiThread { vm = noteTestViewModel(app, store, ai = fixtureAiApi("电活动的知识结构。${passage.link}", inspect = { request -> val b = Buffer(); request.body!!.writeTo(b); bodies += b.readUtf8() })) }
@@ -82,6 +82,7 @@ class CourseKnowledgeWorkflowTest {
             compose.runOnIdle { vm.organizeKnowledge(chapter.id) }
             compose.waitUntil(15000) { !vm.ui.value.busy }
             assertEquals(1, bodies.size)
+            assertTrue(bodies.single().contains("保留我的学科表达偏好"))
             val overview = vm.ui.value.data.notes.single { it.overviewSources.isNotEmpty() }
             assertEquals(chapter.id, overview.folderId)
             assertEquals(original, vm.ui.value.data.notes.single { it.id == original.id })

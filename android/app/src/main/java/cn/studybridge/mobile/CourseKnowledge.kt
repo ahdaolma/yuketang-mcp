@@ -142,3 +142,12 @@ fun remapKnowledgeLinks(text: String, mapping: Map<String, String>): String = so
 fun knowledgeLinkedNoteIds(text: String): Set<String> = sourceUrl.findAll(text).mapNotNull { knowledgeLocation(it.value)?.noteId }.toSet()
 
 const val KNOWLEDGE_OVERVIEW_PROMPT = """将所给已保存笔记整理成独立的章节知识总览。按知识主题串联概念、条件、因果、公式、应用和易错点；合并重复定义，保留后续新增的限定、例外和不同来源间的矛盾，不用逐页复述。不得覆盖或假称已修改用户原笔记。每个知识点或短段落后附实际提供的 Markdown 来源链接；不得创造链接、页码或原课件引文。来源是已保存笔记，不自动等于课件原文。只有材料明确提供原文时才标“课件原文”；你的推理标“AI解释”，证据不足标“待核实”，尊重并注明个人备注。保留单位、条件和适用对象。不生成练习、待办或掌握度结论。输出直接可读的 Markdown，不输出内部 ID 或版本哈希。"""
+
+fun knowledgeOverviewMessages(saved: Saved, input: KnowledgeOverviewInput): List<Message> {
+    val style = if (saved.superFocusNotes) "\n超重点模式：只保留核心结论、必要条件、易错点和来源，话少但信息充分。" else ""
+    return listOf(
+        Message("system", withLearnerProfile(saved.notesPrompt.ifBlank { NOTES_PROMPT }, saved.learnerProfile)),
+        Message("system", "$APP_CONTEXT\n$CHAT_NOTE_BOUNDARY\n本次采用章节总览结构；用户笔记角色中的学科和表达偏好继续适用，逐页栏目改为以下任务结构。资料类型以实际来源标记为准。\n$KNOWLEDGE_OVERVIEW_PROMPT$style\n本次整理 ${input.notes.size} 份已保存笔记。"),
+        Message("user", input.text)
+    )
+}

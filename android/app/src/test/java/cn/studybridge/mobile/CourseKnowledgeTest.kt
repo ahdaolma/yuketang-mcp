@@ -59,6 +59,11 @@ class CourseKnowledgeTest {
         assertFalse(input.text.contains(other.content))
         assertFalse(input.text.contains(oldOverview.content))
         assertTrue(input.text.contains("不是当前原课件"))
+        val request = knowledgeOverviewMessages(saved(original).copy(notesPrompt = "用户笔记角色：先解释条件", learnerProfile = "学习情况：基础薄弱", superFocusNotes = true), input)
+        assertTrue(request.first().text.contains("用户笔记角色：先解释条件"))
+        assertTrue(request.first().text.contains("基础薄弱"))
+        assertTrue(request[1].text.contains("超重点模式"))
+        assertEquals(input.text, request.last().text)
     }
 
     @Test fun longOverviewFailsExplicitlyRatherThanSilentlyDroppingMaterial() {

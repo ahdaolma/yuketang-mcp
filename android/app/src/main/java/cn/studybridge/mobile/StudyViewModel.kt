@@ -275,8 +275,7 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
             require(snapshot.providerReady(p) && p.model.isNotBlank()) { "请先在设置连接可用的模型。" }
             val input = withContext(Dispatchers.Default) { knowledgeOverviewInput(snapshot, folderId, ids) }
             val text = StringBuilder()
-            val style = if (snapshot.superFocusNotes) "\n超重点模式：只保留核心结论、必要条件、易错点和来源，话少但信息充分。" else ""
-            val request = tutorMessages(KNOWLEDGE_OVERVIEW_PROMPT + style, listOf(Message("user", input.text)), "本次仅整理选定的 ${input.notes.size} 份已保存笔记。", snapshot.learnerProfile)
+            val request = knowledgeOverviewMessages(snapshot, input)
             ai.stream(authorizedProvider(p), request) { chunk -> text.append(chunk); state.update { it.copy(noteDraft = text.toString()) } }
             require(text.isNotBlank()) { "模型未生成总览，原笔记保持原样。" }
             val versions = withContext(Dispatchers.Default) { input.notes.associate { it.id to knowledgeNoteVersion(it) } }
