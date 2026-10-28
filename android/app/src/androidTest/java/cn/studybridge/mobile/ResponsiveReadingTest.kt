@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.Density
@@ -30,12 +31,13 @@ class ResponsiveReadingTest {
         compose.activityRule.scenario.onActivity { vm = ViewModelProvider(it)[StudyViewModel::class.java] }
         compose.setContent {
             val density = LocalDensity.current
+            val notebookPreferences by vm.ui.collectAsState()
             CompositionLocalProvider(LocalDensity provides Density(density.density, scale)) { StudyTheme(dark) {
                 Box(if (width == null) Modifier.fillMaxSize() else Modifier.width(width.dp).fillMaxHeight()) {
                     StudyFrame(state.value, { state.value = state.value.copy(tab = it) }, {}, {}, noteOpen = state.value.tab == 2 && vm.noteReader.id != null) { padding ->
                         Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
                             StudyOperationProgress(state.value)
-                            when (state.value.tab) { 0 -> ChatScreen(state.value, vm); 2 -> NotesScreen(state.value, vm); else -> Text("课程导航已到达") }
+                            when (state.value.tab) { 0 -> ChatScreen(state.value, vm); 2 -> NotesScreen(state.value.copy(data = state.value.data.copy(noteReadMode = notebookPreferences.data.noteReadMode)), vm); else -> Text("课程导航已到达") }
                         }
                     }
                 }
@@ -88,9 +90,20 @@ class ResponsiveReadingTest {
         compose.onNodeWithContentDescription("关闭阅读方式与字号").assertIsDisplayed()
         val originalMode = vm.ui.value.data.noteReadMode
         val alternateMode = if (originalMode == "swipe") "buttons" else "swipe"
-        compose.onNodeWithText(NOTE_READING_MODES.getValue(alternateMode)).performScrollTo().performClick()
+        fun selectMode(id: String) {
+            val previous = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config.getOrNull(ReaderGenerationKey)
+            // This fixture supplies synthetic notes, but preference changes
+            // must drive the actual reader rather than only the ViewModel.
+            compose.onNodeWithText(NOTE_READING_MODES.getValue(id)).performScrollTo().performClick()
+            compose.waitUntil(15000) {
+                val config = compose.onNodeWithTag("笔记正文").fetchSemanticsNode().config
+                vm.ui.value.data.noteReadMode == id && if (id == "continuous") !config.contains(ReaderReadyKey)
+                    else config.getOrNull(ReaderReadyKey) == true && (previous == null || (config.getOrNull(ReaderGenerationKey) ?: -1) > previous)
+            }
+        }
+        selectMode(alternateMode)
         assertSettledStatusBarHidden("sample-note-preferences-mode-change-hidden")
-        compose.onNodeWithText(NOTE_READING_MODES.getValue(originalMode)).performScrollTo().performClick()
+        selectMode(originalMode)
         assertSettledStatusBarHidden("sample-note-preferences-system-hidden")
         compose.onNodeWithContentDescription("关闭阅读方式与字号").performClick()
         compose.ensureNoteTools()
