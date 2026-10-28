@@ -40,7 +40,8 @@ private val queryStopWords = setOf("这个", "那个", "什么", "怎么", "如�
 // Chinese questions rarely contain spaces: use adjacent character pairs as well as
 // longer runs, and prefer a full query phrase/title match over individual pairs.
 internal fun chatNotebookTerms(query: String): List<String> = buildList {
-    Regex("[a-zA-Z][a-zA-Z0-9_-]{1,39}|[\\p{IsHan}]{2,40}").findAll(query.lowercase(Locale.ROOT)).forEach { hit ->
+    // Android's Is-script aliases require API 29; script=Han also works on 26.
+    Regex("[a-zA-Z][a-zA-Z0-9_-]{1,39}|[\\p{script=Han}]{2,40}").findAll(query.lowercase(Locale.ROOT)).forEach { hit ->
         val word = hit.value
         if (word !in queryStopWords) add(word)
         if (word.any { it.code in 0x4e00..0x9fff }) word.windowed(2).filterNot { it in queryStopWords }.forEach(::add)

@@ -60,12 +60,13 @@ class CourseKnowledgeWorkflowTest {
             compose.onNodeWithText("课程范围 · 生理学 / 血液循环").assertIsDisplayed()
             assertEquals(chapter.id, vm.ui.value.data.chat().notebookId)
             shot("course-knowledge-chat-scope")
-            compose.onNodeWithText("退出范围").performClick()
+            compose.onNodeWithContentDescription("退出课程范围").performClick()
             assertNull(vm.ui.value.data.chat().notebookId)
         } finally { compose.runOnIdle { store.clear() } }
     }
 
     @Test fun overviewSavesSeparatelyAndScopedChatReadsTheNextSavedEditAndRemark() {
+        assertTrue(chatNotebookTerms("心电图与机械收缩").contains("心电"))
         val app = noteTestApplication(compose.activity.applicationContext)
         val passage = knowledgePassages(original).last()
         val bodies = Collections.synchronizedList(mutableListOf<String>())
@@ -92,7 +93,7 @@ class CourseKnowledgeWorkflowTest {
                 assertTrue(vm.send("心电图和机械收缩有什么区别？"))
             }
             compose.waitUntil(15000) { !vm.ui.value.busy }
-            assertEquals(2, bodies.size)
+            assertEquals(vm.ui.value.notice, 2, bodies.size)
             assertTrue(bodies.last().contains("人工新结论"))
             assertTrue(bodies.last().contains("已核对本课程的个人备注"))
             assertTrue(bodies.last().contains("持续课程范围：生理学"))
@@ -184,6 +185,7 @@ class CourseKnowledgeWorkflowTest {
                     try { view.dispatchTouchEvent(event) } finally { event.recycle() }
                 }
             }
+            compose.waitUntil(5000) { runCatching { compose.onNodeWithContentDescription("关闭核对笔记来源").assertIsDisplayed() }.isSuccess }
             compose.onNodeWithText("核对笔记来源").assertIsDisplayed()
             compose.onNodeWithContentDescription("关闭核对笔记来源").assertIsDisplayed()
             compose.onNodeWithTag("阅读操作面板").captureToImage()

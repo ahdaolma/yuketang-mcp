@@ -1,10 +1,13 @@
 package cn.studybridge.mobile
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
@@ -51,12 +54,9 @@ val LocalKnowledgeLink = staticCompositionLocalOf<((String) -> Unit)?> { null }
     val folder = ui.data.chat().notebookId ?: return
     val exists = ui.data.noteFolders.any { it.id == folder }
     Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-            Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
-                Text(if (exists) "课程范围 · ${ui.data.folderPath(folder)}" else "原课程范围已删除", style = MaterialTheme.typography.labelLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("每轮读取最新已保存笔记与备注", style = MaterialTheme.typography.bodySmall)
-            }
-            FeedbackTextButton(onClick = vm::leaveCourseChatScope, enabled = !ui.locked) { Text("退出范围") }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(if (exists) "课程范围 · ${ui.data.folderPath(folder)}" else "原课程范围已删除", Modifier.weight(1f).padding(vertical = 12.dp), style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            FeedbackIconButton(onClick = vm::leaveCourseChatScope, enabled = !ui.locked) { Icon(Icons.Outlined.Close, "退出课程范围") }
         }
     }
 }
