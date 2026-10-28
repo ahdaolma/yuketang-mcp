@@ -55,7 +55,10 @@ class NotebookHierarchyUiTest {
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasTestTag("当前笔记本"))
         compose.onNodeWithTag("当前笔记本").performClick()
         if (id == "dna") compose.onNodeWithContentDescription("展开笔记本 遗传学").performClick()
-        if (id == "words") compose.onNodeWithContentDescription("展开笔记本 英语").performClick()
+        if (id == "words") {
+            compose.onNodeWithTag("笔记本选择列表").performScrollToNode(hasContentDescription("展开笔记本 英语"))
+            compose.onNodeWithContentDescription("展开笔记本 英语").performClick()
+        }
         compose.onNodeWithTag("笔记本选择列表").performScrollToNode(hasTestTag("选择分类 $id"))
         compose.onNodeWithTag("选择分类 $id").performClick()
         compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记本面板").fetchSemanticsNodes().isEmpty() }
@@ -70,6 +73,7 @@ class NotebookHierarchyUiTest {
         compose.onNodeWithTag("笔记列表").performScrollToNode(hasTestTag("笔记卡片 b"))
         compose.onNodeWithTag("笔记卡片 b").performClick().assertIsSelected()
         top(); compose.onNodeWithContentDescription("移动所选笔记").performClick()
+        compose.onNodeWithTag("笔记本选择列表").performScrollToNode(hasContentDescription("展开笔记本 英语"))
         compose.onNodeWithContentDescription("展开笔记本 英语").performClick()
         compose.onNodeWithTag("笔记本选择列表").performScrollToNode(hasTestTag("选择分类 words"))
         compose.onNodeWithTag("选择分类 words").performClick()
