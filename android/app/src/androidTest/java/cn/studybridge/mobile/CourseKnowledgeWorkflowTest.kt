@@ -62,8 +62,10 @@ class CourseKnowledgeWorkflowTest {
             compose.onNodeWithText("选择学习资料").assertDoesNotExist()
             assertEquals(chapter.id, vm.ui.value.data.chat().notebookId)
             shot("course-knowledge-chat-scope")
+            compose.onNode(hasSetTextAction()).performTextInput("未发出的问题")
             compose.onNodeWithContentDescription("退出课程范围").performClick()
             assertNull(vm.ui.value.data.chat().notebookId)
+            compose.onNode(hasSetTextAction()).assertChatDraftEquals("未发出的问题")
             assertTrue(vm.ui.value.notice.contains("原对话保留"))
         } finally { compose.runOnIdle { store.clear() } }
     }
