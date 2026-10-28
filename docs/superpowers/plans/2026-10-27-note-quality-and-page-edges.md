@@ -36,6 +36,10 @@ Files: `NotebookReader.kt`, `ReaderTextRegistry.kt`, native reader rendering hel
 - [x] Independently reproduce a footer reading-order hole: stronger actual-pixel test `40507760137` failed because a short continuation painted below a tool-hidden line. This failure supersedes the earlier edge-test acceptance.
 - [ ] Verify a contiguous footer crop and matching hidden-image hit testing with `d025304`: API35 edges `40510067822`, API26 edges `40510072892`, API26 keyboard/window/modes `40510077768`. API26 screenshot persistence now uses the existing compatible review helper rather than requesting storage permission.
 
+Candidate follow-up `72a92f2` changes tests/documentation only; application source remains `d025304`. Both d025 edge runs passed the three actual geometry/pixel/complete-line cases; the fourth failed its fixture precondition because short text did not reach the tool region. The window profile passed17/18, including actual landscape keyboard/typing, and stopped at the legacy compat status-inset approximation. The new fixture uses wrapped text, waits the actual resized height and saves its paper before asserting. Legacy status-bar checks use the real fullscreen flag as in the existing viewer regression; modern systems still use visibility insets. No failed profile is accepted as a final pass.
+
+Running stronger source72 checks: API35 edges `40620865916`, API26 window18 `40620869322`, and API26 complete reader81 `40620872732`. Full signed-candidate validation can run in parallel; publication remains blocked until every final result, artifact and image review is complete.
+
 ### 4. Verify and deliver the final candidate
 
 - [ ] Run cloud unit tests and API 26/35 targeted tests, then final full Android/lint/R8/signed APK and upgrade regression.
