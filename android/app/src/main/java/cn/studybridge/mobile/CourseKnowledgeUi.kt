@@ -33,8 +33,10 @@ val LocalKnowledgeLink = staticCompositionLocalOf<((String) -> Unit)?> { null }
                     val image by produceState<String?>(null, current, location) {
                         value = withContext(Dispatchers.Default) { knowledgeSourceImage(actual.first, location!!) }
                     }
-                    image?.takeUnless { actual.second.contains(it) }?.let { IllustratedMarkdown(it, vm.sourceImages) }
-                    IllustratedMarkdown(actual.second, vm.sourceImages)
+                    CompositionLocalProvider(LocalNoteFontSize provides ui.data.noteFontSize) {
+                        image?.takeUnless { actual.second.contains(it) }?.let { IllustratedMarkdown(it, vm.sourceImages) }
+                        IllustratedMarkdown(actual.second, vm.sourceImages)
+                    }
                 }
                 if (current != null) FeedbackOutlinedButton(onClick = {
                     val id = current.id; val fromChat = ui.tab == 0

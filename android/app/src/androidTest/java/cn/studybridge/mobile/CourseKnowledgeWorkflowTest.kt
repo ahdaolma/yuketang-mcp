@@ -171,16 +171,19 @@ class CourseKnowledgeWorkflowTest {
 
     @Test fun nativeCitationOpensExactSavedPassageAndStaleSourceHasFixedCloseEntry() {
         val app = noteTestApplication(compose.activity.applicationContext)
-        Vault(app).save(Saved(notes = listOf(original), noteFolders = listOf(folder, chapter)))
+        Vault(app).save(Saved(notes = listOf(original), noteFolders = listOf(folder, chapter), noteFontSize = 24))
         val store = ViewModelStore(); lateinit var vm: StudyViewModel
         val passage = knowledgePassages(original).last()
         var showLoadedData by mutableStateOf(true)
+        var sourceView: android.widget.TextView? = null
         try {
             compose.runOnUiThread { vm = noteTestViewModel(app, store) }
             compose.setContent {
                 val ui by vm.ui.collectAsState()
                 val visible = if (showLoadedData) ui else ui.copy(ready = false, data = ui.data.copy(notes = emptyList()))
-                StudyTheme { KnowledgeSourceHost(visible, vm) { Markdown("结论来源：${passage.link}") } }
+                CompositionLocalProvider(LocalNoteTextRegistered provides { view, _ -> if (view.text.contains("心电图记录电活动")) sourceView = view }) {
+                    StudyTheme { KnowledgeSourceHost(visible, vm) { Markdown("结论来源：${passage.link}") } }
+                }
             }
             compose.waitUntil(10000) { vm.ui.value.ready }
             fun views(view: View): List<TextView> = (if (view is TextView) listOf(view) else emptyList()) + (if (view is ViewGroup) (0 until view.childCount).flatMap { views(view.getChildAt(it)) } else emptyList())
@@ -202,6 +205,8 @@ class CourseKnowledgeWorkflowTest {
             compose.waitUntil(5000) { runCatching { compose.onNodeWithContentDescription("关闭核对笔记来源").assertIsDisplayed() }.isSuccess }
             compose.onNodeWithText("核对笔记来源").assertIsDisplayed()
             compose.onNodeWithContentDescription("关闭核对笔记来源").assertIsDisplayed()
+            compose.waitUntil(5000) { sourceView != null }
+            compose.runOnIdle { assertEquals(24f * compose.activity.resources.displayMetrics.scaledDensity, sourceView!!.textSize, 1f) }
             if (android.os.Build.VERSION.SDK_INT >= 28) compose.onNodeWithTag("阅读操作面板").captureToImage()
             else {
                 // Compose's dialog PixelCopy helper requires API 28. Observe
