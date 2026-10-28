@@ -82,6 +82,12 @@ class ResponsiveReadingTest {
         listOf("返回笔记列表", "目录跳转", "笔记内查找", "阅读设置", "设置").forEach {
             compose.onNodeWithContentDescription(it).performScrollTo().assertIsDisplayed().assertIsEnabled()
         }
+        assertSettledStatusBarHidden("sample-note-tools-system-hidden")
+        compose.onNodeWithContentDescription("阅读设置").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("关闭阅读方式与字号").assertIsDisplayed()
+        assertSettledStatusBarHidden("sample-note-preferences-system-hidden")
+        compose.onNodeWithContentDescription("关闭阅读方式与字号").performClick()
+        compose.ensureNoteTools()
     }
     @Test fun scrollNarrowsBarsWithoutRemovingActionsAndReverseRestoresThem() {
         val state = mutableStateOf(sample()); render(state)
