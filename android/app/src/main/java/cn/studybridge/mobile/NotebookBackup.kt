@@ -216,7 +216,13 @@ fun mergeNotebookBackup(current: Saved, backup: Saved): Saved {
     // cyclic links be compared in full before any candidate ID is accepted.
     // This avoids half-reusing locally edited imported graphs on re-import.
     val neighbours = source.keys.associateWith { mutableSetOf<String>() }
-    backup.imageBearingNotes().forEach { note -> note.relatedNoteIds.forEach { linked -> neighbours.getValue(note.id).add(linked); neighbours.getValue(linked).add(note.id) } }
+    backup.imageBearingNotes().forEach { note ->
+        // Provenance is independent of the user's editable related-note list.
+        // Chat transcripts saved as Markdown also contain these source links.
+        (note.relatedNoteIds + note.overviewSources.keys + knowledgeLinkedNoteIds(note.content)).filter { it in source }.forEach { linked ->
+            neighbours.getValue(note.id).add(linked); neighbours.getValue(linked).add(note.id)
+        }
+    }
     val unseen = source.keys.toMutableSet()
     while (unseen.isNotEmpty()) {
         val component = linkedSetOf<String>(); val queue = java.util.ArrayDeque<String>()

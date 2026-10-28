@@ -114,14 +114,14 @@ class CourseKnowledgeTest {
     @Test fun backupConflictRemapsOverviewLinksAndPreservesOriginalLocalNote() {
         val original = note()
         val passage = knowledgePassages(original).last()
-        val overview = note("overview", passage.link).copy(relatedNoteIds = listOf(original.id), overviewSources = mapOf(original.id to knowledgeNoteVersion(original)))
+        val overview = note("overview", passage.link).copy(overviewSources = mapOf(original.id to knowledgeNoteVersion(original)))
         val bytes = ByteArrayOutputStream().also { writeNotebookBackup(it, saved(original, overview), { error("unexpected image") }, { null }) }.toByteArray()
         val backup = readNotebookBackup(ByteArrayInputStream(bytes))
         val local = original.copy(content = "本机修改不能覆盖")
         val restored = mergeNotebookBackup(saved(local), backup.data)
         assertEquals(local, restored.notes.first { it.id == local.id })
         val imported = restored.notes.first { it.overviewSources.isNotEmpty() }
-        val importedId = imported.relatedNoteIds.single()
+        val importedId = imported.overviewSources.keys.single()
         assertNotEquals(original.id, importedId)
         assertEquals(importedId, imported.overviewSources.keys.single())
         val link = Regex("\\((study-note:[^)]*)\\)").find(imported.content)!!.groupValues[1]

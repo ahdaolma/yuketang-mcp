@@ -139,4 +139,6 @@ fun remapKnowledgeLinks(text: String, mapping: Map<String, String>): String = so
     if (source == null || id == null) match.value else "study-note:${URLEncoder.encode(id, "UTF-8")}/${source.hash}/${source.start}/${source.end}"
 }
 
+fun knowledgeLinkedNoteIds(text: String): Set<String> = sourceUrl.findAll(text).mapNotNull { knowledgeLocation(it.value)?.noteId }.toSet()
+
 const val KNOWLEDGE_OVERVIEW_PROMPT = """将所给已保存笔记整理成独立的章节知识总览。按知识主题串联概念、条件、因果、公式、应用和易错点；合并重复定义，保留后续新增的限定、例外和不同来源间的矛盾，不用逐页复述。不得覆盖或假称已修改用户原笔记。每个知识点或短段落后附实际提供的 Markdown 来源链接；不得创造链接、页码或原课件引文。来源是已保存笔记，不自动等于课件原文。只有材料明确提供原文时才标“课件原文”；你的推理标“AI解释”，证据不足标“待核实”，尊重并注明个人备注。保留单位、条件和适用对象。不生成练习、待办或掌握度结论。输出直接可读的 Markdown，不输出内部 ID 或版本哈希。"""
