@@ -245,6 +245,21 @@ class CourseKnowledgeWorkflowTest {
             view.postOnAnimation { view.postOnAnimation { frames.countDown() } }
         }
         assertTrue(frames.await(5, TimeUnit.SECONDS))
+        // Compose can already be idle while the removed native dialog window
+        // is still fading out. Require stable system pixels, not just absent
+        // semantics, so the captured library does not contain an old overlay.
+        var previous: android.graphics.Bitmap? = null
+        var stableSince = android.os.SystemClock.uptimeMillis()
+        try {
+            compose.waitUntil(5000) {
+                val current = requireNotNull(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+                val now = android.os.SystemClock.uptimeMillis()
+                if (previous?.sameAs(current) != true) stableSince = now
+                previous?.recycle()
+                previous = current
+                now - stableSince >= 200
+            }
+        } finally { previous?.recycle() }
         advancedUiShot(compose.activity, name)
     }
 }
