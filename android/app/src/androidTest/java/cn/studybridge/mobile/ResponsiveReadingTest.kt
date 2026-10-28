@@ -49,6 +49,7 @@ class ResponsiveReadingTest {
         try { saveUiReviewBitmap(compose.activity, name, image) } finally { image.recycle() }
     }
     private fun assertSettledStatusBarHidden(name: String) {
+        compose.waitForIdle()
         var policy = ""
         try {
             compose.waitUntil(6000) {
