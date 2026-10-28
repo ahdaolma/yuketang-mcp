@@ -21,7 +21,7 @@ val LocalKnowledgeLink = staticCompositionLocalOf<((String) -> Unit)?> { null }
     CompositionLocalProvider(LocalKnowledgeLink provides open) {
         content()
         val url = sourceUrl
-        if (url != null) {
+        if (url != null && ui.ready) {
             val location = remember(url) { knowledgeLocation(url) }
             val current = ui.data.notes.find { it.id == location?.noteId && ui.data.noteTrash.none { trash -> trash.note.id == it.id } }
             val actual = remember(current, location) { location?.let { knowledgeSourceText(ui.data, it) } }

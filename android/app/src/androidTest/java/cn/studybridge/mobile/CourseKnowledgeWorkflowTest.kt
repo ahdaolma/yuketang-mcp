@@ -173,11 +173,13 @@ class CourseKnowledgeWorkflowTest {
         Vault(app).save(Saved(notes = listOf(original), noteFolders = listOf(folder, chapter)))
         val store = ViewModelStore(); lateinit var vm: StudyViewModel
         val passage = knowledgePassages(original).last()
+        var showLoadedData by mutableStateOf(true)
         try {
             compose.runOnUiThread { vm = noteTestViewModel(app, store) }
             compose.setContent {
                 val ui by vm.ui.collectAsState()
-                StudyTheme { KnowledgeSourceHost(ui, vm) { Markdown("结论来源：${passage.link}") } }
+                val visible = if (showLoadedData) ui else ui.copy(ready = false, data = ui.data.copy(notes = emptyList()))
+                StudyTheme { KnowledgeSourceHost(visible, vm) { Markdown("结论来源：${passage.link}") } }
             }
             compose.waitUntil(10000) { vm.ui.value.ready }
             fun views(view: View): List<TextView> = (if (view is TextView) listOf(view) else emptyList()) + (if (view is ViewGroup) (0 until view.childCount).flatMap { views(view.getChildAt(it)) } else emptyList())
@@ -212,6 +214,10 @@ class CourseKnowledgeWorkflowTest {
                 }
             }
             shot("course-knowledge-source")
+            compose.runOnIdle { showLoadedData = false }
+            compose.onNodeWithText("来源当前不可用").assertDoesNotExist()
+            compose.runOnIdle { showLoadedData = true }
+            compose.waitUntil(5000) { runCatching { compose.onNodeWithContentDescription("关闭核对笔记来源").assertIsDisplayed() }.isSuccess }
             compose.runOnIdle { vm.updateNotebookState { it.copy(notes = listOf(original.copy(content = "已修改后的正文"))) } }
             compose.onNodeWithText("源笔记正文已修改。", substring = true).assertIsDisplayed()
             compose.onNodeWithContentDescription("关闭核对笔记来源").assertIsDisplayed().performClick()
