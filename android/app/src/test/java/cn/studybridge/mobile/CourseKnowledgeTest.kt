@@ -89,6 +89,7 @@ class CourseKnowledgeTest {
         assertTrue(result.passages.any { it.text.contains("特定知识") })
         assertTrue(result.text.contains("生理学"))
         assertFalse(result.text.contains(other.content))
+        assertTrue(runCatching { chatNotebookContext(s, "继续", other.id) }.isFailure)
         assertFalse(result.text.contains(overview.content))
         val chosenOverview = chatNotebookContext(s, "继续", overview.id)
         val followUp = chatNotebookContext(s, "继续", history = listOf(Message("assistant", "已选择总览", noteRefs = chosenOverview.references)))

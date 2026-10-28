@@ -134,7 +134,15 @@ class CourseKnowledgeWorkflowTest {
         try {
             compose.runOnUiThread { vm = noteTestViewModel(app, store, ai = fixtureAiApi("不应请求", inspect = { calls++ })) }
             compose.setContent { Text("课程范围删除回归") }; compose.waitUntil(10000) { vm.ui.value.ready }
-            compose.runOnIdle { vm.startCourseChat(folder.id); assertTrue(vm.deleteNoteFolder(folder.id)); assertFalse(vm.send("总结所有笔记")) }
+            compose.runOnIdle {
+                vm.startCourseChat(folder.id); vm.attachNote(other)
+                assertFalse(vm.send("讲解这个课程范围外的笔记"))
+                vm.notes()
+            }
+            compose.waitUntil(10000) { !vm.ui.value.busy }
+            assertEquals(0, calls)
+            assertEquals(listOf(original, other), vm.ui.value.data.notes)
+            compose.runOnIdle { vm.clearAttachment(); assertTrue(vm.deleteNoteFolder(folder.id)); assertFalse(vm.send("总结所有笔记")) }
             assertEquals(0, calls)
             assertTrue(vm.ui.value.notice.contains("范围已删除"))
             compose.runOnIdle { vm.leaveCourseChatScope() }
