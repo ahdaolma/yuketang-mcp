@@ -188,7 +188,18 @@ class CourseKnowledgeWorkflowTest {
             compose.waitUntil(5000) { runCatching { compose.onNodeWithContentDescription("关闭核对笔记来源").assertIsDisplayed() }.isSuccess }
             compose.onNodeWithText("核对笔记来源").assertIsDisplayed()
             compose.onNodeWithContentDescription("关闭核对笔记来源").assertIsDisplayed()
-            compose.onNodeWithTag("阅读操作面板").captureToImage()
+            if (android.os.Build.VERSION.SDK_INT >= 28) compose.onNodeWithTag("阅读操作面板").captureToImage()
+            else {
+                // Compose's dialog PixelCopy helper requires API 28. Observe
+                // stable on-screen geometry before the real system screenshot.
+                var previous = compose.onNodeWithTag("阅读操作面板").fetchSemanticsNode().boundsInRoot
+                var stableSince = android.os.SystemClock.uptimeMillis()
+                compose.waitUntil(5000) {
+                    val bounds = compose.onNodeWithTag("阅读操作面板").fetchSemanticsNode().boundsInRoot
+                    if (bounds != previous) { previous = bounds; stableSince = android.os.SystemClock.uptimeMillis() }
+                    android.os.SystemClock.uptimeMillis() - stableSince >= 200
+                }
+            }
             shot("course-knowledge-source")
             compose.runOnIdle { vm.updateNotebookState { it.copy(notes = listOf(original.copy(content = "已修改后的正文"))) } }
             compose.onNodeWithText("源笔记正文已修改。", substring = true).assertIsDisplayed()
