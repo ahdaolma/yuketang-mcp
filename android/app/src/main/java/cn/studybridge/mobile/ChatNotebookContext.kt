@@ -65,8 +65,14 @@ private fun excerpt(value: String, limit: Int, terms: List<String>): String {
         val index = if (page == null) lower.indexOf(term) else chatNotebookPage.findAll(lower).firstOrNull { it.groupValues[1].toInt() == page }?.range?.first ?: -1
         index.takeIf { it >= 0 }
     } ?: 0
-    val start = (hit - limit / 3).coerceIn(0, (value.length - limit).coerceAtLeast(0))
-    return (if (start > 0) "[…前文省略…]\n" else "") + value.substring(start, minOf(value.length, start + limit - 40)) + "\n[…后文省略，非全文…]"
+    val prefix = "[…前文省略…]\n"
+    val suffix = "\n[…后文省略，非全文…]"
+    val bodyLimit = (limit - prefix.length - suffix.length).coerceAtLeast(0)
+    // Clamp using the actual body budget. Subtracting marker space only after
+    // clamping discarded the final characters even when the hit was at EOF.
+    val start = (hit - bodyLimit / 3).coerceIn(0, value.length - bodyLimit)
+    val end = minOf(value.length, start + bodyLimit)
+    return (if (start > 0) prefix else "") + value.substring(start, end) + (if (end < value.length) suffix else "")
 }
 
 fun chatNoteReference(note: Note, query: String = ""): ChatNoteReference {

@@ -30,6 +30,14 @@ class ChatNotebookContextTest {
         assertTrue(ref.snapshot.contains("非全文"))
         assertTrue(ref.snapshot.length <= CHAT_NOTE_SNAPSHOT_LIMIT)
         assertTrue(context.text.length <= CHAT_NOTE_CONTEXT_LIMIT)
+        val tail = chatNoteReference(huge.copy(content = "普通内容".repeat(4000) + "\n最终结论：内膜。"), "最终结论")
+        assertTrue(tail.snapshot.contains("最终结论：内膜。"))
+        assertFalse(tail.snapshot.contains("后文省略"))
+        assertTrue(tail.snapshot.length <= CHAT_NOTE_SNAPSHOT_LIMIT)
+        val longRemark = remark.copy(comment = "重复备注".repeat(1000) + "\n备注结论：内膜。")
+        val remarked = chatNoteReference(huge.copy(annotations = listOf(longRemark)), "备注结论")
+        assertTrue(remarked.snapshot.contains("备注结论：内膜。"))
+        assertTrue(remarked.snapshot.length <= CHAT_NOTE_SNAPSHOT_LIMIT)
     }
 
     @Test fun nextQuestionReadsSavedEditsAndAnnotationsAgainstMostRecentVersion() {
