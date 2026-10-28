@@ -55,11 +55,11 @@ class CourseKnowledgeWorkflowTest {
             compose.onNodeWithTag("选择分类 chapter").performClick()
             compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记本面板").fetchSemanticsNodes().isEmpty() }
             compose.onNodeWithText("整理章节总览").performScrollTo().assertIsDisplayed()
-            advancedUiShot(compose.activity, "course-knowledge-actions-large-font.png")
+            shot("course-knowledge-actions-large-font")
             compose.onNodeWithText("围绕本章提问").performScrollTo().performClick()
             compose.onNodeWithText("课程范围 · 生理学 / 血液循环").assertIsDisplayed()
             assertEquals(chapter.id, vm.ui.value.data.chat().notebookId)
-            advancedUiShot(compose.activity, "course-knowledge-chat-scope.png")
+            shot("course-knowledge-chat-scope")
             compose.onNodeWithText("退出范围").performClick()
             assertNull(vm.ui.value.data.chat().notebookId)
         } finally { compose.runOnIdle { store.clear() } }
@@ -186,11 +186,25 @@ class CourseKnowledgeWorkflowTest {
             }
             compose.onNodeWithText("核对笔记来源").assertIsDisplayed()
             compose.onNodeWithContentDescription("关闭核对笔记来源").assertIsDisplayed()
-            advancedUiShot(compose.activity, "course-knowledge-source.png")
+            compose.onNodeWithTag("阅读操作面板").captureToImage()
+            shot("course-knowledge-source")
             compose.runOnIdle { vm.updateNotebookState { it.copy(notes = listOf(original.copy(content = "已修改后的正文"))) } }
             compose.onNodeWithText("源笔记正文已修改。", substring = true).assertIsDisplayed()
             compose.onNodeWithContentDescription("关闭核对笔记来源").assertIsDisplayed().performClick()
             compose.onNodeWithText("核对笔记来源").assertDoesNotExist()
         } finally { compose.runOnIdle { store.clear() } }
+    }
+
+    private fun shot(name: String) {
+        compose.waitForIdle()
+        // Native screenshot capture is independent of the Compose test clock.
+        // Wait for actual display frames after the sheet's draw has completed.
+        val frames = CountDownLatch(1)
+        compose.runOnUiThread {
+            val view = compose.activity.window.decorView
+            view.postOnAnimation { view.postOnAnimation { frames.countDown() } }
+        }
+        assertTrue(frames.await(5, TimeUnit.SECONDS))
+        advancedUiShot(compose.activity, name)
     }
 }
