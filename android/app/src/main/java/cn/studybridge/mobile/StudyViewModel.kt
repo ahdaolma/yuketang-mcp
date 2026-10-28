@@ -261,12 +261,18 @@ class StudyViewModel @JvmOverloads constructor(app: Application, private val rai
         closeMaterials(); state.update { it.copy(pending = null, tab = 0) }
     }
     fun leaveCourseChatScope() {
-        if (state.value.locked) return
+        if (state.value.locked || state.value.data.chat().notebookId == null) return
         // A fresh conversation prevents another course from inheriting scoped
         // source quotations through the old transcript. The old chat is kept.
         val previous = state.value.data.chat().id
+        val draft = state.value.chatDrafts[previous].orEmpty()
+        val pending = state.value.pending
         newChat()
-        if (state.value.data.chat().id != previous) notice("已退出课程范围，原对话保留在会话记录中。")
+        val next = state.value.data.chat().id
+        if (next != previous) {
+            state.update { it.copy(pending = pending, chatDrafts = if (draft.isBlank()) it.chatDrafts else it.chatDrafts + (next to draft)) }
+            notice("已退出课程范围，原对话保留在会话记录中。" + if (draft.isNotBlank() || pending != null) "当前问题和附件已带到新对话。" else "")
+        }
     }
     fun organizeKnowledge(folderId: String?, ids: Set<String>? = null) {
         val snapshot = state.value.data

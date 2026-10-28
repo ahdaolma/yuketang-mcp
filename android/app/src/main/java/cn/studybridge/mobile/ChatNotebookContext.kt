@@ -44,6 +44,11 @@ internal fun chatNotebookSearchText(text: String): String = chatNotebookPage.rep
 
 internal fun chatNotebookTerms(query: String): List<String> = buildList {
     chatNotebookPage.findAll(query).forEach { add("第${it.groupValues[1].toInt()}页") }
+    Regex("[0-9]{1,12}\\.[0-9]{1,12}").findAll(query).forEach { add(it.value) }
+    Regex("([a-zA-Z][a-zA-Z0-9_+\\-]{0,20})([\\p{script=Han}]{1,12})").findAll(query.lowercase(Locale.ROOT)).forEach {
+        add(it.value)
+        add(it.groupValues[1] + it.groupValues[2].take(1))
+    }
     // Android's Is-script aliases require API 29; script=Han also works on 26.
     Regex("[a-zA-Z][a-zA-Z0-9_-]{1,39}|[\\p{script=Han}]{2,40}").findAll(query.lowercase(Locale.ROOT)).forEach { hit ->
         val word = hit.value

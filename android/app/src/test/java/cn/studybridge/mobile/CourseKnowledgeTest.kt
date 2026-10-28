@@ -113,6 +113,10 @@ class CourseKnowledgeTest {
         assertEquals(original.id, pageQuestion.references.single().noteId)
         assertTrue(pageQuestion.passages.first().label.contains("45"))
         assertTrue(pageQuestion.references.single().snapshot.contains("特定知识"))
+        val symbols = saved(note(body = "## 第 44 页\nP波代表心房电活动。\n## 第 45 页\n图内 0.04 s 是时长标注。"))
+            .copy(conversations = listOf(Conversation(notebookId = course.id)))
+        assertTrue(chatNotebookContext(symbols, "解释P波").passages.first().text.contains("P波代表"))
+        assertTrue(chatNotebookContext(symbols, "0.04s指什么").passages.first().text.contains("时长标注"))
         assertTrue(result.text.length <= CHAT_NOTE_CONTEXT_LIMIT)
         assertTrue(runCatching { chatNotebookContext(s.copy(noteFolders = emptyList()), "PR 间期") }.isFailure)
     }
