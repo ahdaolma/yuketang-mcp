@@ -4,8 +4,12 @@ import android.text.style.URLSpan
 import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
+import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelStore
@@ -25,6 +29,41 @@ class CourseKnowledgeWorkflowTest {
     private val original = Note("original", "心电图", "## 第 44 页\n\n### 电活动\n\n心电图记录电活动，不是心脏收缩曲线。", "已保存课堂笔记", "fixture", folderId = chapter.id)
     private val other = original.copy(id = "private-other", folderId = "english", content = "其他课程绝不可带入的私人内容")
     private val provider = Provider("knowledge", "测试模型", "https://fixture.example/v1", "fixture-key", "fixture-model")
+
+    @Test fun libraryActionsAndPersistentCourseScopeAreUsableWithLargeText() {
+        val app = noteTestApplication(compose.activity.applicationContext)
+        Vault(app).save(Saved(providers = listOf(provider), notes = listOf(original), noteFolders = listOf(folder, chapter)))
+        val store = ViewModelStore(); lateinit var vm: StudyViewModel
+        try {
+            compose.runOnUiThread { vm = noteTestViewModel(app, store) }
+            compose.setContent {
+                val ui by vm.ui.collectAsState()
+                val density = LocalDensity.current
+                CompositionLocalProvider(LocalDensity provides Density(density.density, 1.6f)) { StudyTheme(false) {
+                    KnowledgeSourceHost(ui, vm) {
+                        StudyFrame(ui, vm::tab, {}, vm::stop) { padding ->
+                            Box(Modifier.fillMaxSize().padding(padding)) { StudyPageContent(ui, vm) }
+                        }
+                    }
+                } }
+            }
+            compose.waitUntil(10000) { vm.ui.value.ready }
+            compose.runOnIdle { vm.tab(2) }
+            compose.onNodeWithTag("当前笔记本").performScrollTo().performClick()
+            compose.onNodeWithContentDescription("展开笔记本 生理学").performClick()
+            compose.onNodeWithTag("笔记本选择列表").performScrollToNode(hasTestTag("选择分类 chapter"))
+            compose.onNodeWithTag("选择分类 chapter").performClick()
+            compose.waitUntil(5000) { compose.onAllNodesWithTag("笔记本面板").fetchSemanticsNodes().isEmpty() }
+            compose.onNodeWithText("整理章节总览").performScrollTo().assertIsDisplayed()
+            advancedUiShot(compose.activity, "course-knowledge-actions-large-font.png")
+            compose.onNodeWithText("围绕本章提问").performScrollTo().performClick()
+            compose.onNodeWithText("课程范围 · 生理学 / 血液循环").assertIsDisplayed()
+            assertEquals(chapter.id, vm.ui.value.data.chat().notebookId)
+            advancedUiShot(compose.activity, "course-knowledge-chat-scope.png")
+            compose.onNodeWithText("退出范围").performClick()
+            assertNull(vm.ui.value.data.chat().notebookId)
+        } finally { compose.runOnIdle { store.clear() } }
+    }
 
     @Test fun overviewSavesSeparatelyAndScopedChatReadsTheNextSavedEditAndRemark() {
         val app = noteTestApplication(compose.activity.applicationContext)
@@ -101,6 +140,22 @@ class CourseKnowledgeWorkflowTest {
         } finally { compose.runOnIdle { store.clear() } }
     }
 
+    @Test fun stoppingOverviewLeavesOriginalAndDoesNotSavePartialText() {
+        val app = noteTestApplication(compose.activity.applicationContext)
+        Vault(app).save(Saved(providers = listOf(provider), notes = listOf(original), noteFolders = listOf(folder, chapter)))
+        val arrived = CountDownLatch(1); val release = CountDownLatch(1)
+        val store = ViewModelStore(); lateinit var vm: StudyViewModel
+        try {
+            compose.runOnUiThread { vm = noteTestViewModel(app, store, ai = fixtureAiApi("不能保存的中断结果", beforeResponse = { arrived.countDown(); check(release.await(10, TimeUnit.SECONDS)) })) }
+            compose.setContent { Text("停止整理回归") }; compose.waitUntil(10000) { vm.ui.value.ready }
+            compose.runOnIdle { vm.organizeKnowledge(chapter.id) }
+            assertTrue(arrived.await(10, TimeUnit.SECONDS))
+            compose.runOnIdle { vm.stop() }; release.countDown()
+            compose.waitUntil(15000) { !vm.ui.value.busy }
+            assertEquals(listOf(original), vm.ui.value.data.notes)
+        } finally { release.countDown(); compose.runOnIdle { store.clear() } }
+    }
+
     @Test fun nativeCitationOpensExactSavedPassageAndStaleSourceHasFixedCloseEntry() {
         val app = noteTestApplication(compose.activity.applicationContext)
         Vault(app).save(Saved(notes = listOf(original), noteFolders = listOf(folder, chapter)))
@@ -118,7 +173,16 @@ class CourseKnowledgeWorkflowTest {
             compose.runOnIdle {
                 val view = views(compose.activity.window.decorView).first { v -> (v.text as? android.text.Spanned)?.getSpans(0, v.text.length, URLSpan::class.java)?.any { it.url == passage.url } == true }
                 val span = (view.text as android.text.Spanned).getSpans(0, view.text.length, URLSpan::class.java).first { it.url == passage.url }
-                span.onClick(view)
+                val offset = (view.text as android.text.Spanned).getSpanStart(span) + 1
+                val layout = requireNotNull(view.layout)
+                val line = layout.getLineForOffset(offset)
+                val x = layout.getPrimaryHorizontal(offset) + view.totalPaddingLeft - view.scrollX
+                val y = (layout.getLineTop(line) + layout.getLineBottom(line)) / 2f + view.totalPaddingTop - view.scrollY
+                val now = android.os.SystemClock.uptimeMillis()
+                for ((action, time) in listOf(android.view.MotionEvent.ACTION_DOWN to now, android.view.MotionEvent.ACTION_UP to now + 60)) {
+                    val event = android.view.MotionEvent.obtain(now, time, action, x, y, 0)
+                    try { view.dispatchTouchEvent(event) } finally { event.recycle() }
+                }
             }
             compose.onNodeWithText("核对笔记来源").assertIsDisplayed()
             compose.onNodeWithContentDescription("关闭核对笔记来源").assertIsDisplayed()

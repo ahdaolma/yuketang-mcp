@@ -7,6 +7,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 val LocalKnowledgeLink = staticCompositionLocalOf<((String) -> Unit)?> { null }
 
@@ -25,11 +27,15 @@ val LocalKnowledgeLink = staticCompositionLocalOf<((String) -> Unit)?> { null }
                 Text("来源类型：已保存笔记。AI 整理内容和个人备注不自动等于课件原文。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (actual == null) Text(if (current == null) "源笔记已删除或不在本机，无法读取这条引用。" else "源笔记正文已修改。这条引用属于旧版本，不会用旧位置指向新正文；可打开最新笔记核对。", color = MaterialTheme.colorScheme.error)
                 else {
-                    val headings = remember(current) { readingHeadings(actual.first.content) }
-                    val pageStart = headings.lastOrNull { it.first <= location!!.start && Regex("第\\s*\\d+\\s*页").containsMatchIn(it.second) }?.first ?: 0
-                    val pageEnd = headings.firstOrNull { it.first > location!!.start && Regex("第\\s*\\d+\\s*页").containsMatchIn(it.second) }?.first ?: actual.first.content.length
-                    val image = remember(current, pageStart, pageEnd) { sourceImagePattern.find(actual.first.content, pageStart)?.takeIf { it.range.first < pageEnd } }
-                    if (image != null && !actual.second.contains(image.value)) IllustratedMarkdown(image.value, vm.sourceImages)
+                    val image by produceState<MatchResult?>(null, current, location) {
+                        value = withContext(Dispatchers.Default) {
+                            val headings = readingHeadings(actual.first.content)
+                            val pageStart = headings.lastOrNull { it.first <= location!!.start && Regex("第\\s*\\d+\\s*页").containsMatchIn(it.second) }?.first ?: 0
+                            val pageEnd = headings.firstOrNull { it.first > location!!.start && Regex("第\\s*\\d+\\s*页").containsMatchIn(it.second) }?.first ?: actual.first.content.length
+                            sourceImagePattern.find(actual.first.content, pageStart)?.takeIf { it.range.first < pageEnd }
+                        }
+                    }
+                    image?.takeUnless { actual.second.contains(it.value) }?.let { IllustratedMarkdown(it.value, vm.sourceImages) }
                     IllustratedMarkdown(actual.second, vm.sourceImages)
                 }
                 if (current != null) FeedbackOutlinedButton(onClick = {
@@ -57,9 +63,11 @@ val LocalKnowledgeLink = staticCompositionLocalOf<((String) -> Unit)?> { null }
 
 @Composable fun KnowledgeOverviewStatus(note: Note, saved: Saved) {
     if (note.overviewSources.isEmpty()) return
-    val changed = remember(note.overviewSources, saved.notes) {
-        note.overviewSources.count { (id, version) -> saved.notes.find { it.id == id }?.let { knowledgeNoteVersion(it) } != version }
+    val changed by produceState<Int?>(null, note.overviewSources, saved.notes) {
+        value = withContext(Dispatchers.Default) {
+            note.overviewSources.count { (id, version) -> saved.notes.find { it.id == id }?.let { knowledgeNoteVersion(it) } != version }
+        }
     }
-    Text(if (changed == 0) "知识总览 · ${note.overviewSources.size} 份来源" else "知识总览 · $changed 份来源有新修改或已删除", style = MaterialTheme.typography.labelSmall,
-        color = if (changed == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+    Text(if (changed == null || changed == 0) "知识总览 · ${note.overviewSources.size} 份来源" else "知识总览 · $changed 份来源有新修改或已删除", style = MaterialTheme.typography.labelSmall,
+        color = if (changed == null || changed == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
 }

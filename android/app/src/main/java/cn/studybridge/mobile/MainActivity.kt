@@ -375,10 +375,12 @@ private fun preview(bytes: ByteArray): Bitmap? {
             if (inlineHeader) IconButton(onClick = { vm.tab(3) }) { Icon(Icons.Outlined.Settings, "设置") }
         }
     }, body = {
-        LazyColumn(Modifier.fillMaxSize().testTag("学习正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(top = 8.dp, bottom = if (compactFraction > 0.5f) 72.dp else 8.dp)) {
-            if (chat.notebookId != null) item { CourseChatScope(ui, vm) }
+        Column(Modifier.fillMaxSize()) {
+        CourseChatScope(ui, vm)
+        LazyColumn(Modifier.weight(1f).fillMaxWidth().testTag("学习正文").then(if (chrome != null) Modifier.nestedScroll(chrome.connection) else Modifier), state = listState, verticalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(top = 8.dp, bottom = if (compactFraction > 0.5f) 72.dp else 8.dp)) {
             if (chat.messages.isEmpty()) item { StudyEmpty(Icons.Outlined.Description, "从一页课件开始", "连接雨课堂或导入文件，带入课件提问，也可以直接输入问题。", Modifier.padding(top = 24.dp)) { Spacer(Modifier.height(4.dp)); Button(onClick = vm::openMaterials, enabled = !ui.locked) { Icon(Icons.Outlined.FolderOpen, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("选择学习资料") } } }
             itemsIndexed(chat.messages, key = { index, _ -> "${chat.id}:$index" }, contentType = { _, m -> m.role }) { index, m -> ChatMessageCard(m, "${chat.id}:$index", ui.data.provider().name, ui.busy && m.role == "assistant" && index == chat.messages.lastIndex, ui.data.notes, { id, edit -> vm.openChatNote(id, edit) }, !ui.locked) }
+        }
         }
     }, composer = {
         val shortWindow = LocalReadingShortWindow.current
@@ -706,6 +708,7 @@ private fun preview(bytes: ByteArray): Bitmap? {
                 IllustratedMarkdown(shown, sourceImages, segments[selected].start - segments[selected].prefix.length + raw.length - shown.length, segments[selected].sourceForDisplay(note.content, raw.length - shown.length))
             }
             Spacer(Modifier.height(if (compactFraction > 0.5f) 72.dp else 24.dp))
+        }
         }
     }, composer = {})
 }

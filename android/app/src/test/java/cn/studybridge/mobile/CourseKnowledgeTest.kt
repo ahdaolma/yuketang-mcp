@@ -30,11 +30,22 @@ class CourseKnowledgeTest {
         val original = note(id = "笔记 / 特殊%ID")
         val location = knowledgeLocation(knowledgePassages(original).last().url)!!
         assertNotNull(knowledgeSourceText(saved(original), location))
+        assertNotNull(knowledgeSourceText(saved(original.copy(content = original.content + "\n## 第 45 页\n新增课堂笔记")), location))
         assertNull(knowledgeSourceText(saved(original.copy(content = "改过正文")), location))
         assertNull(knowledgeSourceText(saved().copy(noteTrash = listOf(TrashedNote(original))), location))
         assertNull(knowledgeLocation("study-note:n/${"a".repeat(64)}/0/9999999999"))
         assertNull(knowledgeLocation("study-note:n/${"a".repeat(64)}/0/6000"))
         assertNull(knowledgeLocation("https://example.com"))
+    }
+
+    @Test fun deepKnowledgeHeadingsKeepTheirExplanationAndNeverLoseCSharpNames() {
+        val original = note(body = "# 课程\n\n## 第 44 页\n\n#### C# 与 F#\n\n这里是比较的证据。\n\n##### 使用条件\n\n只在此条件下适用。")
+        val passages = knowledgePassages(original)
+        assertEquals(2, passages.size)
+        assertTrue(passages.first().label.contains("C# 与 F#"))
+        assertTrue(passages.first().text.contains("这里是比较的证据"))
+        assertTrue(passages.last().label.contains("使用条件"))
+        assertEquals(original.content, passages.joinToString("") { original.content.substring(it.start, it.end) })
     }
 
     @Test fun overviewReadsCompleteScopeWithRemarksAndExcludesOtherCoursesAndOldOverviews() {

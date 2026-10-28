@@ -23,18 +23,42 @@ fun knowledgeLocation(url: String): KnowledgeLocation? {
     }.getOrNull()
 }
 
-// Headings are parsed outside fences by the existing reader. Keep exact offsets
-// into saved Markdown; labels are never used as identity or as trusted commands.
+private val knowledgeHeading = Regex("^ {0,3}#{1,6}[ \\t]+(.+)$")
+private fun knowledgeHeadings(text: String): List<Pair<Int, String>> = buildList {
+    val fencePattern = Regex("^ {0,3}(`{3,}|~{3,})(.*)$")
+    var fence = ""
+    noteSourceLines(text).forEach { range ->
+        val line = text.substring(range.start, range.contentEnd)
+        val marker = fencePattern.matchEntire(line)
+        if (marker != null) {
+            val token = marker.groupValues[1]
+            if (fence.isEmpty()) fence = token
+            else if (token.first() == fence.first() && token.length >= fence.length && marker.groupValues[2].isBlank()) fence = ""
+        } else if (fence.isEmpty()) knowledgeHeading.matchEntire(line)?.let { add(range.start to it.groupValues[1].replace(Regex("[ \\t]+#+[ \\t]*$"), "").take(160)) }
+    }
+}
+
+// Keep exact offsets into saved Markdown. Merge heading-only prefixes with
+// their explanation, so a citation opens evidence rather than an isolated title.
 fun knowledgePassages(note: Note): List<KnowledgePassage> {
     if (note.content.isBlank()) return emptyList()
-    val hash = noteContentHash(note.content)
-    val headings = readingHeadings(note.content)
+    val headings = knowledgeHeadings(note.content)
     val boundaries = (listOf(0) + headings.map { it.first } + note.content.length).distinct().sorted()
+    val ranges = mutableListOf<Pair<Int, Int>>()
+    var pendingStart = 0
+    for ((from, until) in boundaries.zipWithNext()) {
+        val hasBody = note.content.substring(from, until).lineSequence().any { it.isNotBlank() && !knowledgeHeading.matches(it) }
+        if (hasBody) { ranges += pendingStart to until; pendingStart = until }
+    }
+    if (pendingStart < note.content.length) ranges += pendingStart to note.content.length
     return buildList {
-        boundaries.zipWithNext().forEach { (from, until) ->
+        ranges.forEach { (from, until) ->
             var start = from
-            val section = headings.lastOrNull { it.first <= from }?.second.orEmpty()
-            val page = headings.lastOrNull { it.first <= from && Regex("第\\s*\\d+\\s*页").containsMatchIn(it.second) }?.second
+            val rawSection = note.content.substring(from, until)
+            val firstBody = noteSourceLines(rawSection).firstOrNull { range -> rawSection.substring(range.start, range.contentEnd).let { it.isNotBlank() && !knowledgeHeading.matches(it) } }?.start ?: 0
+            val contextAt = from + firstBody
+            val section = headings.lastOrNull { it.first <= contextAt }?.second.orEmpty()
+            val page = headings.lastOrNull { it.first <= contextAt && Regex("第\\s*\\d+\\s*页").containsMatchIn(it.second) }?.second
             val label = listOf(note.title.take(80), page?.take(60), section.take(80).takeIf { it != page && it.isNotBlank() }).filterNotNull().joinToString(" · ")
             while (start < until) {
                 var end = minOf(start + KNOWLEDGE_PASSAGE_SIZE, until)
@@ -44,7 +68,7 @@ fun knowledgePassages(note: Note): List<KnowledgePassage> {
                     if (end < note.content.length && Character.isLowSurrogate(note.content[end])) end--
                 }
                 val raw = note.content.substring(start, end)
-                if (raw.isNotBlank()) add(KnowledgePassage(note.id, hash, start, end, label,
+                if (raw.isNotBlank()) add(KnowledgePassage(note.id, noteContentHash(raw), start, end, label.replace(Regex("\\s+"), " "),
                     sourceImagePattern.replace(raw, "[原页图片：未向模型提供图像，只能依据文字整理]")))
                 start = end
             }
@@ -94,17 +118,19 @@ fun knowledgeOverviewInput(saved: Saved, folderId: String?, ids: Set<String>? = 
 // Only URLs issued with this request become navigable citations. This checks
 // provenance, not whether a model's surrounding conclusion is factually true.
 fun verifiedKnowledgeOutput(text: String, passages: List<KnowledgePassage>): String {
-    val allowed = passages.map { it.url }.toSet()
+    val allowed = passages.associateBy { it.url }
     val linked = sourceMarkdownLink.replace(text) { hit ->
-        if (hit.groupValues[2] in allowed) hit.value else "${hit.groupValues[1]}（来源未核实）"
+        allowed[hit.groupValues[2]]?.link ?: "${hit.groupValues[1]}（来源未核实）"
     }
     return Regex("study-note:[^\\s<>)]*").replace(linked) { if (it.value in allowed) it.value else "（来源未核实）" }
 }
 
 fun knowledgeSourceText(saved: Saved, location: KnowledgeLocation): Pair<Note, String>? {
     val note = saved.notes.find { it.id == location.noteId && saved.noteTrash.none { t -> t.note.id == it.id } } ?: return null
-    if (noteContentHash(note.content) != location.hash || location.start < 0 || location.end > note.content.length || location.end <= location.start) return null
-    return note to note.content.substring(location.start, location.end)
+    if (location.start < 0 || location.end > note.content.length || location.end <= location.start) return null
+    val actual = note.content.substring(location.start, location.end)
+    if (noteContentHash(actual) != location.hash) return null
+    return note to actual
 }
 
 fun remapKnowledgeLinks(text: String, mapping: Map<String, String>): String = sourceUrl.replace(text) { match ->
