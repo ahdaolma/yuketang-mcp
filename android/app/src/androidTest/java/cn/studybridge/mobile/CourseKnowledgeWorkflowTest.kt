@@ -58,6 +58,8 @@ class CourseKnowledgeWorkflowTest {
             shot("course-knowledge-actions-large-font")
             compose.onNodeWithText("围绕本章提问").performScrollTo().performClick()
             compose.onNodeWithText("课程范围 · 生理学 / 血液循环").assertIsDisplayed()
+            compose.onNodeWithText("围绕本章直接提问").assertIsDisplayed()
+            compose.onNodeWithText("选择学习资料").assertDoesNotExist()
             assertEquals(chapter.id, vm.ui.value.data.chat().notebookId)
             shot("course-knowledge-chat-scope")
             compose.onNodeWithContentDescription("退出课程范围").performClick()
