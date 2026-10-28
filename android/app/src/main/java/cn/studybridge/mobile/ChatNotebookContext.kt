@@ -89,7 +89,7 @@ fun chatNotebookContext(saved: Saved, query: String, pendingNoteId: String = "",
     history.asReversed().forEach { message -> message.noteRefs.forEach { previous.putIfAbsent(it.noteId, it) } }
     require(scopeFolderId == null || saved.noteFolders.any { it.id == scopeFolderId }) { "此对话绑定的笔记本或章节已删除，请退出课程范围或重新选择。" }
     val scope = scopeFolderId?.let { saved.folderScope(it) }
-    val candidates = saved.notes.filter { note -> saved.noteTrash.none { it.note.id == note.id } && (scope == null || saved.effectiveFolder(note) in scope) }
+    val candidates = saved.notes.filter { note -> saved.noteTrash.none { it.note.id == note.id } && (scope == null || saved.effectiveFolder(note) in scope && (note.overviewSources.isEmpty() || note.id == pendingNoteId)) }
     val unavailable = previous.values.filter { ref -> candidates.none { it.id == ref.noteId } }.take(CHAT_NOTE_LIMIT)
     val notebookIntent = Regex("笔记|笔記|notebook|\\bnotes?\\b", RegexOption.IGNORE_CASE).containsMatchIn(query) &&
         Regex("哪些|多少|有什么|所有|全部|我的|发出来|列出|看看|列表|what|list|show|my", RegexOption.IGNORE_CASE).containsMatchIn(query)
@@ -116,7 +116,13 @@ fun chatNotebookContext(saved: Saved, query: String, pendingNoteId: String = "",
         unavailable.forEach { append("笔记 ID=${it.noteId.take(200)}（${it.title.take(120)}）当前不可用或已删除；历史快照不是当前正文。\n") }
         refs.forEach { ref ->
             append("\n--- 笔记 ID=${ref.noteId.take(200)}；版本 SHA256=${ref.hash}；${if (ref.complete) "全文" else "部分节选"} ---\n")
-            candidates.find { it.id == ref.noteId }?.let { append("当前笔记本/章节：${saved.folderPath(it.folderId).take(300)}\n") }
+            candidates.find { it.id == ref.noteId }?.let { note ->
+                append("当前笔记本/章节：${saved.folderPath(note.folderId).take(300)}\n")
+                if (note.overviewSources.isNotEmpty()) {
+                    val changed = note.overviewSources.count { (id, version) -> saved.notes.find { it.id == id }?.let(::knowledgeNoteVersion) != version }
+                    append("此份是独立 AI 知识总览，非原课件；$changed 份来源已有变化或不可用，不得当成最新来源结论。\n")
+                }
+            }
             append(referenceChange(previous[ref.noteId], ref)); append('\n'); append(ref.snapshot); append("\n--- 该笔记引用结束 ---\n")
         }
         append("【本机笔记引用结束】")

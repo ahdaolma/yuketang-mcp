@@ -82,12 +82,14 @@ class CourseKnowledgeTest {
     @Test fun courseChatUsesLatestRelatedPassagesAndStaysWithinChosenCourse() {
         val original = note(body = "## 第 44 页\n" + "常规内容".repeat(2000) + "\n## 第 45 页\n特定知识：PR 间期的定义。").copy(title = "心电图")
         val other = note("other", "PR 间期其他课程的私人记录").copy(folderId = "english")
-        val s = saved(original, other).copy(conversations = listOf(Conversation(notebookId = course.id)))
+        val overview = original.copy(id = "old-overview", content = "PR 间期旧总览，不能取代当前原笔记", overviewSources = mapOf(original.id to "old"))
+        val s = saved(original, other, overview).copy(conversations = listOf(Conversation(notebookId = course.id)))
         val result = chatNotebookContext(s, "PR 间期是什么？")
         assertEquals(listOf(original.id), result.references.map { it.noteId })
         assertTrue(result.passages.any { it.text.contains("特定知识") })
         assertTrue(result.text.contains("生理学"))
         assertFalse(result.text.contains(other.content))
+        assertFalse(result.text.contains(overview.content))
         assertTrue(result.text.length <= CHAT_NOTE_CONTEXT_LIMIT)
         assertTrue(runCatching { chatNotebookContext(s.copy(noteFolders = emptyList()), "PR 间期") }.isFailure)
     }
