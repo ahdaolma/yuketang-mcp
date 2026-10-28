@@ -89,7 +89,7 @@ fun chatNotebookContext(saved: Saved, query: String, pendingNoteId: String = "",
     history.asReversed().forEach { message -> message.noteRefs.forEach { previous.putIfAbsent(it.noteId, it) } }
     require(scopeFolderId == null || saved.noteFolders.any { it.id == scopeFolderId }) { "此对话绑定的笔记本或章节已删除，请退出课程范围或重新选择。" }
     val scope = scopeFolderId?.let { saved.folderScope(it) }
-    val candidates = saved.notes.filter { note -> saved.noteTrash.none { it.note.id == note.id } && (scope == null || saved.effectiveFolder(note) in scope && (note.overviewSources.isEmpty() || note.id == pendingNoteId)) }
+    val candidates = saved.notes.filter { note -> saved.noteTrash.none { it.note.id == note.id } && (scope == null || saved.effectiveFolder(note) in scope && (note.overviewSources.isEmpty() || note.id == pendingNoteId || note.id in previous)) }
     val unavailable = previous.values.filter { ref -> candidates.none { it.id == ref.noteId } }.take(CHAT_NOTE_LIMIT)
     val notebookIntent = Regex("笔记|笔記|notebook|\\bnotes?\\b", RegexOption.IGNORE_CASE).containsMatchIn(query) &&
         Regex("哪些|多少|有什么|所有|全部|我的|发出来|列出|看看|列表|what|list|show|my", RegexOption.IGNORE_CASE).containsMatchIn(query)

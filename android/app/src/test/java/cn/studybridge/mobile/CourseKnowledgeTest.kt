@@ -90,6 +90,10 @@ class CourseKnowledgeTest {
         assertTrue(result.text.contains("生理学"))
         assertFalse(result.text.contains(other.content))
         assertFalse(result.text.contains(overview.content))
+        val chosenOverview = chatNotebookContext(s, "继续", overview.id)
+        val followUp = chatNotebookContext(s, "继续", history = listOf(Message("assistant", "已选择总览", noteRefs = chosenOverview.references)))
+        assertTrue(followUp.references.any { it.noteId == overview.id })
+        assertTrue(followUp.text.contains("1 份来源已有变化"))
         assertTrue(result.text.length <= CHAT_NOTE_CONTEXT_LIMIT)
         assertTrue(runCatching { chatNotebookContext(s.copy(noteFolders = emptyList()), "PR 间期") }.isFailure)
     }
