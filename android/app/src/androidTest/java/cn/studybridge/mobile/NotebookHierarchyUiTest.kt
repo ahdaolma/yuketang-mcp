@@ -37,7 +37,14 @@ class NotebookHierarchyUiTest {
             compose.waitUntil(5000) { vm.ui.value.ready }
             compose.runOnIdle { vm.tab(2) }
             compose.waitUntil(5000) {
-                androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars()) == false
+                if (android.os.Build.VERSION.SDK_INT >= 30) androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars()) == false
+                else {
+                    val descriptor = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("dumpsys window policy")
+                    val policy = android.os.ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().use { it.readText() }
+                    val directory = java.io.File(compose.activity.getExternalFilesDir(null), "StudyUiReview").apply { check(isDirectory || mkdirs()) }
+                    java.io.File(directory, "knowledge-hierarchy-window-policy.txt").writeText(policy)
+                    Regex("BarController\\.StatusBar\\s+mState=(\\w+)").find(policy)?.groupValues?.get(1) == "WINDOW_STATE_HIDDEN"
+                }
             }
             block(app, vm)
         } finally { InstrumentationRegistry.getInstrumentation().runOnMainSync { store.clear() } }
