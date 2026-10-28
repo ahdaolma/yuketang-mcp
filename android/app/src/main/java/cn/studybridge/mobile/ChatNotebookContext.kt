@@ -39,7 +39,11 @@ private val queryStopWords = setOf("这个", "那个", "什么", "怎么", "如�
 
 // Chinese questions rarely contain spaces: use adjacent character pairs as well as
 // longer runs, and prefer a full query phrase/title match over individual pairs.
+private val chatNotebookPage = Regex("第\\s*([0-9]{1,6})\\s*页")
+internal fun chatNotebookSearchText(text: String): String = chatNotebookPage.replace(text) { "第${it.groupValues[1].toInt()}页" }.lowercase(Locale.ROOT)
+
 internal fun chatNotebookTerms(query: String): List<String> = buildList {
+    chatNotebookPage.findAll(query).forEach { add("第${it.groupValues[1].toInt()}页") }
     // Android's Is-script aliases require API 29; script=Han also works on 26.
     Regex("[a-zA-Z][a-zA-Z0-9_-]{1,39}|[\\p{script=Han}]{2,40}").findAll(query.lowercase(Locale.ROOT)).forEach { hit ->
         val word = hit.value
@@ -51,7 +55,11 @@ internal fun chatNotebookTerms(query: String): List<String> = buildList {
 private fun excerpt(value: String, limit: Int, terms: List<String>): String {
     if (value.length <= limit) return value
     val lower = value.lowercase(Locale.ROOT)
-    val hit = terms.sortedByDescending { it.length }.firstNotNullOfOrNull { term -> lower.indexOf(term).takeIf { it >= 0 } } ?: 0
+    val hit = terms.sortedByDescending { it.length }.firstNotNullOfOrNull { term ->
+        val page = chatNotebookPage.matchEntire(term)?.groupValues?.get(1)?.toInt()
+        val index = if (page == null) lower.indexOf(term) else chatNotebookPage.findAll(lower).firstOrNull { it.groupValues[1].toInt() == page }?.range?.first ?: -1
+        index.takeIf { it >= 0 }
+    } ?: 0
     val start = (hit - limit / 3).coerceIn(0, (value.length - limit).coerceAtLeast(0))
     return (if (start > 0) "[…前文省略…]\n" else "") + value.substring(start, minOf(value.length, start + limit - 40)) + "\n[…后文省略，非全文…]"
 }
@@ -96,8 +104,8 @@ fun chatNotebookContext(saved: Saved, query: String, pendingNoteId: String = "",
     val notebookIntent = Regex("笔记|笔記|notebook|\\bnotes?\\b", RegexOption.IGNORE_CASE).containsMatchIn(query) &&
         Regex("哪些|多少|有什么|所有|全部|我的|发出来|列出|看看|列表|what|list|show|my", RegexOption.IGNORE_CASE).containsMatchIn(query)
     fun score(note: Note): Int {
-        val title = (note.title + " " + note.tags.joinToString(" ")).lowercase(Locale.ROOT)
-        val body = (note.content + noteAnnotationExport(note)).lowercase(Locale.ROOT)
+        val title = chatNotebookSearchText(note.title + " " + note.tags.joinToString(" "))
+        val body = chatNotebookSearchText(note.content + noteAnnotationExport(note))
         return terms.sumOf { term -> (if (title.contains(term)) 8 else 0) + (if (body.contains(term)) 2 else 0) }
     }
     val scores = candidates.associate { it.id to score(it) }

@@ -92,8 +92,8 @@ fun Saved.knowledgeNotes(folderId: String?, ids: Set<String>? = null): List<Note
 }
 
 fun knowledgePassageScore(passage: KnowledgePassage, terms: List<String>): Int {
-    val title = passage.label.lowercase(Locale.ROOT)
-    val body = passage.text.lowercase(Locale.ROOT)
+    val title = chatNotebookSearchText(passage.label)
+    val body = chatNotebookSearchText(passage.text)
     return terms.sumOf { (if (title.contains(it)) 4 else 0) + (if (body.contains(it)) 8 else 0) }
 }
 

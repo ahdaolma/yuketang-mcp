@@ -109,6 +109,10 @@ class CourseKnowledgeTest {
         val followUp = chatNotebookContext(s, "继续", history = listOf(Message("assistant", "已选择总览", noteRefs = chosenOverview.references)))
         assertTrue(followUp.references.any { it.noteId == overview.id })
         assertTrue(followUp.text.contains("1 份来源已有变化"))
+        val pageQuestion = chatNotebookContext(s, "解释第 0045 页")
+        assertEquals(original.id, pageQuestion.references.single().noteId)
+        assertTrue(pageQuestion.passages.first().label.contains("45"))
+        assertTrue(pageQuestion.references.single().snapshot.contains("特定知识"))
         assertTrue(result.text.length <= CHAT_NOTE_CONTEXT_LIMIT)
         assertTrue(runCatching { chatNotebookContext(s.copy(noteFolders = emptyList()), "PR 间期") }.isFailure)
     }
