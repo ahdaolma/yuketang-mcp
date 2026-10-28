@@ -48,6 +48,28 @@ class ResponsiveReadingTest {
         val image = if (system) requireNotNull(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()) else compose.onRoot().captureToImage().asAndroidBitmap()
         try { saveUiReviewBitmap(compose.activity, name, image) } finally { image.recycle() }
     }
+    private fun assertSettledStatusBarHidden(name: String) {
+        var policy = ""
+        try {
+            compose.waitUntil(6000) {
+                if (android.os.Build.VERSION.SDK_INT >= 30)
+                    androidx.core.view.ViewCompat.getRootWindowInsets(compose.activity.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars()) == false
+                else {
+                    // Check the actual system window, not just the app's
+                    // requested fullscreen flag or inferred compat insets.
+                    val descriptor = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand("dumpsys window policy")
+                    policy = android.os.ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().use { it.readText() }
+                    Regex("BarController\\.StatusBar\\s+mState=(\\w+)").find(policy)?.groupValues?.get(1) == "WINDOW_STATE_HIDDEN"
+                }
+            }
+        } finally {
+            if (policy.isNotBlank()) {
+                val directory = java.io.File(compose.activity.getExternalFilesDir(null), "StudyUiReview").apply { check(isDirectory || mkdirs()) }
+                java.io.File(directory, "$name-window-policy.txt").writeText(policy)
+            }
+            shot(name, system = true)
+        }
+    }
     private fun assertNotebookToolSheet() {
         compose.ensureNoteTools()
         val panel = compose.onNodeWithTag("阅读操作面板").getUnclippedBoundsInRoot()
@@ -72,15 +94,7 @@ class ResponsiveReadingTest {
         assertTrue("Floating controls must not narrow the text column", compact.right - compact.left >= before.right - before.left)
         compose.onNodeWithTag("应用顶部栏").assertDoesNotExist()
         compose.onNodeWithTag("应用时间栏").assertIsDisplayed()
-        compose.waitUntil(5000) {
-            val decor = compose.activity.window.decorView
-            // Before API30 compat visibility is inferred from inset sizes;
-            // stable fullscreen layout can retain the status-bar inset.
-            if (android.os.Build.VERSION.SDK_INT < 30) {
-                @Suppress("DEPRECATION")
-                (decor.systemUiVisibility and android.view.View.SYSTEM_UI_FLAG_FULLSCREEN) != 0
-            } else androidx.core.view.ViewCompat.getRootWindowInsets(decor)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.statusBars()) == false
-        }
+        assertSettledStatusBarHidden("sample-chat-status-hidden")
         compose.onNodeWithContentDescription("悬浮阅读工具").assertIsDisplayed().performClick()
         compose.onNodeWithTag("应用底部导航").assertIsDisplayed()
         listOf("学习资料", "新对话", "对话笔记", "消息跳转", "设置", "课程").forEach { compose.onNodeWithContentDescription(it).assertIsDisplayed().assertIsEnabled() }
@@ -231,7 +245,7 @@ class ResponsiveReadingTest {
             compose.onNode(hasSetTextAction()).assertChatDraftEquals(longDraft)
             val restoredBody = compose.onNodeWithTag("学习正文").getUnclippedBoundsInRoot()
             assertTrue("Closing the keyboard must restore the reading viewport", (restoredBody.bottom - restoredBody.top).value >= (screen.bottom - screen.top).value * 0.5f)
-            shot("sample-chat-landscape-restored", system = true)
+            assertSettledStatusBarHidden("sample-chat-landscape-restored")
             compose.onNodeWithContentDescription("消息跳转").performClick()
             compose.onNodeWithText("顶部").performClick()
             compose.onNodeWithText("展开原文").assertIsDisplayed()
